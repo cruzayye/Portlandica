@@ -45,6 +45,11 @@ export default function OrderForm() {
     })
   }, [])
 
+  useEffect(() => {
+    const total = (form.totalStill ?? 0) + (form.totalSpark ?? 0)
+    setForm((prev) => ({ ...prev, price: total > 0 ? total * 1.5 : null }))
+  }, [form.totalStill, form.totalSpark])
+
   function handleSwitch(field: keyof NewOrder) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.checked }))
