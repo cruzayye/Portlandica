@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useState, useTransition, useEffect } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
@@ -10,7 +10,8 @@ import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import Alert from '@mui/material/Alert'
-import { createOrder } from '@/app/actions/orders'
+import Autocomplete from '@mui/material/Autocomplete'
+import { createOrder, getLocations } from '@/app/actions/orders'
 import type { NewOrder } from '@/types/orders'
 
 const defaultState: NewOrder = {
@@ -34,7 +35,15 @@ export default function OrderForm() {
   const [manualNumber, setManualNumber] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  type Location = { name: string; street_address: string; city: string; state: string }
+  const [locations, setLocations] = useState<Location[]>([])
   const [isPending, startTransition] = useTransition()
+
+  useEffect(() => {
+    getLocations().then((data) => {
+      if (data) setLocations(data as Location[])
+    })
+  }, [])
 
   function handleSwitch(field: keyof NewOrder) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -85,12 +94,22 @@ export default function OrderForm() {
 
       <Box component="form" onSubmit={handleSubmit} display="flex" flexDirection="column" gap={3}>
         {/* Customer */}
-        <TextField
-          label="Name"
-          value={form.name ?? ''}
-          onChange={handleText('name')}
+        <Autocomplete
+          options={locations}
+          getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
+          value={locations.find((l) => l.name === form.name) ?? null}
+          onChange={(_, value) => {
+            if (!value || typeof value === 'string') return
+            setForm((prev) => ({
+              ...prev,
+              name: value.name,
+              notes: `${value.street_address}, ${value.city}, ${value.state}`,
+            }))
+          }}
+          renderInput={(params) => (
+            <TextField {...params} label="Name" required />
+          )}
           fullWidth
-          required
         />
 
         <Box display="flex" gap={2} flexWrap="wrap">
