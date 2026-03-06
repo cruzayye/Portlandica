@@ -31,6 +31,7 @@ const defaultState: NewOrder = {
 
 export default function OrderForm() {
   const [form, setForm] = useState<NewOrder>(defaultState)
+  const [manualNumber, setManualNumber] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
@@ -48,6 +49,16 @@ export default function OrderForm() {
   function handleNumber(field: keyof NewOrder) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.value === '' ? null : Number(e.target.value) }))
+  }
+
+  function handleCasesBlur(field: 'totalStill' | 'totalSpark') {
+    return () => {
+      if (manualNumber) return
+      setForm((prev) => ({
+        ...prev,
+        [field]: prev[field] != null ? (prev[field] as number) * 24 : null,
+      }))
+    }
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -111,7 +122,10 @@ export default function OrderForm() {
             control={<Switch checked={form.isSpark ?? false} onChange={handleSwitch('isSpark')} />}
             label="Sparkling"
           />
-          
+          <FormControlLabel
+            control={<Switch checked={manualNumber} onChange={(e) => setManualNumber(e.target.checked)} />}
+            label="Enter Manual Number"
+          />
         </Box>
 
         {form.isStill && (
@@ -121,6 +135,7 @@ export default function OrderForm() {
               type="number"
               value={form.totalStill ?? ''}
               onChange={handleNumber('totalStill')}
+              onBlur={handleCasesBlur('totalStill')}
               sx={{ flex: 1 }}
               inputProps={{ min: 0 }}
             />
@@ -138,6 +153,7 @@ export default function OrderForm() {
               type="number"
               value={form.totalSpark ?? ''}
               onChange={handleNumber('totalSpark')}
+              onBlur={handleCasesBlur('totalSpark')}
               sx={{ flex: 1 }}
               inputProps={{ min: 0 }}
             />
