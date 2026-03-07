@@ -12,28 +12,40 @@ function getSheetsClient() {
 
 export async function appendOrder(order: NewOrder) {
   const sheets = getSheetsClient()
-  const created_at = new Date().toISOString()
+  const now = new Date()
+  const created_at = now.toISOString()
+  const order_date = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`
+
+  const product = [
+    order.isStill ? 'Still Cans' : '',
+    order.isSpark ? 'Sparkling Cans' : '',
+  ].filter(Boolean).join(', ')
 
   const row = [
-    created_at,
-    order.name,
-    order.isBusiness ? 'Yes' : 'No',
-    order.isNewBusiness ? 'Yes' : 'No',
-    order.isStill ? 'Yes' : 'No',
-    order.isSpark ? 'Yes' : 'No',
-    order.totalStill ?? '',
-    order.totalSpark ?? '',
-    order.IsCustomStill ? 'Yes' : 'No',
-    order.isCustomSpark ? 'Yes' : 'No',
-    order.price ?? '',
-    order.isPaid ? 'Yes' : 'No',
-    order.createInvoice ? 'Yes' : 'No',
-    order.notes ?? '',
+    created_at,                                      // A: Timestamp
+    order_date,                                      // B: Order Date
+    order.isBusiness ? 'Business' : 'Individual',   // C: Customer Type
+    order.isNewBusiness ? 'Yes' : 'No',             // D: New Business?
+    order.isBusiness ? (order.notes ?? '') : '',    // E: Business Address
+    '',                                              // F: Type of Business
+    '',                                              // G: Delivery Type
+    order.name,                                      // H: Customer Name
+    product,                                         // I: Product
+    order.totalStill ?? '',                          // J: # of Still Cans
+    order.price ?? '',                               // K: Price ($)
+    order.isPaid ? 'Paid' : 'Unpaid',               // L: Payment Status
+    '',                                              // M: Payment Date
+    order.totalSpark ?? '',                          // N: # of Sparkling Cans
+    !order.isBusiness ? (order.notes ?? '') : '',   // O: Individual Address
+    '',                                              // P: Additional Details for Trello
+    order.createInvoice ? 'Yes' : 'No',             // Q: Create an Invoice on Square?
+    order.IsCustomStill ? 'Yes' : 'No',             // R: Custom Still Cans?
+    order.isCustomSpark ? 'Yes' : 'No',             // S: Custom Sparkling Cans?
   ]
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: process.env.GOOGLE_SHEET_ID!,
-    range: 'Form Responses!A:O',
+    range: 'Form Responses!A:S',
     valueInputOption: 'RAW',
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values: [row] },
