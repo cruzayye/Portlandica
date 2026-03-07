@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition, useEffect } from 'react'
+import { useState, useTransition, useEffect, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
 import Divider from '@mui/material/Divider'
@@ -11,7 +11,8 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
-import { createOrder, getLocations } from '@/app/actions/orders'
+import MenuItem from '@mui/material/MenuItem'
+import { createOrder, getLocations, getLocationTypes } from '@/app/actions/orders'
 import type { NewOrder } from '@/types/orders'
 
 const defaultState: NewOrder = {
@@ -28,6 +29,11 @@ const defaultState: NewOrder = {
   isPaid: false,
   createInvoice: false,
   notes: '',
+  businessType: null,
+  streetAddress: null,
+  city: null,
+  state: null,
+  zip: null,
 }
 
 export default function OrderForm() {
@@ -37,11 +43,24 @@ export default function OrderForm() {
   const [error, setError] = useState<string | null>(null)
   type Location = { name: string; street_address: string; city: string; state: string }
   const [locations, setLocations] = useState<Location[]>([])
+  const [locationTypes, setLocationTypes] = useState<string[]>([])
   const [isPending, startTransition] = useTransition()
+  const customBusinessTypeRef = useRef<HTMLInputElement>(null)
+
+  const isCustomBusinessType = !locationTypes.includes(form.businessType ?? '') && form.businessType !== null
+
+  useEffect(() => {
+    if (isCustomBusinessType) {
+      customBusinessTypeRef.current?.focus()
+    }
+  }, [isCustomBusinessType])
 
   useEffect(() => {
     getLocations().then((data) => {
       if (data) setLocations(data as Location[])
+    })
+    getLocationTypes().then((data) => {
+      if (data) setLocationTypes(data.map((d) => d.name))
     })
   }, [])
 
@@ -97,27 +116,7 @@ export default function OrderForm() {
         New Order
       </Typography>
 
-      <Box component="form" onSubmit={handleSubmit} display="flex" flexDirection="column" gap={3}>
-        {/* Customer */}
-        <Autocomplete
-          options={locations}
-          getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
-          value={locations.find((l) => l.name === form.name) ?? null}
-          onChange={(_, value) => {
-            if (!value || typeof value === 'string') return
-            setForm((prev) => ({
-              ...prev,
-              name: value.name,
-              notes: `${value.street_address}, ${value.city}, ${value.state}`,
-            }))
-          }}
-          renderInput={(params) => (
-            <TextField {...params} label="Name" required />
-          )}
-          fullWidth
-        />
-
-        <Box display="flex" gap={2} flexWrap="wrap">
+              <Box display="flex" gap={2} flexWrap="wrap">
           <FormControlLabel
             control={<Switch checked={form.isBusiness ?? false} onChange={handleSwitch('isBusiness')} />}
             label="Business"
@@ -129,6 +128,91 @@ export default function OrderForm() {
             />
           )}
         </Box>
+
+      <Box component="form" onSubmit={handleSubmit} display="flex" flexDirection="column" gap={3}>
+        {/* Customer */}
+        {form.isNewBusiness || !form.isBusiness ? (
+          <TextField
+            label="DTC or New Business Name"
+            value={form.name ?? ''}
+            onChange={handleText('name')}
+            fullWidth
+            required
+          />
+        ) : (
+          <Autocomplete
+            options={locations}
+            getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
+            value={locations.find((l) => l.name === form.name) ?? null}
+            onChange={(_, value) => {
+              if (!value || typeof value === 'string') return
+              setForm((prev) => ({
+                ...prev,
+                name: value.name,
+                notes: `${value.street_address}, ${value.city}, ${value.state}`,
+              }))
+            }}
+            renderInput={(params) => (
+              <TextField {...params} label="Name" required />
+            )}
+            fullWidth
+          />
+        )}
+
+        {form.isNewBusiness && (
+          <>
+            <TextField
+              select
+              label="Type of Business"
+              value={locationTypes.includes(form.businessType ?? '') ? (form.businessType ?? '') : (form.businessType ? 'Other' : '')}
+              onChange={(e) => {
+                const val = e.target.value
+                setForm((prev) => ({ ...prev, businessType: val === 'Other' ? '' : val }))
+              }}
+              fullWidth
+            >
+              {locationTypes.map((type) => (
+                <MenuItem key={type} value={type}>{type}</MenuItem>
+              ))}
+              <MenuItem value="Other">Other</MenuItem>
+            </TextField>
+            {isCustomBusinessType && (
+              <TextField
+                label="Specify Business Type"
+                value={form.businessType ?? ''}
+                onChange={handleText('businessType')}
+                fullWidth
+                inputRef={customBusinessTypeRef}
+              />
+            )}
+            <TextField
+              label="Street Address"
+              value={form.streetAddress ?? ''}
+              onChange={handleText('streetAddress')}
+              fullWidth
+            />
+            <Box display="flex" gap={2}>
+              <TextField
+                label="City"
+                value={form.city ?? ''}
+                onChange={handleText('city')}
+                sx={{ flex: 2 }}
+              />
+              <TextField
+                label="State"
+                value={form.state ?? ''}
+                onChange={handleText('state')}
+                sx={{ flex: 1 }}
+              />
+              <TextField
+                label="Zip"
+                value={form.zip ?? ''}
+                onChange={handleText('zip')}
+                sx={{ flex: 1 }}
+              />
+            </Box>
+          </>
+        )}
 
         <Divider />
 
