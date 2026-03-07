@@ -14,6 +14,11 @@ export type Order = {
   isPaid: boolean | null
   createInvoice: boolean | null
   notes: string | null
+  businessType: string | null
+  streetAddress: string | null
+  city: string | null
+  state: string | null
+  zip: string | null
 }
 
 export type NewOrder = Omit<Order, 'id' | 'created_at'>

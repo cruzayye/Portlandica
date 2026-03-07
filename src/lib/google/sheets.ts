@@ -26,8 +26,8 @@ export async function appendOrder(order: NewOrder) {
     order_date,                                      // B: Order Date
     order.isBusiness ? 'Business' : 'Individual',   // C: Customer Type
     order.isNewBusiness ? 'Yes' : 'No',             // D: New Business?
-    order.isBusiness ? (order.notes ?? '') : '',    // E: Business Address
-    '',                                              // F: Type of Business
+    order.isBusiness ? (order.isNewBusiness ? [order.streetAddress, order.city, order.state, order.zip].filter(Boolean).join(', ') : (order.notes ?? '')) : '',  // E: Business Address
+    order.businessType ?? '',                        // F: Type of Business
     '',                                              // G: Delivery Type
     order.name,                                      // H: Customer Name
     product,                                         // I: Product
@@ -37,7 +37,7 @@ export async function appendOrder(order: NewOrder) {
     '',                                              // M: Payment Date
     order.totalSpark ?? '',                          // N: # of Sparkling Cans
     !order.isBusiness ? (order.notes ?? '') : '',   // O: Individual Address
-    '',                                              // P: Additional Details for Trello
+    [order.isNewBusiness ? [order.streetAddress, order.city, order.state, order.zip].filter(Boolean).join(', ') : (order.notes ?? ''), order.isNewBusiness ? (order.notes ?? '') : ''].filter(Boolean).join(' | '),  // P: Additional Details for Trello
     order.createInvoice ? 'Yes' : 'No',             // Q: Create an Invoice on Square?
     order.IsCustomStill ? 'Yes' : 'No',             // R: Custom Still Cans?
     order.isCustomSpark ? 'Yes' : 'No',             // S: Custom Sparkling Cans?
