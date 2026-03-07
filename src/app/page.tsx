@@ -1,5 +1,5 @@
 import Box from '@mui/material/Box'
-import Typography from '@mui/material/Typography'
+import OrderForm from '@/components/OrderForm/OrderForm'
 
 export default function Home() {
   return (
@@ -7,15 +7,13 @@ export default function Home() {
       component="main"
       sx={{
         display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
         justifyContent: 'center',
+        alignItems: 'flex-start',
         minHeight: '100vh',
+        p: 4,
       }}
     >
-      <Typography variant="h4" component="h1">
-        Hello world
-      </Typography>
+      <OrderForm />
     </Box>
   )
 }
