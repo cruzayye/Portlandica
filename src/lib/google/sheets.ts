@@ -43,11 +43,32 @@ export async function appendOrder(order: NewOrder) {
     order.isCustomSpark ? 'Yes' : 'No',             // S: Custom Sparkling Cans?
   ]
 
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: process.env.GOOGLE_SHEET_ID!,
-    range: 'Form Responses!A:S',
-    valueInputOption: 'RAW',
-    insertDataOption: 'INSERT_ROWS',
-    requestBody: { values: [row] },
-  })
+  const address = order.isNewBusiness
+    ? [order.streetAddress, order.city, order.state, order.zip].filter(Boolean).join(', ')
+    : (order.notes ?? '')
+
+  const locationsRow = [
+    order.name,          // A: Business Name
+    address,             // B: Address
+    '',                  // C: Latitude
+    '',                  // D: Longitude
+    order.businessType ?? '',  // E: Type of Business
+  ]
+
+  await Promise.all([
+    sheets.spreadsheets.values.append({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID!,
+      range: 'Form Responses!A:S',
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [row] },
+    }),
+    sheets.spreadsheets.values.append({
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_2!,
+      range: 'Portlandica Sales Reach and Accounting - Current Locations Addresses!A:E',
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [locationsRow] },
+    }),
+  ])
 }
