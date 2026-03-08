@@ -13,6 +13,7 @@ import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import MenuItem from '@mui/material/MenuItem'
 import { createOrder, getLocations, getLocationTypes } from '@/app/actions/orders'
+import type { SheetLocation } from '@/app/actions/orders'
 import type { NewOrder } from '@/types/orders'
 
 const defaultState: NewOrder = {
@@ -41,8 +42,7 @@ export default function OrderForm() {
   const [manualNumber, setManualNumber] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  type Location = { name: string; street_address: string; city: string; state: string }
-  const [locations, setLocations] = useState<Location[]>([])
+  const [locations, setLocations] = useState<SheetLocation[]>([])
   const [locationTypes, setLocationTypes] = useState<string[]>([])
   const [isPending, startTransition] = useTransition()
   const customBusinessTypeRef = useRef<HTMLInputElement>(null)
@@ -57,7 +57,7 @@ export default function OrderForm() {
 
   useEffect(() => {
     getLocations().then((data) => {
-      if (data) setLocations(data as Location[])
+      if (data) setLocations(data)
     })
     getLocationTypes().then((data) => {
       if (data) setLocationTypes(data.map((d) => d.name))
@@ -149,7 +149,7 @@ export default function OrderForm() {
               setForm((prev) => ({
                 ...prev,
                 name: value.name,
-                notes: `${value.street_address}, ${value.city}, ${value.state}`,
+                notes: value.address,
               }))
             }}
             renderInput={(params) => (

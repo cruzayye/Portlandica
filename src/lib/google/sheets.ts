@@ -1,6 +1,12 @@
 import { google } from 'googleapis'
 import type { NewOrder } from '@/types/orders'
 
+export type SheetLocation = {
+  name: string
+  address: string
+  businessType: string
+}
+
 function getSheetsClient() {
   const credentials = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON!)
   const auth = new google.auth.GoogleAuth({
@@ -8,6 +14,23 @@ function getSheetsClient() {
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   })
   return google.sheets({ version: 'v4', auth })
+}
+
+export async function getLocationsFromSheet(): Promise<SheetLocation[]> {
+  const sheets = getSheetsClient()
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: process.env.GOOGLE_SHEET_ID_2!,
+    range: 'Portlandica Sales Reach and Accounting - Current Locations Addresses!A:E',
+  })
+  const rows = res.data.values ?? []
+  return rows
+    .slice(1) // skip header row
+    .filter((row) => row[0]) // skip empty rows
+    .map((row) => ({
+      name: row[0] ?? '',
+      address: row[1] ?? '',
+      businessType: row[4] ?? '',
+    }))
 }
 
 export async function appendOrder(order: NewOrder) {

@@ -1,8 +1,10 @@
 'use server'
 
 import { createClient } from '@supabase/supabase-js'
-import { appendOrder } from '@/lib/google/sheets'
+import { appendOrder, getLocationsFromSheet } from '@/lib/google/sheets'
 import type { NewOrder } from '@/types/orders'
+
+export type { SheetLocation } from '@/lib/google/sheets'
 
 export async function getLocationTypes() {
   const supabase = createClient(
@@ -15,13 +17,7 @@ export async function getLocationTypes() {
 }
 
 export async function getLocations() {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-  const { data, error } = await supabase.from('locations').select('*')
-  if (error) throw new Error(error.message)
-  return data
+  return getLocationsFromSheet()
 }
 
 export async function createOrder(order: NewOrder) {
