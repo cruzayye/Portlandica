@@ -1,5 +1,6 @@
 import { google } from 'googleapis'
 import type { NewOrder } from '@/types/orders'
+import { createTrelloCard } from '@/lib/trello'
 
 export type SheetLocation = {
   name: string
@@ -19,7 +20,7 @@ function getSheetsClient() {
 export async function getLocationsFromSheet(): Promise<SheetLocation[]> {
   const sheets = getSheetsClient()
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: process.env.GOOGLE_SHEET_ID_2!,
+    spreadsheetId: process.env.GOOGLE_SHEET_ID_LOCATIONS!,
     range: 'Current Locations Addresses!A:E',
   })
   const rows = res.data.values ?? []
@@ -232,18 +233,20 @@ export async function appendOrder(order: NewOrder) {
   const promises: Promise<unknown>[] = []
 
   if (salesRows.length > 0) {
-    promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID!, salesRows))
+    promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID_SALES!, salesRows))
   }
 
   promises.push(
     sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID_2!,
+      spreadsheetId: process.env.GOOGLE_SHEET_ID_LOCATIONS!,
       range: 'Current Locations Addresses!A:E',
       valueInputOption: 'RAW',
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: [locationsRow] },
     })
   )
+
+  promises.push(createTrelloCard(order))
 
   await Promise.all(promises)
 }
