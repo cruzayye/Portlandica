@@ -153,14 +153,13 @@ export default function OrderForm() {
         </Box>
 
         {form.isStill && (
-          <Box display="flex" gap={2} alignItems="center">
+          <Box display="flex" flexDirection="column" gap={1}>
             <TextField
               label="Total Still Cases"
               type="number"
               value={form.totalStill ?? ''}
               onChange={handleNumber('totalStill')}
               onBlur={handleCasesBlur('totalStill')}
-              sx={{ flex: 1 }}
               inputProps={{ min: 0 }}
             />
             <FormControlLabel
@@ -171,14 +170,13 @@ export default function OrderForm() {
         )}
 
         {form.isSpark && (
-          <Box display="flex" gap={2} alignItems="center">
+          <Box display="flex" flexDirection="column" gap={1}>
             <TextField
               label="Total Sparkling Cases"
               type="number"
               value={form.totalSpark ?? ''}
               onChange={handleNumber('totalSpark')}
               onBlur={handleCasesBlur('totalSpark')}
-              sx={{ flex: 1 }}
               inputProps={{ min: 0 }}
             />
             <FormControlLabel
