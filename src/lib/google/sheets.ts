@@ -104,6 +104,9 @@ async function insertBeforeTotals(
     const updated = [...(row as unknown[])]
     updated[16] = `=TEXT(A${r},"YYYY-MM")`
     updated[17] = `=IF(B${r}="Business",IF(OR(D${r}="Junior's Roasted Coffee",D${r}="Guilder Cafe inside Powell's Books",D${r}="Guilder East"),"Guilder",IF(OR(D${r}="Ben Bridge Jeweler (Downtown)",D${r}="Ben Bridge Jeweler (Washington Square)"),"Ben Bridge Jeweler",IF(OR(REGEXMATCH(D${r},"^The Great North.*"),REGEXMATCH(D${r},"^Lovejoy Bakers.*")),"The Great North",IF(REGEXMATCH(D${r},"^Elephants Delicatessen.*"),"Elephants Delicatessen",D${r})))),"")`
+    updated[18] = `=IF(B${r}="Individual","",MIN(FILTER(A:A,D:D=D${r})))`
+    updated[19] = `=IF(S${r}="","",TEXT(S${r},"yyyy-mm"))`
+    updated[20] = `=IF(D${r}=D${r - 1},A${r}-A${r - 1},"")`
     return updated
   })
 
