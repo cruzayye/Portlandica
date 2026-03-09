@@ -94,6 +94,21 @@ async function insertBeforeTotals(
             fields: 'userEnteredFormat.numberFormat',
           },
         },
+        {
+          repeatCell: {
+            range: {
+              sheetId,
+              startRowIndex: lastDataRow,
+              endRowIndex: lastDataRow + rows.length,
+            },
+            cell: {
+              userEnteredFormat: {
+                textFormat: { bold: true },
+              },
+            },
+            fields: 'userEnteredFormat.textFormat.bold',
+          },
+        },
       ],
     },
   })
@@ -102,6 +117,8 @@ async function insertBeforeTotals(
   const rowsWithFormulas = rows.map((row, i) => {
     const r = lastDataRow + 1 + i
     const updated = [...(row as unknown[])]
+    updated[13] = `=XLOOKUP(M${r},Inventory!A:A,Inventory!P:P,0,0)`
+    updated[14] = `=N${r}*E${r - 1}`
     updated[16] = `=TEXT(A${r},"YYYY-MM")`
     updated[17] = `=IF(B${r}="Business",IF(OR(D${r}="Junior's Roasted Coffee",D${r}="Guilder Cafe inside Powell's Books",D${r}="Guilder East"),"Guilder",IF(OR(D${r}="Ben Bridge Jeweler (Downtown)",D${r}="Ben Bridge Jeweler (Washington Square)"),"Ben Bridge Jeweler",IF(OR(REGEXMATCH(D${r},"^The Great North.*"),REGEXMATCH(D${r},"^Lovejoy Bakers.*")),"The Great North",IF(REGEXMATCH(D${r},"^Elephants Delicatessen.*"),"Elephants Delicatessen",D${r})))),"")`
     updated[18] = `=IF(B${r}="Individual","",MIN(FILTER(A:A,D:D=D${r})))`
@@ -176,7 +193,7 @@ export async function appendOrder(order: NewOrder) {
       Math.round(stillPrice * 100) / 100,                         // F: Sales ($)
       '',                                            // G: Shipping Cost ($)
       '',                                            // H: Payment Date
-      '',                                            // I: Payment Received
+      order.isPaid ? Math.round(stillPrice * 100) / 100 : 0,     // I: Payment Received
       paid,                                          // J: Paid
       '',                                            // K: Referral Cost ($)
       '',                                            // L: Uncollectible?
@@ -189,7 +206,7 @@ export async function appendOrder(order: NewOrder) {
       '',                                            // S: First Sale Date
       '',                                            // T: First Sale Date Year-Month
       '',                                            // U: Last Order
-      order.IsCustomStill ? 'Yes' : 'No',            // V: Custom Cans
+      order.IsCustomStill ? 'Yes' : '',               // V: Custom Cans
     ])
   }
 
@@ -203,7 +220,7 @@ export async function appendOrder(order: NewOrder) {
       Math.round(sparkPrice * 100) / 100,                         // F: Sales ($)
       '',                                            // G: Shipping Cost ($)
       '',                                            // H: Payment Date
-      '',                                            // I: Payment Received
+      order.isPaid ? Math.round(sparkPrice * 100) / 100 : 0,     // I: Payment Received
       paid,                                          // J: Paid
       '',                                            // K: Referral Cost ($)
       '',                                            // L: Uncollectible?
@@ -216,7 +233,7 @@ export async function appendOrder(order: NewOrder) {
       '',                                            // S: First Sale Date
       '',                                            // T: First Sale Date Year-Month
       '',                                            // U: Last Order
-      order.isCustomSpark ? 'Yes' : 'No',            // V: Custom Cans
+      order.isCustomSpark ? 'Yes' : '',               // V: Custom Cans
     ])
   }
 
