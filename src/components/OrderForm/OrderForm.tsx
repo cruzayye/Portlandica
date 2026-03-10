@@ -19,6 +19,7 @@ const defaultState: NewOrder = {
   name: '',
   isBusiness: true,
   isNewBusiness: false,
+  isDTC: false,
   isStill: false,
   isSpark: false,
   totalStill: null,
@@ -121,17 +122,21 @@ export default function OrderForm() {
             control={<Switch checked={form.isBusiness ?? false} onChange={handleSwitch('isBusiness')} />}
             label="Business"
           />
-          {form.isBusiness && (
+          {(form.isBusiness || form.isDTC) && (
             <FormControlLabel
               control={<Switch checked={form.isNewBusiness ?? false} onChange={handleSwitch('isNewBusiness')} />}
               label="New Business"
             />
           )}
+          <FormControlLabel
+            control={<Switch checked={form.isDTC ?? false} onChange={handleSwitch('isDTC')} />}
+            label="DTC"
+          />
         </Box>
 
       <Box component="form" onSubmit={handleSubmit} display="flex" flexDirection="column" gap={3}>
         {/* Customer */}
-        {form.isNewBusiness || !form.isBusiness ? (
+        {form.isNewBusiness || form.isDTC || !form.isBusiness ? (
           <TextField
             label="DTC or New Business Name"
             value={form.name ?? ''}
@@ -159,31 +164,35 @@ export default function OrderForm() {
           />
         )}
 
-        {form.isNewBusiness && (
+        {(form.isNewBusiness || form.isDTC) && (
           <>
-            <TextField
-              select
-              label="Type of Business"
-              value={locationTypes.includes(form.businessType ?? '') ? (form.businessType ?? '') : (form.businessType ? 'Other' : '')}
-              onChange={(e) => {
-                const val = e.target.value
-                setForm((prev) => ({ ...prev, businessType: val === 'Other' ? '' : val }))
-              }}
-              fullWidth
-            >
-              {locationTypes.map((type) => (
-                <MenuItem key={type} value={type}>{type}</MenuItem>
-              ))}
-              <MenuItem value="Other">Other</MenuItem>
-            </TextField>
-            {isCustomBusinessType && (
-              <TextField
-                label="Specify Business Type"
-                value={form.businessType ?? ''}
-                onChange={handleText('businessType')}
-                fullWidth
-                inputRef={customBusinessTypeRef}
-              />
+            {!form.isDTC && (
+              <>
+                <TextField
+                  select
+                  label="Type of Business"
+                  value={locationTypes.includes(form.businessType ?? '') ? (form.businessType ?? '') : (form.businessType ? 'Other' : '')}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setForm((prev) => ({ ...prev, businessType: val === 'Other' ? '' : val }))
+                  }}
+                  fullWidth
+                >
+                  {locationTypes.map((type) => (
+                    <MenuItem key={type} value={type}>{type}</MenuItem>
+                  ))}
+                  <MenuItem value="Other">Other</MenuItem>
+                </TextField>
+                {isCustomBusinessType && (
+                  <TextField
+                    label="Specify Business Type"
+                    value={form.businessType ?? ''}
+                    onChange={handleText('businessType')}
+                    fullWidth
+                    inputRef={customBusinessTypeRef}
+                  />
+                )}
+              </>
             )}
             <TextField
               label="Street Address"

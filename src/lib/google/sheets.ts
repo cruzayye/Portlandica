@@ -256,7 +256,7 @@ export async function appendOrder(order: NewOrder) {
     promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID_SALES!, salesRows))
   }
 
-  if (order.isNewBusiness) {
+  if (order.isNewBusiness && !order.isDTC) {
     promises.push(
       sheets.spreadsheets.values.append({
         spreadsheetId: process.env.GOOGLE_SHEET_ID_LOCATIONS!,
