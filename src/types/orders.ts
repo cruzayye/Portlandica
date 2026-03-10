@@ -3,6 +3,7 @@ export type Order = {
   created_at: string
   isBusiness: boolean | null
   isNewBusiness: boolean | null
+  isDTC: boolean | null
   name: string | null
   isStill: boolean | null
   isSpark: boolean | null
