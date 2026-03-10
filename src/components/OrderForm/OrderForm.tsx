@@ -309,7 +309,17 @@ export default function OrderForm() {
         {success && <Alert severity="success">Order submitted successfully!</Alert>}
         {error && <Alert severity="error">{error}</Alert>}
 
-        <Button type="submit" variant="contained" size="large" disabled={isPending}>
+        <Button
+          type="submit"
+          variant="contained"
+          size="large"
+          disabled={
+            isPending ||
+            !form.name ||
+            (!form.isStill && !form.isSpark) ||
+            !form.price
+          }
+        >
           {isPending ? 'Submitting...' : 'Submit Order'}
         </Button>
       </Box>
