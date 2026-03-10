@@ -256,15 +256,17 @@ export async function appendOrder(order: NewOrder) {
     promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID_SALES!, salesRows))
   }
 
-  promises.push(
-    sheets.spreadsheets.values.append({
-      spreadsheetId: process.env.GOOGLE_SHEET_ID_LOCATIONS!,
-      range: 'Current Locations Addresses!A:E',
-      valueInputOption: 'RAW',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: { values: [locationsRow] },
-    })
-  )
+  if (order.isNewBusiness) {
+    promises.push(
+      sheets.spreadsheets.values.append({
+        spreadsheetId: process.env.GOOGLE_SHEET_ID_LOCATIONS!,
+        range: 'Current Locations Addresses!A:E',
+        valueInputOption: 'RAW',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: { values: [locationsRow] },
+      })
+    )
+  }
 
   promises.push(createTrelloCard(order))
 
