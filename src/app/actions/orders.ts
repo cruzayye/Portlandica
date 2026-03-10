@@ -1,27 +1,22 @@
 'use server'
 
-import { createClient } from '@supabase/supabase-js'
-import { appendOrder } from '@/lib/google/sheets'
+import { appendOrder, getLocationsFromSheet } from '@/lib/google/sheets'
 import type { NewOrder } from '@/types/orders'
 
-export async function getLocationTypes() {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-  const { data, error } = await supabase.from('location_types').select('name')
-  if (error) throw new Error(error.message)
-  return data
+export async function getLocations() {
+  const locations = await getLocationsFromSheet()
+  const seen = new Set<string>()
+  return locations.filter((l) => {
+    if (seen.has(l.name)) return false
+    seen.add(l.name)
+    return true
+  })
 }
 
-export async function getLocations() {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-  const { data, error } = await supabase.from('locations').select('*')
-  if (error) throw new Error(error.message)
-  return data
+export async function getLocationTypes() {
+  const locations = await getLocationsFromSheet()
+  const types = [...new Set(locations.map((l) => l.businessType).filter(Boolean))]
+  return types.map((name) => ({ name }))
 }
 
 export async function createOrder(order: NewOrder) {

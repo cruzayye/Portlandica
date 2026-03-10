@@ -41,7 +41,7 @@ export default function OrderForm() {
   const [manualNumber, setManualNumber] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  type Location = { name: string; street_address: string; city: string; state: string }
+  type Location = { name: string; address: string; businessType: string }
   const [locations, setLocations] = useState<Location[]>([])
   const [locationTypes, setLocationTypes] = useState<string[]>([])
   const [isPending, startTransition] = useTransition()
@@ -149,7 +149,7 @@ export default function OrderForm() {
               setForm((prev) => ({
                 ...prev,
                 name: value.name,
-                notes: `${value.street_address}, ${value.city}, ${value.state}`,
+                notes: value.address,
               }))
             }}
             renderInput={(params) => (
