@@ -3,8 +3,13 @@
 import { useState, useTransition, useEffect, useRef } from 'react'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
+import Dialog from '@mui/material/Dialog'
+import DialogActions from '@mui/material/DialogActions'
+import DialogContent from '@mui/material/DialogContent'
+import DialogTitle from '@mui/material/DialogTitle'
 import Divider from '@mui/material/Divider'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import Link from '@mui/material/Link'
 import Paper from '@mui/material/Paper'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
@@ -42,6 +47,7 @@ export default function OrderForm() {
   const [manualNumber, setManualNumber] = useState(false)
   const [success, setSuccess] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showAppScriptDialog, setShowAppScriptDialog] = useState(false)
   type Location = { name: string; address: string; businessType: string }
   const [locations, setLocations] = useState<Location[]>([])
   const [locationTypes, setLocationTypes] = useState<string[]>([])
@@ -102,9 +108,11 @@ export default function OrderForm() {
 
     startTransition(async () => {
       try {
+        const wasNewBusiness = form.isNewBusiness
         await createOrder(form)
         setSuccess(true)
         setForm(defaultState)
+        if (wasNewBusiness) setShowAppScriptDialog(true)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Something went wrong')
       }
@@ -112,6 +120,7 @@ export default function OrderForm() {
   }
 
   return (
+    <>
     <Paper elevation={2} sx={{ p: 4, maxWidth: 560, width: '100%' }}>
       <Typography variant="h5" fontWeight={600} mb={3}>
         New Order
@@ -333,5 +342,25 @@ export default function OrderForm() {
         </Button>
       </Box>
     </Paper>
+
+    <Dialog open={showAppScriptDialog} onClose={() => setShowAppScriptDialog(false)}>
+      <DialogTitle>New Business Added</DialogTitle>
+      <DialogContent>
+        <Typography>
+          Be sure to run App Scripts —{' '}
+          <Link
+            href="https://docs.google.com/spreadsheets/d/1bIwlYpMhAHQiXHFHs1yY0EEwjrDbIChbrxtVl17P-sw/edit?gid=1985380506#gid=1985380506"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            open the sheet
+          </Link>
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setShowAppScriptDialog(false)}>Dismiss</Button>
+      </DialogActions>
+    </Dialog>
+    </>
   )
 }
