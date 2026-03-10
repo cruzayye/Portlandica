@@ -20,7 +20,7 @@ function getSheetsClient() {
 export async function getLocationsFromSheet(): Promise<SheetLocation[]> {
   const sheets = getSheetsClient()
   const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: process.env.GOOGLE_SHEET_ID_LOCATIONS!,
+    spreadsheetId: process.env.GOOGLE_SHEET_ID!,
     range: 'Current Locations Addresses!A:E',
   })
   const rows = res.data.values ?? []
@@ -253,13 +253,13 @@ export async function appendOrder(order: NewOrder) {
   const promises: Promise<unknown>[] = []
 
   if (salesRows.length > 0) {
-    promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID_SALES!, salesRows))
+    promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID!, salesRows))
   }
 
   if (order.isNewBusiness && !order.isDTC) {
     promises.push(
       sheets.spreadsheets.values.append({
-        spreadsheetId: process.env.GOOGLE_SHEET_ID_LOCATIONS!,
+        spreadsheetId: process.env.GOOGLE_SHEET_ID!,
         range: 'Current Locations Addresses!A:E',
         valueInputOption: 'RAW',
         insertDataOption: 'INSERT_ROWS',
