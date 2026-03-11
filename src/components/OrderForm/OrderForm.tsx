@@ -357,6 +357,17 @@ export default function OrderForm() {
           <FormControlLabel
             control={
               <Switch
+                checked={form.deliveryType === 'Drop'}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, deliveryType: e.target.checked ? 'Drop' : null }))
+                }
+              />
+            }
+            label="Drop"
+          />
+          <FormControlLabel
+            control={
+              <Switch
                 checked={form.deliveryType === 'Ship'}
                 onChange={(e) =>
                   setForm((prev) => ({ ...prev, deliveryType: e.target.checked ? 'Ship' : null }))
@@ -397,7 +408,7 @@ export default function OrderForm() {
           type="submit"
           variant="contained"
           size="large"
-          disabled={isPending || !form.name || (!form.isStill && !form.isSpark) || !form.price}
+          disabled={isPending || !form.name || (!form.isStill && !form.isSpark) || !form.price || !form.deliveryType}
         >
           {isPending ? 'Submitting...' : 'Submit Order'}
         </Button>
