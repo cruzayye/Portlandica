@@ -37,7 +37,8 @@ export async function getLocationsFromSheet(): Promise<SheetLocation[]> {
 async function insertBeforeTotals(
   sheets: ReturnType<typeof getSheetsClient>,
   spreadsheetId: string,
-  rows: unknown[][]
+  rows: unknown[][],
+  createInvoice: boolean
 ) {
   // Get the Sales sheet's numeric ID (needed for batchUpdate)
   const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId })
@@ -104,7 +105,7 @@ async function insertBeforeTotals(
             },
             cell: {
               userEnteredFormat: {
-                textFormat: { bold: true },
+                textFormat: { bold: createInvoice },
               },
             },
             fields: 'userEnteredFormat.textFormat.bold',
@@ -118,6 +119,7 @@ async function insertBeforeTotals(
   const rowsWithFormulas = rows.map((row, i) => {
     const r = lastDataRow + 1 + i
     const updated = [...(row as unknown[])]
+    updated[9] = `=IF(I${r}-F${r}=0,"Yes","No")`
     updated[13] = `=XLOOKUP(M${r},Inventory!A:A,Inventory!P:P,0,0)`
     updated[14] = `=N${r}*E${r - 1}`
     updated[16] = `=TEXT(A${r},"YYYY-MM")`
@@ -172,7 +174,7 @@ export async function appendOrder(order: NewOrder) {
 
   const type = order.isBusiness ? 'Business' : 'Individual'
   const customer = order.name ?? ''
-  const paid = order.isPaid ? 'Yes' : 'No'
+
   const notes = order.notes ?? ''
   const totalPrice = order.price ?? 0
   const totalStill = order.totalStill ?? 0
@@ -195,7 +197,7 @@ export async function appendOrder(order: NewOrder) {
       '',                                            // G: Shipping Cost ($)
       '',                                            // H: Payment Date
       order.isPaid ? Math.round(stillPrice * 100) / 100 : 0,     // I: Payment Received
-      paid,                                          // J: Paid
+      '',                                            // J: Paid (formula injected)
       '',                                            // K: Referral Cost ($)
       '',                                            // L: Uncollectible?
       '',                                            // M: Inventory Reference #
@@ -222,7 +224,7 @@ export async function appendOrder(order: NewOrder) {
       '',                                            // G: Shipping Cost ($)
       '',                                            // H: Payment Date
       order.isPaid ? Math.round(sparkPrice * 100) / 100 : 0,     // I: Payment Received
-      paid,                                          // J: Paid
+      '',                                            // J: Paid (formula injected)
       '',                                            // K: Referral Cost ($)
       '',                                            // L: Uncollectible?
       '',                                            // M: Inventory Reference #
@@ -253,7 +255,7 @@ export async function appendOrder(order: NewOrder) {
   const promises: Promise<unknown>[] = []
 
   if (salesRows.length > 0) {
-    promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID_SALES!, salesRows))
+    promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID_SALES!, salesRows, order.createInvoice ?? false))
   }
 
   if (order.isNewBusiness && !order.isDTC) {

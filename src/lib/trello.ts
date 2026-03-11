@@ -25,7 +25,7 @@ export async function createTrelloCard(order: NewOrder) {
 
   const nextDeliveryDate = calculateNextDeliveryDate()
   const customerName = order.name ?? ''
-  const deliveryType = 'Drop'
+  const deliveryType = order.deliveryType ?? 'Drop'
 
   const titleParts: string[] = []
   if ((order.totalStill ?? 0) > 0) {

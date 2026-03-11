@@ -20,6 +20,7 @@ export type Order = {
   city: string | null
   state: string | null
   zip: string | null
+  deliveryType: string | null
 }
 
 export type NewOrder = Omit<Order, 'id' | 'created_at'>

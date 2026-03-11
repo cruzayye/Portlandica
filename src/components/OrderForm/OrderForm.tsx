@@ -40,6 +40,7 @@ const defaultState: NewOrder = {
   city: null,
   state: null,
   zip: null,
+  deliveryType: null,
 }
 
 export default function OrderForm() {
@@ -54,7 +55,8 @@ export default function OrderForm() {
   const [isPending, startTransition] = useTransition()
   const customBusinessTypeRef = useRef<HTMLInputElement>(null)
 
-  const isCustomBusinessType = !locationTypes.includes(form.businessType ?? '') && form.businessType !== null
+  const isCustomBusinessType =
+    !locationTypes.includes(form.businessType ?? '') && form.businessType !== null
 
   useEffect(() => {
     if (isCustomBusinessType) {
@@ -88,7 +90,10 @@ export default function OrderForm() {
 
   function handleNumber(field: keyof NewOrder) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm((prev) => ({ ...prev, [field]: e.target.value === '' ? null : Number(e.target.value) }))
+      setForm((prev) => ({
+        ...prev,
+        [field]: e.target.value === '' ? null : Number(e.target.value),
+      }))
   }
 
   function handleCasesBlur(field: 'totalStill' | 'totalSpark') {
@@ -126,22 +131,29 @@ export default function OrderForm() {
         New Order
       </Typography>
 
-              <Box display="flex" gap={2} flexWrap="wrap">
+      <Box display="flex" gap={2} flexWrap="wrap">
+        <FormControlLabel
+          control={
+            <Switch checked={form.isBusiness ?? false} onChange={handleSwitch('isBusiness')} />
+          }
+          label="Business"
+        />
+        {(form.isBusiness || form.isDTC) && (
           <FormControlLabel
-            control={<Switch checked={form.isBusiness ?? false} onChange={handleSwitch('isBusiness')} />}
-            label="Business"
+            control={
+              <Switch
+                checked={form.isNewBusiness ?? false}
+                onChange={handleSwitch('isNewBusiness')}
+              />
+            }
+            label="New Business"
           />
-          {(form.isBusiness || form.isDTC) && (
-            <FormControlLabel
-              control={<Switch checked={form.isNewBusiness ?? false} onChange={handleSwitch('isNewBusiness')} />}
-              label="New Business"
-            />
-          )}
-          <FormControlLabel
-            control={<Switch checked={form.isDTC ?? false} onChange={handleSwitch('isDTC')} />}
-            label="DTC"
-          />
-        </Box>
+        )}
+        <FormControlLabel
+          control={<Switch checked={form.isDTC ?? false} onChange={handleSwitch('isDTC')} />}
+          label="DTC"
+        />
+      </Box>
 
       <Box component="form" onSubmit={handleSubmit} display="flex" flexDirection="column" gap={3}>
         {/* Customer */}
@@ -156,7 +168,7 @@ export default function OrderForm() {
         ) : (
           <Autocomplete
             options={locations}
-            getOptionLabel={(option) => typeof option === 'string' ? option : option.name}
+            getOptionLabel={(option) => (typeof option === 'string' ? option : option.name)}
             value={locations.find((l) => l.name === form.name) ?? null}
             onChange={(_, value) => {
               if (!value || typeof value === 'string') return
@@ -166,9 +178,7 @@ export default function OrderForm() {
                 notes: value.address,
               }))
             }}
-            renderInput={(params) => (
-              <TextField {...params} label="Name" required />
-            )}
+            renderInput={(params) => <TextField {...params} label="Name" required />}
             fullWidth
           />
         )}
@@ -180,7 +190,13 @@ export default function OrderForm() {
                 <TextField
                   select
                   label="Type of Business"
-                  value={locationTypes.includes(form.businessType ?? '') ? (form.businessType ?? '') : (form.businessType ? 'Other' : '')}
+                  value={
+                    locationTypes.includes(form.businessType ?? '')
+                      ? (form.businessType ?? '')
+                      : form.businessType
+                        ? 'Other'
+                        : ''
+                  }
                   onChange={(e) => {
                     const val = e.target.value
                     setForm((prev) => ({ ...prev, businessType: val === 'Other' ? '' : val }))
@@ -188,7 +204,9 @@ export default function OrderForm() {
                   fullWidth
                 >
                   {locationTypes.map((type) => (
-                    <MenuItem key={type} value={type}>{type}</MenuItem>
+                    <MenuItem key={type} value={type}>
+                      {type}
+                    </MenuItem>
                   ))}
                   <MenuItem value="Other">Other</MenuItem>
                 </TextField>
@@ -229,6 +247,7 @@ export default function OrderForm() {
                 sx={{ flex: 1 }}
               />
             </Box>
+
           </>
         )}
 
@@ -249,7 +268,9 @@ export default function OrderForm() {
             label="Sparkling"
           />
           <FormControlLabel
-            control={<Switch checked={manualNumber} onChange={(e) => setManualNumber(e.target.checked)} />}
+            control={
+              <Switch checked={manualNumber} onChange={(e) => setManualNumber(e.target.checked)} />
+            }
             label="Enter Manual Number"
           />
         </Box>
@@ -265,7 +286,12 @@ export default function OrderForm() {
               inputProps={{ min: 0 }}
             />
             <FormControlLabel
-              control={<Switch checked={form.IsCustomStill ?? false} onChange={handleSwitch('IsCustomStill')} />}
+              control={
+                <Switch
+                  checked={form.IsCustomStill ?? false}
+                  onChange={handleSwitch('IsCustomStill')}
+                />
+              }
               label="Custom Still"
             />
           </Box>
@@ -282,7 +308,12 @@ export default function OrderForm() {
               inputProps={{ min: 0 }}
             />
             <FormControlLabel
-              control={<Switch checked={form.isCustomSpark ?? false} onChange={handleSwitch('isCustomSpark')} />}
+              control={
+                <Switch
+                  checked={form.isCustomSpark ?? false}
+                  onChange={handleSwitch('isCustomSpark')}
+                />
+              }
               label="Custom Sparkling"
             />
           </Box>
@@ -307,8 +338,43 @@ export default function OrderForm() {
             label="Paid"
           />
           <FormControlLabel
-            control={<Switch checked={form.createInvoice ?? false} onChange={handleSwitch('createInvoice')} />}
+            control={
+              <Switch
+                checked={form.createInvoice ?? false}
+                onChange={handleSwitch('createInvoice')}
+              />
+            }
             label="Create Invoice"
+          />
+        </Box>
+        
+        <Divider />
+        <Typography variant="subtitle2" color="text.secondary">
+          Delivery Type
+        </Typography>
+
+        <Box display="flex" gap={2} flexWrap="wrap">
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.deliveryType === 'Ship'}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, deliveryType: e.target.checked ? 'Ship' : null }))
+                }
+              />
+            }
+            label="Ship"
+          />
+          <FormControlLabel
+            control={
+              <Switch
+                checked={form.deliveryType === 'Pickup'}
+                onChange={(e) =>
+                  setForm((prev) => ({ ...prev, deliveryType: e.target.checked ? 'Pickup' : null }))
+                }
+              />
+            }
+            label="Pickup"
           />
         </Box>
 
@@ -331,12 +397,7 @@ export default function OrderForm() {
           type="submit"
           variant="contained"
           size="large"
-          disabled={
-            isPending ||
-            !form.name ||
-            (!form.isStill && !form.isSpark) ||
-            !form.price
-          }
+          disabled={isPending || !form.name || (!form.isStill && !form.isSpark) || !form.price}
         >
           {isPending ? 'Submitting...' : 'Submit Order'}
         </Button>
