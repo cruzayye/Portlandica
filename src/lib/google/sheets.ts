@@ -37,7 +37,8 @@ export async function getLocationsFromSheet(): Promise<SheetLocation[]> {
 async function insertBeforeTotals(
   sheets: ReturnType<typeof getSheetsClient>,
   spreadsheetId: string,
-  rows: unknown[][]
+  rows: unknown[][],
+  createInvoice: boolean
 ) {
   // Get the Sales sheet's numeric ID (needed for batchUpdate)
   const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId })
@@ -104,7 +105,7 @@ async function insertBeforeTotals(
             },
             cell: {
               userEnteredFormat: {
-                textFormat: { bold: true },
+                textFormat: { bold: createInvoice },
               },
             },
             fields: 'userEnteredFormat.textFormat.bold',
@@ -253,7 +254,7 @@ export async function appendOrder(order: NewOrder) {
   const promises: Promise<unknown>[] = []
 
   if (salesRows.length > 0) {
-    promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID_SALES!, salesRows))
+    promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID_SALES!, salesRows, order.createInvoice ?? false))
   }
 
   if (order.isNewBusiness && !order.isDTC) {
