@@ -238,12 +238,7 @@ export default function OrderForm() {
                 sx={{ flex: 1 }}
               />
             </Box>
-            {form.isDTC && (
-              <FormControlLabel
-                control={<Switch checked={form.ship ?? false} onChange={handleSwitch('ship')} />}
-                label="Ship"
-              />
-            )}
+
           </>
         )}
 
