@@ -24,3 +24,12 @@ export type Order = {
 }
 
 export type NewOrder = Omit<Order, 'id' | 'created_at'>
+
+export type Inventory = {
+  id: number
+  created_at: string
+  name: string 
+  count: number 
+  isCustom: boolean
+  isStill: boolean
+}
