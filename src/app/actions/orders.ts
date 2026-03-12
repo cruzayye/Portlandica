@@ -2,6 +2,7 @@
 
 import { appendOrder, getLocationsFromSheet } from '@/lib/google/sheets'
 import type { NewOrder } from '@/types/orders'
+import { decrementInventory } from '@/app/actions/inventory'
 
 export async function getLocations() {
   const locations = await getLocationsFromSheet()
@@ -21,4 +22,5 @@ export async function getLocationTypes() {
 
 export async function createOrder(order: NewOrder) {
   await appendOrder(order)
+  await decrementInventory(order)
 }

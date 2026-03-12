@@ -270,7 +270,7 @@ export async function appendOrder(order: NewOrder) {
     )
   }
 
-  promises.push(createTrelloCard(order))
+  // promises.push(createTrelloCard(order))
 
   await Promise.all(promises)
 }
