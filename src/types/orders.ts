@@ -21,6 +21,16 @@ export type Order = {
   state: string | null
   zip: string | null
   deliveryType: string | null
+  isDonation: boolean | null
 }
 
 export type NewOrder = Omit<Order, 'id' | 'created_at'>
+
+export type Inventory = {
+  id: number
+  created_at: string
+  name: string 
+  count: number 
+  isCustom: boolean
+  isStill: boolean
+}

@@ -254,7 +254,7 @@ export async function appendOrder(order: NewOrder) {
 
   const promises: Promise<unknown>[] = []
 
-  if (salesRows.length > 0) {
+  if (salesRows.length > 0 && (order.price ?? 0) > 0) {
     promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID!, salesRows, order.createInvoice ?? false))
   }
 
@@ -272,6 +272,65 @@ export async function appendOrder(order: NewOrder) {
 
   promises.push(createTrelloCard(order))
 
+  if (order.isDonation && (order.price === 0 || order.price === null)) {
+    promises.push(appendDonation(sheets, order, order_date))
+  }
+
   await Promise.all(promises)
+}
+
+const RETAIL_PRICE_PER_UNIT = 2.00
+const STILL_INV_REF = 'A7'
+const SPARK_INV_REF = 'A8'
+
+async function appendDonation(
+  sheets: ReturnType<typeof getSheetsClient>,
+  order: NewOrder,
+  order_date: string
+) {
+  const customer = order.name ?? ''
+  const notes = order.notes ?? ''
+  const totalStill = order.totalStill ?? 0
+  const totalSpark = order.totalSpark ?? 0
+
+  const baseRows: { invRef: string; product: string; units: number }[] = []
+  if (order.isStill && totalStill > 0) {
+    baseRows.push({ invRef: STILL_INV_REF, product: 'Still Cans', units: totalStill })
+  }
+  if (order.isSpark && totalSpark > 0) {
+    baseRows.push({ invRef: SPARK_INV_REF, product: 'Sparkling Cans', units: totalSpark })
+  }
+  if (baseRows.length === 0) return
+
+  // Find next available row in Donations sheet
+  const colA = await sheets.spreadsheets.values.get({
+    spreadsheetId: process.env.GOOGLE_SHEET_ID!,
+    range: 'Donations!A:A',
+  })
+  const nextRow = (colA.data.values?.length ?? 1) + 1
+
+  const rows = baseRows.map(({ invRef, product, units }, i) => {
+    const r = nextRow + i
+    return [
+      order_date,                                     // A: Date
+      'DONATIONS',                                    // B: Exp Type
+      product,                                        // C: Product
+      customer,                                       // D: Item Name
+      units,                                          // E: # Units
+      invRef,                                         // F: Inventory Reference #
+      `=XLOOKUP(F${r},Inventory!A:A,Inventory!P:P,0,0)`, // G: COGS (Cost per Unit)
+      RETAIL_PRICE_PER_UNIT,                          // H: Retail Price per Unit
+      `=G${r}*E${r}`,                                 // I: COGS (Total $)
+      `=H${r}*E${r}`,                                 // J: Retail Price (Total Retail $)
+      notes,                                          // K: Notes
+    ]
+  })
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: process.env.GOOGLE_SHEET_ID!,
+    range: `Donations!A${nextRow}:K${nextRow + rows.length - 1}`,
+    valueInputOption: 'USER_ENTERED',
+    requestBody: { values: rows },
+  })
 }
 
