@@ -19,6 +19,7 @@ import Autocomplete from '@mui/material/Autocomplete'
 import MenuItem from '@mui/material/MenuItem'
 import { createOrder, getLocations, getLocationTypes } from '@/app/actions/orders'
 import type { NewOrder } from '@/types/orders'
+import { CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
 
 const defaultState: NewOrder = {
   name: '',
@@ -76,8 +77,9 @@ export default function OrderForm() {
 
   useEffect(() => {
     const total = (form.totalStill ?? 0) + (form.totalSpark ?? 0)
-    setForm((prev) => ({ ...prev, price: total > 0 ? total * 1.5 : null }))
-  }, [form.totalStill, form.totalSpark])
+    const pricePerCan = CUSTOMER_PRICING[form.name ?? ''] ?? DEFAULT_PRICE_PER_CAN
+    setForm((prev) => ({ ...prev, price: total > 0 ? total * pricePerCan : null }))
+  }, [form.totalStill, form.totalSpark, form.name])
 
   function handleSwitch(field: keyof NewOrder) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
