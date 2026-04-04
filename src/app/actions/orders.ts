@@ -3,6 +3,7 @@
 import { appendOrder, getLocationsFromSheet } from '@/lib/google/sheets'
 import type { NewOrder } from '@/types/orders'
 import { decrementInventory } from '@/app/actions/inventory'
+import { createTrelloCard } from '@/lib/trello'
 
 export async function getLocations() {
   const locations = await getLocationsFromSheet()
@@ -20,7 +21,13 @@ export async function getLocationTypes() {
   return types.map((name) => ({ name }))
 }
 
-export async function createOrder(order: NewOrder, stillInventoryId?: number, sparkInventoryId?: number) {
+export async function createOrder(
+  order: NewOrder,
+  stillInventoryId?: number,
+  sparkInventoryId?: number,
+  fillDate?: string | null,
+) {
   await appendOrder(order)
   await decrementInventory(order, stillInventoryId, sparkInventoryId)
+  await createTrelloCard(order, fillDate)
 }

@@ -156,10 +156,12 @@ export default function OrderForm() {
     startTransition(async () => {
       try {
         const wasNewBusiness = form.isNewBusiness
+        const fillDate = inventory.find((i) => i.id === selectedInventoryId)?.fillDate
         await createOrder(
           form,
           selectedInventoryId || undefined,
           selectedSparkInventoryId || undefined,
+          fillDate,
         )
         setSuccess(true)
         setForm(defaultState)
