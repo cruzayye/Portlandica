@@ -270,7 +270,7 @@ export async function appendOrder(order: NewOrder) {
     )
   }
 
-  promises.push(createTrelloCard(order))
+  // promises.push(createTrelloCard(order))
 
   if (order.isDonation && (order.price === 0 || order.price === null)) {
     promises.push(appendDonation(sheets, order, order_date))

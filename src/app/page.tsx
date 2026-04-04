@@ -14,13 +14,13 @@ export default function Home() {
     <Box component="main" sx={{ minHeight: '100vh' }}>
       <Box sx={{ borderBottom: 1, borderColor: 'divider', position: 'sticky', top: 0, bgcolor: 'background.paper', zIndex: 1 }}>
         <Tabs value={tab} onChange={(_, val) => setTab(val)} variant="fullWidth">
-          {/* <Tab label="Order Form" /> */}
-          {/* <Tab label="Inventory" /> */}
+          { <Tab label="Order Form" /> }
+          { <Tab label="Inventory" /> }
         </Tabs>
       </Box>
       <Box sx={{ p: { xs: 2, sm: 4 }, display: 'flex', justifyContent: 'center' }}>
         {tab === 0 && <OrderForm />}
-        {/* {tab === 1 && <Box sx={{ width: '100%', maxWidth: 560 }}><Inventory /></Box>} */}
+        {tab === 1 && <Box sx={{ width: '100%', maxWidth: 560 }}><Inventory /></Box>}
       </Box>
     </Box>
   )

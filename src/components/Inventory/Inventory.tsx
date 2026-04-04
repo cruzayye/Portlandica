@@ -58,9 +58,12 @@ const Inventory = () => {
               <Typography variant="body1">{`${item.name} - ${item.isStill ? 'Still' : 'Spark'}`}</Typography>
               {item.isCustom && (
                 <Typography variant="caption" color="text.secondary">
-                  Custom
+                  Custom | 
                 </Typography>
               )}
+              <Typography variant="caption" color="text.secondary" fontWeight="bold">
+                {` ${item.fillDate}`}
+              </Typography>
             </Box>
             <Box display="flex" gap={2} alignItems="center">
               <Typography variant="body2" color="text.secondary">

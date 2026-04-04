@@ -18,7 +18,9 @@ import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
 import MenuItem from '@mui/material/MenuItem'
 import { createOrder, getLocations, getLocationTypes } from '@/app/actions/orders'
-import type { NewOrder } from '@/types/orders'
+import { getInventory } from '@/app/actions/inventory'
+import type { NewOrder, Inventory } from '@/types/orders'
+import { CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
 
 const defaultState: NewOrder = {
   name: '',
@@ -53,8 +55,13 @@ export default function OrderForm() {
   type Location = { name: string; address: string; businessType: string }
   const [locations, setLocations] = useState<Location[]>([])
   const [locationTypes, setLocationTypes] = useState<string[]>([])
+  const [inventory, setInventory] = useState<Inventory[]>([])
+  const [selectedInventoryId, setSelectedInventoryId] = useState<number | ''>('')
+  const [selectedSparkInventoryId, setSelectedSparkInventoryId] = useState<number | ''>('')
   const [isPending, startTransition] = useTransition()
   const customBusinessTypeRef = useRef<HTMLInputElement>(null)
+  const [showCustomPricingDialog, setShowCustomPricingDialog] = useState(false)
+  const [isCustomPricing, setIsCustomPricing] = useState(false)
 
   const isCustomBusinessType =
     !locationTypes.includes(form.businessType ?? '') && form.businessType !== null
@@ -72,12 +79,46 @@ export default function OrderForm() {
     getLocationTypes().then((data) => {
       if (data) setLocationTypes(data.map((d) => d.name))
     })
+    getInventory().then((data) => setInventory(data))
   }, [])
 
   useEffect(() => {
+    if (CUSTOMER_PRICING[form.name ?? '']) {
+      setShowCustomPricingDialog(true)
+    } else {
+      setIsCustomPricing(false)
+    }
+
+    const stillMatch =
+      inventory.find((item) => item.isStill && item.isCustom && item.name === form.name) ??
+      inventory.find((item) => item.isStill && !item.isCustom)
+    setSelectedInventoryId(stillMatch?.id ?? '')
+
+    const sparkMatch =
+      inventory.find((item) => !item.isStill && item.isCustom && item.name === form.name) ??
+      inventory.find((item) => !item.isStill && !item.isCustom)
+    setSelectedSparkInventoryId(sparkMatch?.id ?? '')
+  }, [form.name, inventory])
+
+  useEffect(() => {
     const total = (form.totalStill ?? 0) + (form.totalSpark ?? 0)
-    setForm((prev) => ({ ...prev, price: total > 0 ? total * 1.5 : null }))
-  }, [form.totalStill, form.totalSpark])
+    const pricePerCan = isCustomPricing
+      ? (CUSTOMER_PRICING[form.name ?? ''] ?? DEFAULT_PRICE_PER_CAN)
+      : DEFAULT_PRICE_PER_CAN
+    setForm((prev) => ({ ...prev, price: total > 0 ? total * pricePerCan : null }))
+  }, [form.totalStill, form.totalSpark, form.name, isCustomPricing])
+
+  const handleCustomPricingYes = () => {
+    setIsCustomPricing(true)
+
+    setForm((prev) => ({ ...prev, IsCustomStill: true, isCustomSpark: true }))
+    setShowCustomPricingDialog(false)
+  }
+
+  const handleCustomPricingNo = () => {
+    setIsCustomPricing(false)
+    setShowCustomPricingDialog(false)
+  }
 
   function handleSwitch(field: keyof NewOrder) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -115,7 +156,13 @@ export default function OrderForm() {
     startTransition(async () => {
       try {
         const wasNewBusiness = form.isNewBusiness
-        await createOrder(form)
+        const fillDate = inventory.find((i) => i.id === selectedInventoryId)?.fillDate
+        await createOrder(
+          form,
+          selectedInventoryId || undefined,
+          selectedSparkInventoryId || undefined,
+          fillDate,
+        )
         setSuccess(true)
         setForm(defaultState)
         if (wasNewBusiness) setShowAppScriptDialog(true)
@@ -299,6 +346,7 @@ export default function OrderForm() {
                 onChange={handleNumber('totalStill')}
                 onBlur={handleCasesBlur('totalStill')}
                 inputProps={{ min: 0 }}
+                sx={{ '& .MuiInputBase-root': { backgroundColor: '#e3f2fd' } }}
               />
               <FormControlLabel
                 control={
@@ -309,6 +357,23 @@ export default function OrderForm() {
                 }
                 label="Custom Still"
               />
+              <TextField
+                select
+                label="Batch number"
+                value={selectedInventoryId}
+                onChange={(e) => setSelectedInventoryId(Number(e.target.value))}
+                fullWidth
+                sx={{ '& .MuiInputBase-root': { backgroundColor: '#fffde7' } }}
+              >
+                {inventory
+                  .filter((item) => item.isStill && (!item.isCustom || item.name === form.name))
+                  .map((item) => (
+                    <MenuItem key={item.id} value={item.id}>
+                      {item.name} {item.isStill ? 'Still' : 'Spark'} —{' '}
+                      {item.fillDate}
+                    </MenuItem>
+                  ))}
+              </TextField>
             </Box>
           )}
 
@@ -321,6 +386,7 @@ export default function OrderForm() {
                 onChange={handleNumber('totalSpark')}
                 onBlur={handleCasesBlur('totalSpark')}
                 inputProps={{ min: 0 }}
+                sx={{ '& .MuiInputBase-root': { backgroundColor: '#e3f2fd' } }}
               />
               <FormControlLabel
                 control={
@@ -331,6 +397,23 @@ export default function OrderForm() {
                 }
                 label="Custom Sparkling"
               />
+              <TextField
+                select
+                label="Batch number"
+                value={selectedSparkInventoryId}
+                onChange={(e) => setSelectedSparkInventoryId(Number(e.target.value))}
+                fullWidth
+                sx={{ '& .MuiInputBase-root': { backgroundColor: '#fffde7' } }}
+              >
+                {inventory
+                  .filter((item) => !item.isStill && (!item.isCustom || item.name === form.name))
+                  .map((item) => (
+                    <MenuItem key={item.id} value={item.id}>
+                      {item.name} {item.isStill ? 'Still' : 'Spark'} —{' '}
+                      {item.fillDate}
+                    </MenuItem>
+                  ))}
+              </TextField>
             </Box>
           )}
 
@@ -345,6 +428,7 @@ export default function OrderForm() {
             fullWidth
             inputProps={{ min: 0, step: 0.01 }}
             slotProps={{ input: { startAdornment: <Typography mr={0.5}>$</Typography> } }}
+            sx={{ '& .MuiInputBase-root': { backgroundColor: '#e3f2fd' } }}
           />
 
           <Box display="flex" gap={2} flexWrap="wrap">
@@ -409,6 +493,8 @@ export default function OrderForm() {
 
           <Divider />
 
+          <Divider />
+
           {/* Notes */}
           <TextField
             label="Notes"
@@ -434,6 +520,22 @@ export default function OrderForm() {
           </Button>
         </Box>
       </Paper>
+
+      <Dialog open={showCustomPricingDialog} onClose={handleCustomPricingNo}>
+        <DialogTitle>Custom Order?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            {form.name} has custom pricing (${CUSTOMER_PRICING[form.name ?? '']} / can). Is this a
+            custom order?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCustomPricingNo}>No</Button>
+          <Button onClick={handleCustomPricingYes} variant="contained">
+            Yes
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={showAppScriptDialog} onClose={() => setShowAppScriptDialog(false)}>
         <DialogTitle>New Business Added</DialogTitle>
