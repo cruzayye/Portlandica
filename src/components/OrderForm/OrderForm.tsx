@@ -156,7 +156,11 @@ export default function OrderForm() {
     startTransition(async () => {
       try {
         const wasNewBusiness = form.isNewBusiness
-        await createOrder(form)
+        await createOrder(
+          form,
+          selectedInventoryId || undefined,
+          selectedSparkInventoryId || undefined,
+        )
         setSuccess(true)
         setForm(defaultState)
         if (wasNewBusiness) setShowAppScriptDialog(true)
@@ -340,6 +344,7 @@ export default function OrderForm() {
                 onChange={handleNumber('totalStill')}
                 onBlur={handleCasesBlur('totalStill')}
                 inputProps={{ min: 0 }}
+                sx={{ '& .MuiInputBase-root': { backgroundColor: '#e3f2fd' } }}
               />
               <FormControlLabel
                 control={
@@ -362,7 +367,7 @@ export default function OrderForm() {
                   .filter((item) => item.isStill && (!item.isCustom || item.name === form.name))
                   .map((item) => (
                     <MenuItem key={item.id} value={item.id}>
-                      {item.isCustom ? item.name : 'Original'} {item.isStill ? 'Still' : 'Spark'} —{' '}
+                      {item.name} {item.isStill ? 'Still' : 'Spark'} —{' '}
                       {item.fillDate}
                     </MenuItem>
                   ))}
@@ -379,6 +384,7 @@ export default function OrderForm() {
                 onChange={handleNumber('totalSpark')}
                 onBlur={handleCasesBlur('totalSpark')}
                 inputProps={{ min: 0 }}
+                sx={{ '& .MuiInputBase-root': { backgroundColor: '#e3f2fd' } }}
               />
               <FormControlLabel
                 control={
@@ -401,7 +407,7 @@ export default function OrderForm() {
                   .filter((item) => !item.isStill && (!item.isCustom || item.name === form.name))
                   .map((item) => (
                     <MenuItem key={item.id} value={item.id}>
-                      {item.isCustom ? item.name : 'Original'} {item.isStill ? 'Still' : 'Spark'} —{' '}
+                      {item.name} {item.isStill ? 'Still' : 'Spark'} —{' '}
                       {item.fillDate}
                     </MenuItem>
                   ))}
@@ -420,6 +426,7 @@ export default function OrderForm() {
             fullWidth
             inputProps={{ min: 0, step: 0.01 }}
             slotProps={{ input: { startAdornment: <Typography mr={0.5}>$</Typography> } }}
+            sx={{ '& .MuiInputBase-root': { backgroundColor: '#e3f2fd' } }}
           />
 
           <Box display="flex" gap={2} flexWrap="wrap">

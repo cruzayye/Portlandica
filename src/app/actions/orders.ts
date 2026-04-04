@@ -20,7 +20,7 @@ export async function getLocationTypes() {
   return types.map((name) => ({ name }))
 }
 
-export async function createOrder(order: NewOrder) {
+export async function createOrder(order: NewOrder, stillInventoryId?: number, sparkInventoryId?: number) {
   await appendOrder(order)
-  await decrementInventory(order)
+  await decrementInventory(order, stillInventoryId, sparkInventoryId)
 }

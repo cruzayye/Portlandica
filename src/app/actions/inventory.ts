@@ -15,33 +15,45 @@ export const getInventory = async (): Promise<Inventory[]> => {
   return data ?? []
 }
 
-export const decrementInventory = async (order: NewOrder): Promise<void> => {
+export const decrementInventory = async (order: NewOrder, stillInventoryId?: number, sparkInventoryId?: number): Promise<void> => {
   const supabase = await createClient()
 
   const decrements = [
     ...(order.totalStill ?? 0) > 0
-      ? [{ isStill: true, isCustom: order.IsCustomStill ?? false, name: order.IsCustomStill ? (order.name ?? '') : 'Original', amount: order.totalStill! }]
+      ? [{ id: stillInventoryId, isStill: true, isCustom: order.IsCustomStill ?? false, name: order.IsCustomStill ? (order.name ?? '') : 'Original', amount: order.totalStill! }]
       : [],
     ...(order.totalSpark ?? 0) > 0
-      ? [{ isStill: false, isCustom: order.isCustomSpark ?? false, name: order.isCustomSpark ? (order.name ?? '') : 'Original', amount: order.totalSpark! }]
+      ? [{ id: sparkInventoryId, isStill: false, isCustom: order.isCustomSpark ?? false, name: order.isCustomSpark ? (order.name ?? '') : 'Original', amount: order.totalSpark! }]
       : [],
   ]
 
-  for (const { isStill, isCustom, name, amount } of decrements) {
-    const { data, error } = await supabase
+  for (const { id, isStill, isCustom, name, amount } of decrements) {
+    let inventoryId = id
+    if (!inventoryId) {
+      const { data, error } = await supabase
+        .from('inventory')
+        .select('id, count')
+        .eq('isStill', isStill)
+        .eq('isCustom', isCustom)
+        .eq('name', name)
+        .single()
+
+      if (error || !data) throw new Error(`Inventory item not found: ${name} (${isStill ? 'Still' : 'Spark'})`)
+      inventoryId = data.id
+    }
+
+    const { data: item, error: fetchError } = await supabase
       .from('inventory')
-      .select('id, count')
-      .eq('isStill', isStill)
-      .eq('isCustom', isCustom)
-      .eq('name', name)
+      .select('count')
+      .eq('id', inventoryId)
       .single()
 
-    if (error || !data) throw new Error(`Inventory item not found: ${name} (${isStill ? 'Still' : 'Spark'})`)
+    if (fetchError || !item) throw new Error(`Inventory item not found: id ${inventoryId}`)
 
     const { error: updateError } = await supabase
       .from('inventory')
-      .update({ count: data.count - amount })
-      .eq('id', data.id)
+      .update({ count: item.count - amount })
+      .eq('id', inventoryId)
 
     if (updateError) throw new Error(updateError.message)
   }
