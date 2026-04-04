@@ -17,7 +17,8 @@ function calculateNextDeliveryDate(): Date {
   deliveryDate.setHours(9, 0, 0, 0)
   return deliveryDate
 }
-
+// right now we only can create one label per fill date, but if we wanted to get fancy we could encode the fill date in the label name and then parse it out here to assign multiple labels for different fill dates
+// or we could send this data to our google sales sheet
 const getOrCreateLabel = async (boardId: string, name: string, apiKey: string, token: string): Promise<string> => {
   const res = await fetch(`https://api.trello.com/1/boards/${boardId}/labels?key=${apiKey}&token=${token}`)
   if (!res.ok) throw new Error(`Trello API error fetching labels: ${res.status}`)
