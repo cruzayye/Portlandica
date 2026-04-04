@@ -56,6 +56,8 @@ export default function OrderForm() {
   const [locationTypes, setLocationTypes] = useState<string[]>([])
   const [isPending, startTransition] = useTransition()
   const customBusinessTypeRef = useRef<HTMLInputElement>(null)
+  const [showCustomPricingDialog, setShowCustomPricingDialog] = useState(false)
+  const [isCustomPricing, setIsCustomPricing] = useState(false)
 
   const isCustomBusinessType =
     !locationTypes.includes(form.businessType ?? '') && form.businessType !== null
@@ -76,10 +78,33 @@ export default function OrderForm() {
   }, [])
 
   useEffect(() => {
+    if (CUSTOMER_PRICING[form.name ?? '']) {
+      setShowCustomPricingDialog(true)
+    } else {
+      setIsCustomPricing(false)
+    }
+  }, [form.name])
+
+  useEffect(() => {
     const total = (form.totalStill ?? 0) + (form.totalSpark ?? 0)
-    const pricePerCan = CUSTOMER_PRICING[form.name ?? ''] ?? DEFAULT_PRICE_PER_CAN
+    const pricePerCan = isCustomPricing
+      ? (CUSTOMER_PRICING[form.name ?? ''] ?? DEFAULT_PRICE_PER_CAN)
+      : DEFAULT_PRICE_PER_CAN
     setForm((prev) => ({ ...prev, price: total > 0 ? total * pricePerCan : null }))
-  }, [form.totalStill, form.totalSpark, form.name])
+  }, [form.totalStill, form.totalSpark, form.name, isCustomPricing])
+
+  const handleCustomPricingYes = () => {
+    
+    setIsCustomPricing(true)
+    
+    setForm((prev) => ({ ...prev, IsCustomStill: true, isCustomSpark: true }))
+    setShowCustomPricingDialog(false)
+  }
+
+  const handleCustomPricingNo = () => {
+    setIsCustomPricing(false)
+    setShowCustomPricingDialog(false)
+  }
 
   function handleSwitch(field: keyof NewOrder) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -436,6 +461,22 @@ export default function OrderForm() {
           </Button>
         </Box>
       </Paper>
+
+      <Dialog open={showCustomPricingDialog} onClose={handleCustomPricingNo}>
+        <DialogTitle>Custom Order?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            {form.name} has custom pricing (${CUSTOMER_PRICING[form.name ?? '']} / can). Is this a
+            custom order?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCustomPricingNo}>No</Button>
+          <Button onClick={handleCustomPricingYes} variant="contained">
+            Yes
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={showAppScriptDialog} onClose={() => setShowAppScriptDialog(false)}>
         <DialogTitle>New Business Added</DialogTitle>
