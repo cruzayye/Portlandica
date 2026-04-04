@@ -5,4 +5,6 @@ export const CUSTOMER_PRICING: Record<string, number> = {
   'The Clyde Hotel Portland by Kasa': 1.75,
   'Tacos Fita': 1.75,
   'Que Dice': 1.75,
+  'Hotel Vintage': 2.00,
+  'Woodlark Hotel Portland': 2.00,
 }
