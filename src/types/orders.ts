@@ -33,4 +33,5 @@ export type Inventory = {
   count: number 
   isCustom: boolean
   isStill: boolean
+  fillDate: string | null
 }
