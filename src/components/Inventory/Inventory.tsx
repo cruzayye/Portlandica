@@ -55,7 +55,8 @@ const Inventory = () => {
             sx={{ py: 1, borderBottom: '1px solid', borderColor: 'divider' }}
           >
             <Box>
-              <Typography variant="body1">{`${item.name} - ${item.isStill ? 'Still' : 'Spark'}`}</Typography>
+              <Typography variant="body1">{item.name}</Typography>
+              <Typography variant="body2" color="text.secondary">{item.isStill ? 'Still' : 'Spark'}</Typography>
               {item.isCustom && (
                 <Typography variant="caption" color="text.secondary">
                   Custom | 
