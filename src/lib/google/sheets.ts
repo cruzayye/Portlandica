@@ -166,10 +166,15 @@ async function insertBeforeTotals(
 
 export async function appendOrder(order: NewOrder) {
   const sheets = getSheetsClient()
-  const now = new Date()
-  const mm = String(now.getMonth() + 1).padStart(2, '0')
-  const dd = String(now.getDate()).padStart(2, '0')
-  const yyyy = now.getFullYear()
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
+  }).formatToParts(new Date())
+  const mm = parts.find((p) => p.type === 'month')!.value
+  const dd = parts.find((p) => p.type === 'day')!.value
+  const yyyy = parts.find((p) => p.type === 'year')!.value
   const order_date = `${mm}/${dd}/${yyyy}`
 
   const type = order.isBusiness ? 'Business' : 'Individual'
