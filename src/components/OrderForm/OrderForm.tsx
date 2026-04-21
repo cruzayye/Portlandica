@@ -22,6 +22,11 @@ import { getInventory } from '@/app/actions/inventory'
 import type { NewOrder, Inventory } from '@/types/orders'
 import { CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
 
+const formatDate = (date: string) => {
+  const [year, month, day] = date.split('-')
+  return `${month}-${day}-${year}`
+}
+
 const defaultState: NewOrder = {
   name: '',
   isBusiness: true,
@@ -370,7 +375,7 @@ export default function OrderForm() {
                   .map((item) => (
                     <MenuItem key={item.id} value={item.id}>
                       {item.name} {item.isStill ? 'Still' : 'Spark'} —{' '}
-                      {item.fillDate}
+                      {item.fillDate ? formatDate(item.fillDate) : ''}
                     </MenuItem>
                   ))}
               </TextField>
@@ -410,7 +415,7 @@ export default function OrderForm() {
                   .map((item) => (
                     <MenuItem key={item.id} value={item.id}>
                       {item.name} {item.isStill ? 'Still' : 'Spark'} —{' '}
-                      {item.fillDate}
+                      {item.fillDate ? formatDate(item.fillDate) : ''}
                     </MenuItem>
                   ))}
               </TextField>
