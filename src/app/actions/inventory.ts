@@ -10,6 +10,7 @@ export const getInventory = async (): Promise<Inventory[]> => {
     .from('inventory')
     .select('*')
     .order('name')
+    .order('fillDate', { ascending: true })
 
   if (error) throw new Error(error.message)
   return data ?? []
