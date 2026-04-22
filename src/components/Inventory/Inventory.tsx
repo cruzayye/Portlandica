@@ -9,7 +9,13 @@ import Alert from '@mui/material/Alert'
 import { getInventory } from '@/app/actions/inventory'
 import type { Inventory as InventoryType } from '@/types/orders'
 
+const CANS_PER_CASE = 24
 const CANS_PER_PALLET = 1440
+
+const toCases = (count: number) => {
+  const cases = count / CANS_PER_CASE
+  return `${+cases.toFixed(2)} case${cases === 1 ? '' : 's'}`
+}
 
 const toPallets = (count: number) => {
   const pallets = count / CANS_PER_PALLET
@@ -56,21 +62,26 @@ const Inventory = () => {
           >
             <Box>
               <Typography variant="body1">{item.name}</Typography>
-              <Typography variant="body2" color="text.secondary">{item.isStill ? 'Still' : 'Spark'}</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {item.isStill ? 'Still' : 'Spark'}
+              </Typography>
               {item.isCustom && (
                 <Typography variant="caption" color="text.secondary">
-                  Custom | 
+                  Custom |
                 </Typography>
               )}
               <Typography variant="caption" color="text.secondary" fontWeight="bold">
                 {` ${item.fillDate}`}
               </Typography>
             </Box>
-            <Box display="flex" gap={2} alignItems="center">
-              <Typography variant="body2" color="text.secondary">
+            <Box display="flex" flexDirection="column" alignItems="flex-end">
+              <Typography variant="body1" fontWeight={500}>
                 {toPallets(item.count)}
               </Typography>
-              <Typography variant="body1" fontWeight={500}>
+              <Typography variant="body2" color="text.secondary">
+                {toCases(item.count)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
                 {item.count}
               </Typography>
             </Box>
