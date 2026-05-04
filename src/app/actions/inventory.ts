@@ -16,6 +16,16 @@ export const getInventory = async (): Promise<Inventory[]> => {
   return data ?? []
 }
 
+export const updateInventoryCount = async (id: number, count: number): Promise<void> => {
+  const supabase = await createClient()
+  const { error } = await supabase
+    .from('inventory')
+    .update({ count })
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
 export const decrementInventory = async (order: NewOrder, stillInventoryId?: number, sparkInventoryId?: number): Promise<void> => {
   const supabase = await createClient()
 
