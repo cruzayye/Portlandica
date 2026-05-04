@@ -164,6 +164,32 @@ async function insertBeforeTotals(
   })
 }
 
+async function checkDuplicateOrder(
+  sheets: ReturnType<typeof getSheetsClient>,
+  spreadsheetId: string,
+  orderDate: string,
+  customer: string,
+  products: string[]
+) {
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'Sales!A:D',
+  })
+  const rows = res.data.values ?? []
+  for (const row of rows.slice(1)) {
+    const rowDate = row[0] ?? ''
+    const rowCustomer = row[3] ?? ''
+    const rowProduct = row[2] ?? ''
+    if (
+      rowDate === orderDate &&
+      rowCustomer.toLowerCase() === customer.toLowerCase() &&
+      products.includes(rowProduct)
+    ) {
+      throw new Error(`Duplicate order: ${customer} already has a ${rowProduct} order on ${orderDate}`)
+    }
+  }
+}
+
 export async function appendOrder(order: NewOrder) {
   const sheets = getSheetsClient()
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -179,6 +205,14 @@ export async function appendOrder(order: NewOrder) {
 
   const type = order.isBusiness ? 'Business' : 'Individual'
   const customer = order.name ?? ''
+
+  const products = [
+    ...(order.isStill ? ['Still Cans'] : []),
+    ...(order.isSpark ? ['Sparkling Cans'] : []),
+  ]
+  if (products.length > 0) {
+    await checkDuplicateOrder(sheets, process.env.GOOGLE_SHEET_ID!, order_date, customer, products)
+  }
 
   const notes = order.notes ?? ''
   const totalPrice = order.price ?? 0
