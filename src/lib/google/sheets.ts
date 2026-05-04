@@ -185,7 +185,7 @@ async function checkDuplicateOrder(
       rowCustomer.toLowerCase() === customer.toLowerCase() &&
       products.includes(rowProduct)
     ) {
-      throw new Error(`Woah there Andrew: this is aDuplicate order: ${customer} already has a ${rowProduct} order on ${orderDate}`)
+      throw new Error(`Woah there Andrew! this is aDuplicate order: ${customer} already has a ${rowProduct} order on ${orderDate}`)
     }
   }
 }
