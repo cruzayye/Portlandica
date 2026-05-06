@@ -21,13 +21,16 @@ export async function getLocationTypes() {
   return types.map((name) => ({ name }))
 }
 
-export async function createOrder(
+export const createOrder = async (
   order: NewOrder,
   stillInventoryId?: number,
   sparkInventoryId?: number,
   fillDate?: string | null,
-) {
-  await appendOrder(order)
+  force = false,
+): Promise<{ duplicate: true; message: string } | { duplicate: false }> => {
+  const result = await appendOrder(order, force)
+  if (result.duplicate) return result
   await decrementInventory(order, stillInventoryId, sparkInventoryId)
   await createTrelloCard(order, fillDate)
+  return { duplicate: false }
 }

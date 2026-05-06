@@ -169,28 +169,29 @@ async function checkDuplicateOrder(
   spreadsheetId: string,
   orderDate: string,
   customer: string,
-  products: string[]
-) {
+  totalUnits: number
+): Promise<string | null> {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'Sales!A:D',
+    range: 'Sales!A:E',
   })
   const rows = res.data.values ?? []
   for (const row of rows.slice(1)) {
     const rowDate = row[0] ?? ''
     const rowCustomer = row[3] ?? ''
-    const rowProduct = row[2] ?? ''
+    const rowUnits = Number(row[4] ?? 0)
     if (
       rowDate === orderDate &&
       rowCustomer.toLowerCase() === customer.toLowerCase() &&
-      products.includes(rowProduct)
+      rowUnits === totalUnits
     ) {
-      throw new Error(`Woah there Andrew! this is aDuplicate order: ${customer} already has a ${rowProduct} order on ${orderDate}`)
+      return `${customer} already has an order for ${totalUnits} units today.`
     }
   }
+  return null
 }
 
-export async function appendOrder(order: NewOrder) {
+export async function appendOrder(order: NewOrder, force = false): Promise<{ duplicate: true; message: string } | { duplicate: false }> {
   const sheets = getSheetsClient()
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/Los_Angeles',
@@ -210,15 +211,17 @@ export async function appendOrder(order: NewOrder) {
     ...(order.isStill ? ['Still Cans'] : []),
     ...(order.isSpark ? ['Sparkling Cans'] : []),
   ]
-  if (products.length > 0) {
-    await checkDuplicateOrder(sheets, process.env.GOOGLE_SHEET_ID!, order_date, customer, products)
-  }
 
   const notes = order.notes ?? ''
   const totalPrice = order.price ?? 0
   const totalStill = order.totalStill ?? 0
   const totalSpark = order.totalSpark ?? 0
   const totalUnits = totalStill + totalSpark
+
+  if (products.length > 0 && totalUnits > 0 && !force) {
+    const duplicate = await checkDuplicateOrder(sheets, process.env.GOOGLE_SHEET_ID!, order_date, customer, totalUnits)
+    if (duplicate) return { duplicate: true, message: duplicate }
+  }
 
   const stillPrice = totalUnits > 0 ? totalPrice * (totalStill / totalUnits) : 0
   const sparkPrice = totalUnits > 0 ? totalPrice * (totalSpark / totalUnits) : 0
@@ -316,6 +319,7 @@ export async function appendOrder(order: NewOrder) {
   }
 
   await Promise.all(promises)
+  return { duplicate: false }
 }
 
 const RETAIL_PRICE_PER_UNIT = 2.00
