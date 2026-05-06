@@ -62,6 +62,7 @@ export default function OrderForm() {
   const customBusinessTypeRef = useRef<HTMLInputElement>(null)
   const [showCustomPricingDialog, setShowCustomPricingDialog] = useState(false)
   const [isCustomPricing, setIsCustomPricing] = useState(false)
+  const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null)
 
   const isCustomBusinessType =
     !locationTypes.includes(form.businessType ?? '') && form.businessType !== null
@@ -148,8 +149,7 @@ export default function OrderForm() {
     }
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  const submitOrder = (force = false) => {
     setError(null)
     setSuccess(false)
 
@@ -157,12 +157,17 @@ export default function OrderForm() {
       try {
         const wasNewBusiness = form.isNewBusiness
         const fillDate = inventory.find((i) => i.id === selectedInventoryId)?.fillDate
-        await createOrder(
+        const result = await createOrder(
           form,
           selectedInventoryId || undefined,
           selectedSparkInventoryId || undefined,
           fillDate,
+          force,
         )
+        if (result.duplicate) {
+          setDuplicateMessage(result.message)
+          return
+        }
         setSuccess(true)
         setForm(defaultState)
         if (wasNewBusiness) setShowAppScriptDialog(true)
@@ -170,6 +175,11 @@ export default function OrderForm() {
         setError(err instanceof Error ? err.message : 'Something went wrong')
       }
     })
+  }
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    submitOrder()
   }
 
   return (
@@ -533,6 +543,25 @@ export default function OrderForm() {
           <Button onClick={handleCustomPricingNo}>No</Button>
           <Button onClick={handleCustomPricingYes} variant="contained">
             Yes
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={!!duplicateMessage} onClose={() => setDuplicateMessage(null)}>
+        <DialogTitle>Duplicate Order🦫 </DialogTitle>
+        <DialogContent>
+          <Typography>{duplicateMessage} Do you want to submit anyway?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDuplicateMessage(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={() => {
+              setDuplicateMessage(null)
+              submitOrder(true)
+            }}
+          >
+            Submit Anyway
           </Button>
         </DialogActions>
       </Dialog>
