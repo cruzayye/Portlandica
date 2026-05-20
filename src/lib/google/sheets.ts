@@ -168,24 +168,18 @@ async function checkDuplicateOrder(
   sheets: ReturnType<typeof getSheetsClient>,
   spreadsheetId: string,
   orderDate: string,
-  customer: string,
-  totalUnits: number
+  customer: string
 ): Promise<string | null> {
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId,
-    range: 'Sales!A:E',
+    range: 'Sales!A:D',
   })
   const rows = res.data.values ?? []
   for (const row of rows.slice(1)) {
     const rowDate = row[0] ?? ''
     const rowCustomer = row[3] ?? ''
-    const rowUnits = Number(row[4] ?? 0)
-    if (
-      rowDate === orderDate &&
-      rowCustomer.toLowerCase() === customer.toLowerCase() &&
-      rowUnits === totalUnits
-    ) {
-      return `${customer} already has an order for ${totalUnits} units today.`
+    if (rowDate === orderDate && rowCustomer.toLowerCase() === customer.toLowerCase()) {
+      return `${customer} already has an order today.`
     }
   }
   return null
@@ -219,7 +213,7 @@ export async function appendOrder(order: NewOrder, force = false): Promise<{ dup
   const totalUnits = totalStill + totalSpark
 
   if (products.length > 0 && totalUnits > 0 && !force) {
-    const duplicate = await checkDuplicateOrder(sheets, process.env.GOOGLE_SHEET_ID!, order_date, customer, totalUnits)
+    const duplicate = await checkDuplicateOrder(sheets, process.env.GOOGLE_SHEET_ID!, order_date, customer)
     if (duplicate) return { duplicate: true, message: duplicate }
   }
 
