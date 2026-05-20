@@ -12,7 +12,7 @@ import TextField from '@mui/material/TextField'
 import Typography from '@mui/material/Typography'
 import CircularProgress from '@mui/material/CircularProgress'
 import Alert from '@mui/material/Alert'
-import { getInventory, updateInventoryCount } from '@/app/actions/inventory'
+import { getInventory, updateInventoryCount, deleteInventoryItem } from '@/app/actions/inventory'
 import type { Inventory as InventoryType } from '@/types/orders'
 
 const CANS_PER_CASE = 24
@@ -54,6 +54,19 @@ const Inventory = () => {
     setSelected(null)
     setCaseCount('')
     setSaveError(null)
+  }
+
+  const handleDelete = () => {
+    if (!selected) return
+    startTransition(async () => {
+      try {
+        await deleteInventoryItem(selected.id)
+        setItems((prev) => prev.filter((i) => i.id !== selected.id))
+        handleClose()
+      } catch (err) {
+        setSaveError(err instanceof Error ? err.message : 'Failed to delete item')
+      }
+    })
   }
 
   const handleSave = () => {
@@ -163,6 +176,10 @@ const Inventory = () => {
           </Box>
         </DialogContent>
         <DialogActions>
+          <Button onClick={handleDelete} color="error" disabled={isPending}>
+            Delete
+          </Button>
+          <Box sx={{ flex: 1 }} />
           <Button onClick={handleClose} disabled={isPending}>Cancel</Button>
           <Button onClick={handleSave} variant="contained" disabled={isPending || caseCount === ''}>
             {isPending ? 'Saving...' : 'Save'}

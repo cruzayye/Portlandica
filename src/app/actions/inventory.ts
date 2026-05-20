@@ -16,6 +16,17 @@ export const getInventory = async (): Promise<Inventory[]> => {
   return data ?? []
 }
 
+export const deleteInventoryItem = async (id: number): Promise<void> => {
+  const supabase = await createClient()
+  console.log(`Deleting inventory item with ID: ${id}`)
+  const { error } = await supabase
+    .from('inventory')
+    .delete()
+    .eq('id', id)
+
+  if (error) throw new Error(error.message)
+}
+
 export const updateInventoryCount = async (id: number, count: number): Promise<void> => {
   const supabase = await createClient()
   const { error } = await supabase
