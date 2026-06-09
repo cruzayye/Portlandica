@@ -1,7 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import type { Inventory } from '@/types/orders'
+import type { Inventory, NewInventory } from '@/types/orders'
 import type { NewOrder } from '@/types/orders'
 
 export const getInventory = async (): Promise<Inventory[]> => {
@@ -14,6 +14,18 @@ export const getInventory = async (): Promise<Inventory[]> => {
 
   if (error) throw new Error(error.message)
   return data ?? []
+}
+
+export const createInventoryItem = async (item: NewInventory): Promise<Inventory> => {
+  const supabase = await createClient()
+  const { data, error } = await supabase
+    .from('inventory')
+    .insert(item)
+    .select()
+    .single()
+
+  if (error) throw new Error(error.message)
+  return data
 }
 
 export const deleteInventoryItem = async (id: number): Promise<void> => {
