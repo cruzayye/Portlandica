@@ -46,6 +46,7 @@ const Inventory = () => {
   const [caseCount, setCaseCount] = useState('')
   const [saveError, setSaveError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [showConfirmDelete, setShowConfirmDelete] = useState(false)
   const [showAddDialog, setShowAddDialog] = useState(false)
   const [newItem, setNewItem] = useState<NewInventory>(defaultNewItem)
   const [addError, setAddError] = useState<string | null>(null)
@@ -212,13 +213,36 @@ const Inventory = () => {
           </Box>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleDelete} color="error" disabled={isPending}>
+          <Button onClick={() => setShowConfirmDelete(true)} color="error" disabled={isPending}>
             Delete
           </Button>
           <Box sx={{ flex: 1 }} />
           <Button onClick={handleClose} disabled={isPending}>Cancel</Button>
           <Button onClick={handleSave} variant="contained" disabled={isPending || caseCount === ''}>
             {isPending ? 'Saving...' : 'Save'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={showConfirmDelete} onClose={() => setShowConfirmDelete(false)}>
+        <DialogTitle>Delete Item?</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete {selected?.name} {selected?.isStill ? 'Still' : 'Spark'}? This cannot be undone.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowConfirmDelete(false)} disabled={isPending}>Cancel</Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={isPending}
+            onClick={() => {
+              setShowConfirmDelete(false)
+              handleDelete()
+            }}
+          >
+            {isPending ? 'Deleting...' : 'Delete'}
           </Button>
         </DialogActions>
       </Dialog>
