@@ -8,6 +8,7 @@ import DialogActions from '@mui/material/DialogActions'
 import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControlLabel from '@mui/material/FormControlLabel'
+import InputAdornment from '@mui/material/InputAdornment'
 import Paper from '@mui/material/Paper'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
@@ -26,6 +27,8 @@ const defaultNewItem: NewInventory = {
   isCustom: false,
   isStill: true,
   fillDate: null,
+  totalCost: null,
+  invoiceNumber: null,
 }
 
 const toCases = (count: number) => {
@@ -299,6 +302,34 @@ const Inventory = () => {
               onChange={(e) => setNewItem((prev) => ({ ...prev, fillDate: e.target.value || null }))}
               fullWidth
               slotProps={{ inputLabel: { shrink: true } }}
+            />
+            <TextField
+              label="Total Cost"
+              type="number"
+              value={newItem.totalCost ?? ''}
+              onChange={(e) =>
+                setNewItem((prev) => ({
+                  ...prev,
+                  totalCost: e.target.value === '' ? null : Number(e.target.value),
+                }))
+              }
+              helperText="Cost of cans with fill"
+              fullWidth
+              slotProps={{
+                input: {
+                  inputProps: { min: 0, step: '0.01' },
+                  startAdornment: <InputAdornment position="start">$</InputAdornment>,
+                },
+              }}
+            />
+            <TextField
+              label="Invoice Number"
+              value={newItem.invoiceNumber ?? ''}
+              onChange={(e) =>
+                setNewItem((prev) => ({ ...prev, invoiceNumber: e.target.value || null }))
+              }
+              helperText="Invoice this fill is correlated with"
+              fullWidth
             />
             {addError && <Alert severity="error">{addError}</Alert>}
           </Box>
