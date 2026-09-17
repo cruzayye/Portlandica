@@ -34,6 +34,8 @@ export type Inventory = {
   isCustom: boolean
   isStill: boolean
   fillDate: string | null
+  totalCost: number | null
+  invoiceNumber: string | null
 }
 
 export type NewInventory = Omit<Inventory, 'id' | 'created_at'>
