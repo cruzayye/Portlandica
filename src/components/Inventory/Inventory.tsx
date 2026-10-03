@@ -9,6 +9,7 @@ import DialogContent from '@mui/material/DialogContent'
 import DialogTitle from '@mui/material/DialogTitle'
 import FormControlLabel from '@mui/material/FormControlLabel'
 import InputAdornment from '@mui/material/InputAdornment'
+import MenuItem from '@mui/material/MenuItem'
 import Paper from '@mui/material/Paper'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
@@ -21,6 +22,8 @@ import type { Inventory as InventoryType, NewInventory } from '@/types/orders'
 const CANS_PER_CASE = 24
 const CANS_PER_PALLET = 1440
 
+const WATER_SOURCES = ['North Powder', 'Opal Springs']
+
 const defaultNewItem: NewInventory = {
   name: '',
   count: 0,
@@ -29,12 +32,16 @@ const defaultNewItem: NewInventory = {
   fillDate: null,
   totalCost: null,
   invoiceNumber: null,
+  source: null,
 }
 
 const toCases = (count: number) => {
   const cases = count / CANS_PER_CASE
   return `${+cases.toFixed(2)} case${cases === 1 ? '' : 's'}`
 }
+
+const toCost = (cost: number | null) =>
+  cost === null ? null : `$${Number(cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 const toPallets = (count: number) => {
   const pallets = count / CANS_PER_PALLET
@@ -159,7 +166,7 @@ const Inventory = () => {
                 '&:hover': { bgcolor: 'action.hover' },
               }}
             >
-              <Box>
+              <Box sx={{ minWidth: 0, pr: 1 }}>
                 <Typography variant="body1">{item.name}</Typography>
                 <Typography variant="body2" color="text.secondary">
                   {item.isStill ? 'Still' : 'Spark'}
@@ -172,6 +179,18 @@ const Inventory = () => {
                 <Typography variant="caption" color="text.secondary" fontWeight="bold">
                   {` ${item.fillDate}`}
                 </Typography>
+                {item.source && (
+                  <Typography variant="caption" color="text.secondary">
+                    {` | ${item.source}`}
+                  </Typography>
+                )}
+                {(item.invoiceNumber || item.totalCost !== null) && (
+                  <Typography variant="caption" color="text.secondary" display="block">
+                    {[item.invoiceNumber && `Inv ${item.invoiceNumber}`, toCost(item.totalCost)]
+                      .filter(Boolean)
+                      .join(' · ')}
+                  </Typography>
+                )}
               </Box>
               <Box display="flex" flexDirection="column" alignItems="flex-end">
                 <Typography variant="body1" fontWeight={500}>
@@ -283,6 +302,22 @@ const Inventory = () => {
               />
             </Box>
             <TextField
+              label="Water Source"
+              select
+              value={newItem.source ?? ''}
+              onChange={(e) =>
+                setNewItem((prev) => ({ ...prev, source: e.target.value || null }))
+              }
+              fullWidth
+              required
+            >
+              {WATER_SOURCES.map((source) => (
+                <MenuItem key={source} value={source}>
+                  {source}
+                </MenuItem>
+              ))}
+            </TextField>
+            <TextField
               label="Cases"
               type="number"
               value={newItem.count || ''}
@@ -338,7 +373,7 @@ const Inventory = () => {
           <Button onClick={() => { setShowAddDialog(false); setNewItem(defaultNewItem); setAddError(null) }} disabled={isPending}>
             Cancel
           </Button>
-          <Button onClick={handleAdd} variant="contained" disabled={isPending || !newItem.name}>
+          <Button onClick={handleAdd} variant="contained" disabled={isPending || !newItem.name || !newItem.source}>
             {isPending ? 'Saving...' : 'Add'}
           </Button>
         </DialogActions>
