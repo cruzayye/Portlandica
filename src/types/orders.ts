@@ -36,6 +36,7 @@ export type Inventory = {
   fillDate: string | null
   totalCost: number | null
   invoiceNumber: string | null
+  source: string | null
 }
 
 export type NewInventory = Omit<Inventory, 'id' | 'created_at'>
