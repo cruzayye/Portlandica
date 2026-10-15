@@ -10,8 +10,11 @@
 --
 -- What it adds:
 --   private.partner_emails          one row per partner (the allowlist)
---   private.is_partner()            true when the signed-in user's email is on it
+--   public.is_partner()             true when the signed-in user's email is on it
 --   "Partners can manage inventory" one FOR ALL policy for signed-in partners
+--
+-- Later migrations call public.is_partner() in their own policies and
+-- functions, so keep that name and signature.
 --
 -- Why an allowlist table instead of writing the emails into the policy with
 -- auth.jwt() ->> 'email':
@@ -19,8 +22,11 @@
 --     with it; the table's rows are added in the SQL editor instead
 --   - adding or removing a partner is one INSERT or DELETE, not a new migration
 -- The table lives in the `private` schema, which the Data API does not expose,
--- so the publishable key can't read it. is_partner() is SECURITY DEFINER so
--- the policy can check the table without giving `authenticated` access to it.
+-- and only its owner can read it. is_partner() is SECURITY DEFINER so it can
+-- check the table on the caller's behalf. Signed-in users can also call it as
+-- /rest/v1/rpc/is_partner, which only tells them whether their own email is
+-- on the list. Supabase's Security Advisor shows that as warning 0029 ("callable
+-- by signed-in users"); that is intended. Signed-out callers (anon) can't run it.
 --
 -- Right after applying, add the partners (lower case, the same list as the
 -- ALLOWED_EMAILS env var in Vercel):
@@ -40,7 +46,7 @@ create table if not exists private.partner_emails (
 
 revoke all on table private.partner_emails from anon, authenticated;
 
-create or replace function private.is_partner()
+create or replace function public.is_partner()
 returns boolean
 language sql
 stable
@@ -54,9 +60,8 @@ as $$
   );
 $$;
 
-revoke all on function private.is_partner() from public;
-grant usage on schema private to authenticated;
-grant execute on function private.is_partner() to authenticated;
+revoke all on function public.is_partner() from public, anon;
+grant execute on function public.is_partner() to authenticated, service_role;
 
 -- The app needs these as `authenticated`; RLS limits them to partners.
 grant select, insert, update, delete on table public.inventory to authenticated;
@@ -67,5 +72,5 @@ create policy "Partners can manage inventory"
   on public.inventory
   for all
   to authenticated
-  using ((select private.is_partner()))
-  with check ((select private.is_partner()));
+  using ((select public.is_partner()))
+  with check ((select public.is_partner()));

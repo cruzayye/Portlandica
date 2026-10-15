@@ -111,6 +111,12 @@ insert into private.partner_emails (email) values
 The live site keeps working exactly as before. The emails go in this table
 rather than in a migration so they stay out of this public repository.
 
+This step also creates `public.is_partner()`, which this policy and later
+migrations use. Supabase's Security Advisor will list it under warning 0029
+("SECURITY DEFINER function callable by signed-in users"). That is expected:
+it only tells a signed-in user whether their own email is on the list.
+Signed-out callers can't run it.
+
 (The repo has no `supabase/config.toml`, so the SQL Editor is the simplest way
 to run it. Both migration files are safe to run twice if they ever go through
 `supabase db push` later. If you set up the Supabase CLI and run
