@@ -815,3 +815,18 @@ describe('order flow additions', () => {
     await before.close()
   }, 60_000)
 })
+
+describe('API role privileges', () => {
+  it('leaves anon and authenticated no TRUNCATE on any public table', async () => {
+    // TRUNCATE ignores row level security, so neither API role may hold it.
+    const { rows } = await pg.query<{ table: string; role: string }>(`
+      select c.relname as table, r.rolname as role
+      from pg_class c
+      cross join (values ('anon'), ('authenticated')) as r (rolname)
+      where c.relnamespace = 'public'::regnamespace
+        and c.relkind in ('r', 'p')
+        and has_table_privilege(r.rolname, c.oid, 'TRUNCATE')
+    `)
+    expect(rows).toEqual([])
+  })
+})

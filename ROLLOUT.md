@@ -7,8 +7,9 @@ What gets deployed:
 
 - **Step 2** deploys `integration/combined`: partner sign-in, the order-form fixes, and
   the data-foundation and integration code, which nothing calls yet.
-- **Step 7** deploys `feat/order-flow` (this branch), which wires them into the order
-  form and adds the Order History tab.
+- **Step 7** deploys `integration/final` (this branch): the order flow wired into the
+  order form, the Order History tab, and the Inventory tab rebuilt on the inventory
+  ledger.
 
 Database changes run in the Supabase SQL Editor (sign-in) or with the Supabase CLI
 (everything after). Vercel deploys whatever lands on `main`, so a branch that needs new
@@ -82,7 +83,7 @@ two sign-in migrations as applied. Commit the baseline on this branch. Don't mer
 anything into `main` yet.
 
 **Check:** `npx supabase migration list` shows Local and Remote matching for
-`20261015000000`, `20261015120000` and `20261015120100`, and seven local-only
+`20261015000000`, `20261015120000` and `20261015120100`, and eight local-only
 `20261017…` migrations.
 
 **Undo:** nothing in the database changed except the CLI's migration history. Run
@@ -100,10 +101,12 @@ npx supabase db push --dry-run
 npx supabase db push
 ```
 
-The dry run must list exactly the seven files `20261017000100_customers.sql` to
-`20261017000700_order_flow.sql`: data-foundation's six plus this branch's, which only adds
-four columns to `sales_orders` and new versions of two functions nothing calls yet. If it
-lists anything else, stop.
+The dry run must list exactly the eight files `20261017000100_customers.sql` to
+`20261017000800_revoke_truncate.sql`: data-foundation's six; the order flow's
+`20261017000700_order_flow.sql`, which only adds four columns to `sales_orders` and new
+versions of two functions nothing calls yet; and `20261017000800_revoke_truncate.sql`,
+which takes TRUNCATE away from the `anon` and `authenticated` roles. If it lists anything
+else, stop.
 
 **Check** (SQL Editor):
 
@@ -121,7 +124,8 @@ retire one with `select public.archive_batch(<id>, 'why');` instead. Orders keep
 **Undo** (only before real orders go into the new tables; it deletes them): in the SQL
 Editor run `supabase/rollback/20261017000700_order_flow.sql`, then
 `supabase/rollback/20261017_data_foundation.sql`, then
-`npx supabase migration repair --status reverted 20261017000100 20261017000200 20261017000300 20261017000400 20261017000500 20261017000600 20261017000700`.
+`npx supabase migration repair --status reverted 20261017000100 20261017000200 20261017000300 20261017000400 20261017000500 20261017000600 20261017000700 20261017000800`.
+The TRUNCATE revoke can stay; nothing needs it back.
 
 ## 6. Seed customers
 
@@ -151,7 +155,7 @@ the seed trimmed stay trimmed.
 In Vercel (Production, Preview, Development), check `TRELLO_API_KEY`, `TRELLO_TOKEN`,
 `TRELLO_LIST_ID` and `TRELLO_BOARD_ID` are set. Leave `SQUARE_ACCESS_TOKEN` unset for now;
 orders with Create Invoice on then say no draft was made. `.env.local.example` lists every
-variable. Then merge `feat/order-flow` into `main` and let Vercel deploy it.
+variable. Then merge `integration/final` into `main` and let Vercel deploy it.
 
 **Check**, with the next real order rather than a test one (orders write to the real
 Sales sheet and Trello):
@@ -164,6 +168,8 @@ Sales sheet and Trello):
   its formulas; the Total row's `SUM` reaches it.
 - The Trello card is due at 9 AM on the delivery date picked and ends with `Order #<id>`.
 - The Order History tab lists the order.
+- The Inventory tab groups batches by product, shows the order's cans leaving its batch
+  in that batch's history, and a count change asks for a note.
 - `select * from inventory_ledger_check where difference <> 0;` returns no rows.
 - After the first new business: its row on Current Locations Addresses gets a latitude
   and longitude within a few seconds (Census geocoder). Still run App Scripts in the
