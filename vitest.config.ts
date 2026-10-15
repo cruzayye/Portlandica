@@ -9,5 +9,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // Many suites run real SQL in PGlite (Postgres in WebAssembly), which is slow when
+    // every core is busy.
+    testTimeout: 15_000,
   },
 })

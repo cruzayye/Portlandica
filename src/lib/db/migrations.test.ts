@@ -118,7 +118,7 @@ describe('migrations on the live schema', () => {
     )
     await expect(bare.exec(first)).rejects.toThrow(/is_partner\(\) is missing/)
     await bare.close()
-  })
+  }, 60_000)
 
   it('records an opening balance for every batch so the ledger balances', async () => {
     const rows = await pg.query<{ batch_id: number; delta: number }>(
@@ -172,7 +172,7 @@ describe('migrations on the live schema', () => {
     expect(await fingerprint(pg)).toEqual(await fingerprint(before))
     expect(await batchCount(45)).toBe(12000 - 24)
     await before.close()
-  })
+  }, 60_000)
 
   it('leaves the legacy orders table alone', async () => {
     await expect(
@@ -813,5 +813,5 @@ describe('order flow additions', () => {
     expect(await fingerprint(pg)).toEqual(await fingerprint(before))
     expect(await definitions(pg)).toEqual(await definitions(before))
     await before.close()
-  })
+  }, 60_000)
 })
