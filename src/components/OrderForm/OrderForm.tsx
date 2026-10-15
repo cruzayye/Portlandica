@@ -24,7 +24,7 @@ import { getInventory } from '@/app/actions/inventory'
 import { batchesFor, chosenBatchId, customBatchesFor } from '@/lib/batches'
 import type { CustomerType, NewOrder, Inventory, OrderBatches } from '@/types/orders'
 import { CANS_PER_CASE, CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
-import { priceForCans, sparkCans, stillCans, toCans } from '@/lib/orders'
+import { orderProblem, priceForCans, sparkCans, stillCans, toCans } from '@/lib/orders'
 
 // Quantities are typed in their own boxes and turned into cans for the order; the price
 // is worked out from them unless one is typed in.
@@ -113,6 +113,15 @@ export default function OrderForm() {
   const needsStillBatch = (form.isStill ?? false) && stillBatches.length > 1 && !selectedInventoryId
   const needsSparkBatch =
     (form.isSpark ?? false) && sparkBatches.length > 1 && !selectedSparkInventoryId
+  const noStillBatches = (form.isStill ?? false) && stillBatches.length === 0
+  const noSparkBatches = (form.isSpark ?? false) && sparkBatches.length === 0
+
+  const batchHelp = (product: string, noBatches: boolean, needsBatch: boolean) =>
+    noBatches
+      ? `No ${product} batches in inventory. Add one on the Inventory tab first.`
+      : needsBatch
+        ? 'Select which batch this order pulls from'
+        : ' '
 
   const batchLabel = (item: Inventory) =>
     `${item.name} ${item.isStill ? 'Still' : 'Spark'} — ${item.fillDate ?? ''}${
@@ -403,6 +412,7 @@ export default function OrderForm() {
               <TextField
                 label={manualNumber ? 'Total Still Cans' : 'Total Still Cases'}
                 type="number"
+                required
                 value={quantity.still}
                 onChange={(e) => setQuantity((prev) => ({ ...prev, still: e.target.value }))}
                 helperText={quantityHelp(order.totalStill)}
@@ -427,8 +437,8 @@ export default function OrderForm() {
                 }
                 fullWidth
                 required={stillBatches.length > 1}
-                error={needsStillBatch}
-                helperText={needsStillBatch ? 'Select which batch this order pulls from' : ' '}
+                error={needsStillBatch || noStillBatches}
+                helperText={batchHelp('Still', noStillBatches, needsStillBatch)}
                 sx={{ '& .MuiInputBase-root': { backgroundColor: '#fffde7' } }}
               >
                 {stillBatches.map((item) => (
@@ -445,6 +455,7 @@ export default function OrderForm() {
               <TextField
                 label={manualNumber ? 'Total Sparkling Cans' : 'Total Sparkling Cases'}
                 type="number"
+                required
                 value={quantity.spark}
                 onChange={(e) => setQuantity((prev) => ({ ...prev, spark: e.target.value }))}
                 helperText={quantityHelp(order.totalSpark)}
@@ -469,8 +480,8 @@ export default function OrderForm() {
                 }
                 fullWidth
                 required={sparkBatches.length > 1}
-                error={needsSparkBatch}
-                helperText={needsSparkBatch ? 'Select which batch this order pulls from' : ' '}
+                error={needsSparkBatch || noSparkBatches}
+                helperText={batchHelp('Sparkling', noSparkBatches, needsSparkBatch)}
                 sx={{ '& .MuiInputBase-root': { backgroundColor: '#fffde7' } }}
               >
                 {sparkBatches.map((item) => (
@@ -589,14 +600,7 @@ export default function OrderForm() {
             type="submit"
             variant="contained"
             size="large"
-            disabled={
-              isPending ||
-              !form.name ||
-              (!form.isStill && !form.isSpark) ||
-              !form.deliveryType ||
-              needsStillBatch ||
-              needsSparkBatch
-            }
+            disabled={isPending || orderProblem(order, orderBatches()) !== null}
           >
             {isPending ? 'Submitting...' : 'Submit Order'}
           </Button>

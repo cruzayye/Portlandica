@@ -40,8 +40,11 @@ const fillRequiredFields = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(screen.getByLabelText(/name/i))
   await user.click(await screen.findByRole('option', { name: 'Dame' }))
   await user.click(screen.getByLabelText('Still'))
+  await user.type(screen.getByLabelText(/total still cases/i), '5')
   await user.click(screen.getByLabelText('Drop'))
 }
+
+const submitButton = () => screen.getByRole('button', { name: /submit order/i })
 
 beforeEach(() => {
   getInventory.mockReset()
@@ -79,7 +82,9 @@ describe('OrderForm batch selection', () => {
     await user.click(screen.getByLabelText(/batch number/i))
     await user.click(await screen.findByRole('option', { name: /2026-08-03/ }))
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled(),
+    )
   })
 
   it('does not block submit when only one batch exists', async () => {
@@ -90,11 +95,15 @@ describe('OrderForm batch selection', () => {
     await waitFor(() => expect(getInventory).toHaveBeenCalled())
     await fillRequiredFields(user)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled())
-    expect(screen.queryByText(/select which batch this order pulls from/i)).not.toBeInTheDocument()
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled(),
+    )
+    expect(
+      screen.queryByText(/select which batch this order pulls from/i),
+    ).not.toBeInTheDocument()
   })
 
-  it("auto-selects the customer's single custom batch despite other options", async () => {
+  it('auto-selects the customer\'s single custom batch despite other options', async () => {
     const user = userEvent.setup()
     getInventory.mockResolvedValue([
       batch({ id: 1, name: 'Original', fillDate: '2026-06-20' }),
@@ -106,7 +115,9 @@ describe('OrderForm batch selection', () => {
     await waitFor(() => expect(getInventory).toHaveBeenCalled())
     await fillRequiredFields(user)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled(),
+    )
   })
 
   it('ignores sparkling ambiguity for a still-only order', async () => {
@@ -121,7 +132,9 @@ describe('OrderForm batch selection', () => {
     await waitFor(() => expect(getInventory).toHaveBeenCalled())
     await fillRequiredFields(user)
 
-    await waitFor(() => expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled())
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled(),
+    )
   })
 
   it('submits the chosen batch id to createOrder', async () => {
@@ -156,13 +169,30 @@ describe('OrderForm batch selection', () => {
     await user.click(screen.getByLabelText(/name/i))
     await user.click(await screen.findByRole('option', { name: 'Dame' }))
     await user.click(screen.getByLabelText('Sparkling'))
+    await user.type(screen.getByLabelText(/total sparkling cases/i), '2')
     await user.click(screen.getByLabelText('Drop'))
-    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await user.click(submitButton())
 
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
     const [, batches] = createOrder.mock.calls[0]
     expect(batches.spark).toEqual({ id: 3, fillDate: '2026-08-03' })
     expect(batches.still).toBeUndefined()
+  })
+
+  it('blocks submit when a product has no batches at all', async () => {
+    const user = userEvent.setup()
+    getInventory.mockResolvedValue([batch({ id: 1, isStill: true, fillDate: '2026-06-20' })])
+
+    render(<OrderForm />)
+    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+    await fillRequiredFields(user)
+    expect(submitButton()).toBeEnabled()
+
+    await user.click(screen.getByLabelText('Sparkling'))
+    await user.type(screen.getByLabelText(/total sparkling cases/i), '2')
+
+    expect(screen.getByText(/No Sparkling batches in inventory/)).toBeInTheDocument()
+    expect(submitButton()).toBeDisabled()
   })
 })
 
@@ -172,7 +202,7 @@ describe('OrderForm submit results', () => {
     render(<OrderForm />)
     await waitFor(() => expect(getInventory).toHaveBeenCalled())
     await fillRequiredFields(user)
-    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await user.click(submitButton())
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
   }
 
@@ -229,7 +259,7 @@ describe('OrderForm existing customer', () => {
 
     expect(screen.getByLabelText(/notes/i)).toHaveValue('')
     await user.type(screen.getByLabelText(/notes/i), 'Leave at the back door')
-    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await user.click(submitButton())
 
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
     const [order] = createOrder.mock.calls[0]
@@ -304,7 +334,7 @@ describe('OrderForm customer type', () => {
     await user.click(screen.getByRole('button', { name: 'Individual (DTC)' }))
     expect(screen.getByLabelText(/customer name/i)).toHaveValue('')
     await user.type(screen.getByLabelText(/customer name/i), 'Pat Doe')
-    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await user.click(submitButton())
 
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
     const [order] = createOrder.mock.calls[0]
@@ -330,18 +360,19 @@ describe('OrderForm quantities', () => {
     const user = userEvent.setup()
     await startStillOrder(user)
 
-    const cases = screen.getByLabelText('Total Still Cases')
-    await user.type(cases, '5')
+    const cases = screen.getByLabelText(/total still cases/i)
+    expect(cases).toHaveValue(5)
     expect(screen.getByText('= 120 cans')).toBeInTheDocument()
 
     // Leaving and re-entering the box used to multiply it by 24 each time.
+    await user.click(cases)
     await user.click(screen.getByLabelText(/notes/i))
     await user.click(cases)
     await user.click(screen.getByLabelText(/notes/i))
     expect(cases).toHaveValue(5)
     expect(screen.getByText('= 120 cans')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await user.click(submitButton())
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
     expect(createOrder.mock.calls[0][0].totalStill).toBe(120)
   })
@@ -351,11 +382,12 @@ describe('OrderForm quantities', () => {
     await startStillOrder(user)
 
     await user.click(screen.getByLabelText('Enter Manual Number (cans)'))
-    expect(screen.queryByLabelText('Total Still Cases')).not.toBeInTheDocument()
-    await user.type(screen.getByLabelText('Total Still Cans'), '130')
+    expect(screen.queryByLabelText(/total still cases/i)).not.toBeInTheDocument()
+    await user.clear(screen.getByLabelText(/total still cans/i))
+    await user.type(screen.getByLabelText(/total still cans/i), '130')
     expect(screen.getByText('Single cans, not cases')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await user.click(submitButton())
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
     expect(createOrder.mock.calls[0][0].totalStill).toBe(130)
   })
@@ -364,14 +396,13 @@ describe('OrderForm quantities', () => {
     const user = userEvent.setup()
     await startStillOrder(user)
     await user.click(screen.getByLabelText('Enter Manual Number (cans)'))
-    await user.type(screen.getByLabelText('Total Still Cans'), '130')
 
-    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await user.click(submitButton())
     await screen.findByText(/submitted successfully/i)
 
     expect(screen.getByLabelText('Enter Manual Number (cans)')).not.toBeChecked()
     await user.click(screen.getByLabelText('Still'))
-    expect(screen.getByLabelText('Total Still Cases')).toHaveValue(null)
+    expect(screen.getByLabelText(/total still cases/i)).toHaveValue(null)
   })
 })
 
@@ -388,7 +419,7 @@ describe('OrderForm price', () => {
     const user = userEvent.setup()
     await startOrder(user, 'Dame')
     await user.click(screen.getByLabelText('Still'))
-    await user.type(screen.getByLabelText('Total Still Cases'), '5')
+    await user.type(screen.getByLabelText(/total still cases/i), '5')
 
     expect(screen.getByLabelText('Price')).toHaveValue(180)
   })
@@ -400,7 +431,7 @@ describe('OrderForm price', () => {
     expect(await screen.findByText(/has custom pricing/)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Yes' }))
     await user.click(screen.getByLabelText('Still'))
-    await user.type(screen.getByLabelText('Total Still Cases'), '1')
+    await user.type(screen.getByLabelText(/total still cases/i), '1')
 
     expect(screen.getByLabelText('Price')).toHaveValue(39.84)
   })
@@ -409,14 +440,14 @@ describe('OrderForm price', () => {
     const user = userEvent.setup()
     await startOrder(user, 'Dame')
     await user.click(screen.getByLabelText('Still'))
-    await user.type(screen.getByLabelText('Total Still Cases'), '5')
+    await user.type(screen.getByLabelText(/total still cases/i), '5')
 
     await user.clear(screen.getByLabelText('Price'))
     await user.type(screen.getByLabelText('Price'), '150')
     await user.click(screen.getByLabelText(/notes/i))
     expect(screen.getByLabelText('Price')).toHaveValue(150)
 
-    await user.type(screen.getByLabelText('Total Still Cases'), '0')
+    await user.type(screen.getByLabelText(/total still cases/i), '0')
     expect(screen.getByLabelText('Price')).toHaveValue(1800)
   })
 })
@@ -431,9 +462,8 @@ describe('OrderForm product switches', () => {
     render(<OrderForm />)
     await waitFor(() => expect(getInventory).toHaveBeenCalled())
     await fillRequiredFields(user)
-    await user.type(screen.getByLabelText('Total Still Cases'), '5')
     await user.click(screen.getByLabelText('Sparkling'))
-    await user.type(screen.getByLabelText('Total Sparkling Cases'), '2')
+    await user.type(screen.getByLabelText(/total sparkling cases/i), '2')
     expect(screen.getByLabelText('Price')).toHaveValue(252)
 
     // Still off: its 5 cases no longer count toward the price or the order.
@@ -442,13 +472,25 @@ describe('OrderForm product switches', () => {
 
     // Back on, the box starts empty instead of bringing the old number back.
     await user.click(screen.getByLabelText('Still'))
-    expect(screen.getByLabelText('Total Still Cases')).toHaveValue(null)
+    expect(screen.getByLabelText(/total still cases/i)).toHaveValue(null)
     await user.click(screen.getByLabelText('Still'))
 
-    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await user.click(submitButton())
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
     const [order, batches] = createOrder.mock.calls[0]
     expect(order).toMatchObject({ isStill: false, totalStill: null, totalSpark: 48, price: 72 })
     expect(batches.still).toBeUndefined()
+  })
+
+  it('requires a quantity for each product that is on', async () => {
+    const user = userEvent.setup()
+    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
+    render(<OrderForm />)
+    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+    await fillRequiredFields(user)
+    expect(submitButton()).toBeEnabled()
+
+    await user.clear(screen.getByLabelText(/total still cases/i))
+    expect(submitButton()).toBeDisabled()
   })
 })
