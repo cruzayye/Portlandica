@@ -64,6 +64,30 @@ export default function OrderForm() {
   const [isCustomPricing, setIsCustomPricing] = useState(false)
   const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null)
 
+  const stillBatches = inventory.filter(
+    (item) => item.isStill && (!item.isCustom || item.name === form.name),
+  )
+  const sparkBatches = inventory.filter(
+    (item) => !item.isStill && (!item.isCustom || item.name === form.name),
+  )
+
+  // A batch filled specifically for this customer wins outright.
+  const customStillBatches = stillBatches.filter(
+    (item) => item.isCustom && item.name === form.name,
+  )
+  const customSparkBatches = sparkBatches.filter(
+    (item) => item.isCustom && item.name === form.name,
+  )
+
+  const needsStillBatch = (form.isStill ?? false) && stillBatches.length > 1 && !selectedInventoryId
+  const needsSparkBatch =
+    (form.isSpark ?? false) && sparkBatches.length > 1 && !selectedSparkInventoryId
+
+  const batchLabel = (item: Inventory) =>
+    `${item.name} ${item.isStill ? 'Still' : 'Spark'} — ${item.fillDate ?? ''}${
+      item.source ? ` | ${item.source}` : ''
+    }`
+
   const isCustomBusinessType =
     !locationTypes.includes(form.businessType ?? '') && form.businessType !== null
 
@@ -90,15 +114,13 @@ export default function OrderForm() {
       setIsCustomPricing(false)
     }
 
-    const stillMatch =
-      inventory.find((item) => item.isStill && item.isCustom && item.name === form.name) ??
-      inventory.find((item) => item.isStill && !item.isCustom)
-    setSelectedInventoryId(stillMatch?.id ?? '')
+    // Preselect a batch filled for this customer, or the only batch available.
+    // Anything still ambiguous is left blank so the user picks explicitly.
+    const pick = (all: Inventory[], custom: Inventory[]) =>
+      custom.length === 1 ? custom[0].id : all.length === 1 ? all[0].id : ''
 
-    const sparkMatch =
-      inventory.find((item) => !item.isStill && item.isCustom && item.name === form.name) ??
-      inventory.find((item) => !item.isStill && !item.isCustom)
-    setSelectedSparkInventoryId(sparkMatch?.id ?? '')
+    setSelectedInventoryId(pick(stillBatches, customStillBatches))
+    setSelectedSparkInventoryId(pick(sparkBatches, customSparkBatches))
   }, [form.name, inventory])
 
   useEffect(() => {
@@ -373,16 +395,16 @@ export default function OrderForm() {
                 value={selectedInventoryId}
                 onChange={(e) => setSelectedInventoryId(Number(e.target.value))}
                 fullWidth
+                required={stillBatches.length > 1}
+                error={needsStillBatch}
+                helperText={needsStillBatch ? 'Select which batch this order pulls from' : ' '}
                 sx={{ '& .MuiInputBase-root': { backgroundColor: '#fffde7' } }}
               >
-                {inventory
-                  .filter((item) => item.isStill && (!item.isCustom || item.name === form.name))
-                  .map((item) => (
-                    <MenuItem key={item.id} value={item.id}>
-                      {item.name} {item.isStill ? 'Still' : 'Spark'} —{' '}
-                      {item.fillDate ?? ''}
-                    </MenuItem>
-                  ))}
+                {stillBatches.map((item) => (
+                  <MenuItem key={item.id} value={item.id}>
+                    {batchLabel(item)}
+                  </MenuItem>
+                ))}
               </TextField>
             </Box>
           )}
@@ -413,16 +435,16 @@ export default function OrderForm() {
                 value={selectedSparkInventoryId}
                 onChange={(e) => setSelectedSparkInventoryId(Number(e.target.value))}
                 fullWidth
+                required={sparkBatches.length > 1}
+                error={needsSparkBatch}
+                helperText={needsSparkBatch ? 'Select which batch this order pulls from' : ' '}
                 sx={{ '& .MuiInputBase-root': { backgroundColor: '#fffde7' } }}
               >
-                {inventory
-                  .filter((item) => !item.isStill && (!item.isCustom || item.name === form.name))
-                  .map((item) => (
-                    <MenuItem key={item.id} value={item.id}>
-                      {item.name} {item.isStill ? 'Still' : 'Spark'} —{' '}
-                      {item.fillDate ?? ''}
-                    </MenuItem>
-                  ))}
+                {sparkBatches.map((item) => (
+                  <MenuItem key={item.id} value={item.id}>
+                    {batchLabel(item)}
+                  </MenuItem>
+                ))}
               </TextField>
             </Box>
           )}
@@ -523,7 +545,12 @@ export default function OrderForm() {
             variant="contained"
             size="large"
             disabled={
-              isPending || !form.name || (!form.isStill && !form.isSpark) || !form.deliveryType
+              isPending ||
+              !form.name ||
+              (!form.isStill && !form.isSpark) ||
+              !form.deliveryType ||
+              needsStillBatch ||
+              needsSparkBatch
             }
           >
             {isPending ? 'Submitting...' : 'Submit Order'}

@@ -37,6 +37,7 @@ export const deleteInventoryItem = async (id: number): Promise<void> => {
     .eq('id', id)
 
   if (error) throw new Error(error.message)
+  
 }
 
 export const updateInventoryCount = async (id: number, count: number): Promise<void> => {
