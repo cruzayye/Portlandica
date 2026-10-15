@@ -85,6 +85,22 @@ const createOrder = async (
   return (await one<{ s: Snapshot }>(auth, call, Object.values(args))).s
 }
 
+// Every column, function, trigger and policy, to compare two schemas.
+const fingerprint = async (db: PGlite) =>
+  (
+    await db.query<{ x: string }>(`
+      select 'column ' || table_schema || '.' || table_name || '.' || column_name || ' ' || data_type as x
+      from information_schema.columns where table_schema in ('public', 'private')
+      union all
+      select 'function ' || n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'private')
+      union all
+      select 'trigger ' || tgrelid::regclass || '.' || tgname from pg_trigger where not tgisinternal
+      union all
+      select 'policy ' || schemaname || '.' || tablename || '.' || policyname from pg_policies
+      order by 1`)
+  ).rows.map((r) => r.x)
+
 describe('migrations on the live schema', () => {
   it('needs the login migration first', async () => {
     const bare = new PGlite()
@@ -137,21 +153,6 @@ describe('migrations on the live schema', () => {
   })
 
   it('can be rolled back to the schema it started from', async () => {
-    const fingerprint = async (db: PGlite) =>
-      (
-        await db.query<{ x: string }>(`
-          select 'column ' || table_schema || '.' || table_name || '.' || column_name || ' ' || data_type as x
-          from information_schema.columns where table_schema in ('public', 'private')
-          union all
-          select 'function ' || n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
-          from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'private')
-          union all
-          select 'trigger ' || tgrelid::regclass || '.' || tgname from pg_trigger where not tgisinternal
-          union all
-          select 'policy ' || schemaname || '.' || tablename || '.' || policyname from pg_policies
-          order by 1`)
-      ).rows.map((r) => r.x)
-
     const before = new PGlite()
     const sqlDir = path.join(process.cwd(), 'src/lib/db/testing/sql')
     await before.exec(readFileSync(path.join(sqlDir, 'supabase-stub.sql'), 'utf8'))
@@ -163,12 +164,11 @@ describe('migrations on the live schema', () => {
     await query(PAUL, 'select public.apply_order_inventory($1)', [order.id])
     await query(PAUL, `select public.archive_batch(46)`)
 
-    await pg.exec(
-      readFileSync(
-        path.join(process.cwd(), 'supabase/rollback/20261017_data_foundation.sql'),
-        'utf8'
-      )
-    )
+    // Newest first: the order-flow rollback puts back the functions the data-foundation
+    // rollback drops by their original signatures.
+    for (const file of ['20261017000700_order_flow.sql', '20261017_data_foundation.sql']) {
+      await pg.exec(readFileSync(path.join(process.cwd(), 'supabase/rollback', file), 'utf8'))
+    }
     expect(await fingerprint(pg)).toEqual(await fingerprint(before))
     expect(await batchCount(45)).toBe(12000 - 24)
     await before.close()
@@ -697,7 +697,7 @@ describe('record_order_step', () => {
     })
     await step(order.id, 'inventory', 'failed', null, 'Network')
     await expect(step(order.id, 'email', 'done')).rejects.toMatchObject({ hint: 'invalid_input' })
-    await expect(step(order.id, 'sheet', 'done', 'row-5')).rejects.toMatchObject({
+    await expect(step(order.id, 'inventory', 'failed', 'row-5')).rejects.toMatchObject({
       hint: 'invalid_input',
     })
   })
@@ -719,5 +719,99 @@ describe('record_order_step', () => {
     await expect(step(b.order.id, 'square', 'done', 'inv-1')).rejects.toMatchObject({
       code: '23505',
     })
+  })
+})
+
+describe('order flow additions', () => {
+  it('keeps the delivery address, billing email and new-customer flag on the order', async () => {
+    const { order } = await createOrder(
+      PAUL,
+      'flow-1',
+      [{ product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 }],
+      {
+        p_delivery_address: '  1005 W Burnside St, Portland, OR 97209 ',
+        p_customer_email: ' AP@Example.com ',
+        p_new_customer: true,
+      }
+    )
+    expect(order).toMatchObject({
+      delivery_address: '1005 W Burnside St, Portland, OR 97209',
+      customer_email: 'ap@example.com',
+      new_customer: true,
+      sheet_ref: null,
+    })
+
+    const plain = await createOrder(PAUL, 'flow-2', [
+      { product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 },
+    ])
+    expect(plain.order).toMatchObject({
+      delivery_address: null,
+      customer_email: null,
+      new_customer: false,
+    })
+
+    await expect(
+      createOrder(PAUL, 'flow-3', [{ product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 }], {
+        p_customer_email: 'not an email',
+      })
+    ).rejects.toMatchObject({ code: '23514' })
+  })
+
+  it('records where the sheet rows went, and lets a retry move them', async () => {
+    const { order } = await createOrder(PAUL, 'flow-4', [
+      { product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 },
+    ])
+    const step = (status: string, ref: string | null) =>
+      one<{ o: Record<string, unknown> }>(
+        PAUL,
+        'select to_jsonb(public.record_order_step($1, $2, $3, $4, null)) as o',
+        [order.id, 'sheet', status, ref]
+      )
+
+    await step('failed', null)
+    expect((await step('done', 'Sales!A3126:V3126')).o).toMatchObject({
+      sheet_status: 'done',
+      sheet_error: null,
+      sheet_ref: 'Sales!A3126:V3126',
+    })
+    expect((await step('done', 'Sales!A3130:V3130')).o).toMatchObject({
+      sheet_ref: 'Sales!A3130:V3130',
+    })
+    expect((await step('done', null)).o).toMatchObject({ sheet_ref: 'Sales!A3130:V3130' })
+  })
+
+  it('can be undone on its own, leaving the data-foundation schema as it was', async () => {
+    const definitions = async (db: PGlite) =>
+      (
+        await db.query<{ x: string }>(`
+          select p.proname || ' ' || md5(pg_get_functiondef(p.oid)) as x
+          from pg_proc p where p.pronamespace = 'public'::regnamespace order by 1`)
+      ).rows.map((r) => r.x)
+
+    const before = new PGlite()
+    const sqlDir = path.join(process.cwd(), 'src/lib/db/testing/sql')
+    await before.exec(readFileSync(path.join(sqlDir, 'supabase-stub.sql'), 'utf8'))
+    await before.exec(readFileSync(path.join(sqlDir, 'live-baseline.sql'), 'utf8'))
+    for (const file of migrationFiles().filter((f) => !f.endsWith('_order_flow.sql'))) {
+      await before.exec(readFileSync(path.join(process.cwd(), 'supabase/migrations', file), 'utf8'))
+    }
+
+    await createOrder(
+      PAUL,
+      'flow-5',
+      [{ product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 }],
+      {
+        p_delivery_address: '1 Main St',
+      }
+    )
+    await pg.exec(
+      readFileSync(
+        path.join(process.cwd(), 'supabase/rollback/20261017000700_order_flow.sql'),
+        'utf8'
+      )
+    )
+    expect(await fingerprint(pg)).toEqual(await fingerprint(before))
+    expect(await definitions(pg)).toEqual(await definitions(before))
+    await before.close()
   })
 })
