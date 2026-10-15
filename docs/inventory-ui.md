@@ -1,0 +1,84 @@
+# Inventory tab on the ledger
+
+Branch `feat/inventory-ui` rebuilds the Inventory tab on the inventory ledger from
+`feat/data-foundation` (see `docs/data-foundation.md`). Every change to a batch now goes
+through one of the ledger's SQL functions, so it is recorded with who made it and why:
+
+| In the tab   | SQL function                    | Notes                                                                                        |
+| ------------ | ------------------------------- | -------------------------------------------------------------------------------------------- |
+| Add batch    | `record_fill`                   | Cases are converted to cans. A custom batch takes its customer's name.                       |
+| Change count | `adjust_batch`                  | In cases or cans, with a required note. Refused if the count changed while you were editing. |
+| Archive      | `archive_batch`                 | Replaces delete. Writes off what is left, so a reason is required unless the batch is at 0.  |
+| Unarchive    | `unarchive_batch`               | Puts back the cans the archive wrote off.                                                    |
+| History      | `inventory_movements` (read)    | Newest first.                                                                                |
+| Banner       | `inventory_ledger_check` (read) | Shown only when a batch's count doesn't match its history.                                   |
+
+The tab no longer calls `createInventoryItem`, `updateInventoryCount` or
+`deleteInventoryItem` in `src/app/actions/inventory.ts`. They stay until the order-flow
+branch is merged, then they can be deleted.
+
+## What partners see
+
+- **The list**, grouped Still / Sparkling / Dog water, house stock before custom cans.
+  Each batch shows cans, cases and pallets, its fill date and source. Custom batches show
+  the customer they are linked to, or "No customer linked". Counts below zero are flagged
+  in red.
+- **A banner** at the top when house still or house sparkling stock is under 2,000 cans,
+  when any batch is below zero, or when `inventory_ledger_check` reports a mismatch. The
+  2,000 is `LOW_STOCK_THRESHOLD_CANS` in `src/components/Inventory/stock.ts`.
+- **Tapping a batch** opens its details and history: date, change, what happened, the
+  order (customer, date, voided), who, the note, and the count it left.
+- **Archived batches** are hidden behind "Show archived". Nothing can be deleted.
+- **Add batch**: house stock (named, "Portlandica" by default) or custom cans for a
+  customer picked from the customers table; still, sparkling or dog water; cases, water
+  source, fill date (today in Portland), and optionally cost, invoice number and a note.
+
+On phones the dialogs fill the screen (checked at 375 px wide).
+
+### Who made a change
+
+The ledger stores the signed-in user's id. The tab shows **You** for your own changes,
+**Other partner** for anyone else's, and **System** when no one was signed in (the
+opening balances, the SQL Editor, the Supabase dashboard). Showing the other partner's
+name would need a small database function that looks up partner emails by user id; that
+is a possible follow-up, not part of this branch.
+
+## Code
+
+- `src/app/actions/batches.ts`: the tab's server actions (`loadInventory`, `addBatch`,
+  `changeBatchCount`, `archiveInventoryBatch`, `unarchiveInventoryBatch`,
+  `getBatchHistory`). Each starts with the `requireUser()` check and returns
+  `{ ok: false, error }` instead of throwing.
+- `src/lib/db/orderSummaries.ts`: reads the customer, date and void status of the orders
+  in a batch's history.
+- `src/components/Inventory/`: the tab. `Inventory.tsx` loads everything once;
+  `BatchList`, `StockAlerts`, `BatchDialog` (details, history, `ChangeCountForm`,
+  `ArchiveForm`) and `AddBatchDialog` do the rest. Pure helpers (`units.ts`, `stock.ts`,
+  `validation.ts`, `history.ts`, `dates.ts`) are shared with the actions, which run the
+  same checks again on the server.
+
+## Before deploying
+
+1. **Apply the data-foundation migrations first** (after the sign-in rollout), following
+   `docs/data-foundation.md`. This tab reads `customers`, `inventory_movements` and
+   `inventory_ledger_check` and calls the ledger functions; without them it shows "Could
+   not load the inventory."
+2. **Seed the customers** (`scripts/seed-customers.ts`). Without them, house-stock fills
+   still work but the custom-cans customer list is empty.
+3. Until the order-flow branch lands, the current order form still offers archived
+   batches (at 0 cans), because it reads `inventory` directly.
+
+## Tests
+
+- `src/app/actions/batches.test.ts`: the actions with the data modules mocked: what reaches
+  the ledger functions, what is refused first, and how database errors read.
+- `src/app/actions/batches.pglite.test.ts`: the same actions against the real migrations
+  in PGlite: fills, a stale count, archive and unarchive, orders and voids in the history,
+  a forced ledger mismatch, and an account the database doesn't treat as a partner.
+- `src/components/Inventory/*.test.ts(x)`: the list, banner, archived toggle, batch
+  dialog, count change, archive, add batch, sign-in messages, and the pure helpers.
+
+## Not verified
+
+- Nothing ran against the real Supabase project; nothing was applied there.
+- No real phone: the layout was checked at 375 px in a browser, with stand-in data.

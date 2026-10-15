@@ -1,62 +1,81 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { Inventory as InventoryRow } from '@/types/orders'
 import { SIGNED_OUT } from '@/lib/auth/authFailure'
+import { batch } from './testing/fixtures'
 
-const getInventory = vi.fn()
-const updateInventoryCount = vi.fn()
+const loadInventory = vi.fn()
+const changeBatchCount = vi.fn()
+const getBatchHistory = vi.fn()
 
-vi.mock('@/app/actions/inventory', () => ({
-  getInventory: () => getInventory(),
-  updateInventoryCount: (...args: unknown[]) => updateInventoryCount(...args),
-  deleteInventoryItem: vi.fn(),
-  createInventoryItem: vi.fn(),
+vi.mock('@/app/actions/batches', () => ({
+  loadInventory: () => loadInventory(),
+  changeBatchCount: (...args: unknown[]) => changeBatchCount(...args),
+  getBatchHistory: (...args: unknown[]) => getBatchHistory(...args),
+  addBatch: vi.fn(),
+  archiveInventoryBatch: vi.fn(),
+  unarchiveInventoryBatch: vi.fn(),
 }))
 
 import Inventory from './Inventory'
 
-const row: InventoryRow = {
-  id: 7,
-  created_at: '2026-01-01T00:00:00Z',
-  name: 'Original',
-  count: 240,
-  isCustom: false,
-  isStill: true,
-  fillDate: '2026-01-01',
-  totalCost: null,
-  invoiceNumber: null,
-  source: null,
-}
+const row = batch({ id: 7, name: 'Original', count: 240 })
 
 beforeEach(() => {
-  getInventory.mockReset()
-  updateInventoryCount.mockReset()
+  loadInventory.mockReset()
+  changeBatchCount.mockReset()
+  getBatchHistory.mockReset()
 })
 
 describe('Inventory when the caller is refused', () => {
   it('shows the sign-in message instead of the list', async () => {
-    getInventory.mockResolvedValue({ authError: SIGNED_OUT })
+    loadInventory.mockResolvedValue({ authError: SIGNED_OUT })
 
     render(<Inventory />)
 
     expect(await screen.findByText(SIGNED_OUT)).toBeInTheDocument()
   })
 
-  it('keeps the dialog open with the message when a count update is refused', async () => {
-    const user = userEvent.setup()
-    getInventory.mockResolvedValue([row])
-    updateInventoryCount.mockResolvedValue({ authError: SIGNED_OUT })
+  it('shows the sign-in message in place of a batch history', async () => {
+    const user = userEvent.setup({ delay: null })
+    loadInventory.mockResolvedValue({
+      ok: true,
+      batches: [row],
+      customers: [],
+      ledger: { mismatches: [] },
+    })
+    getBatchHistory.mockResolvedValue({ authError: SIGNED_OUT })
 
     render(<Inventory />)
-    await user.click(await screen.findByText('Original'))
-    const cases = screen.getByLabelText(/cases/i)
+    await user.click(await screen.findByRole('button', { name: /Original/ }))
+
+    expect(await within(screen.getByRole('dialog')).findByText(SIGNED_OUT)).toBeInTheDocument()
+  })
+
+  it('keeps the form open with the message when a count change is refused', async () => {
+    const user = userEvent.setup({ delay: null })
+    loadInventory.mockResolvedValue({
+      ok: true,
+      batches: [row],
+      customers: [],
+      ledger: { mismatches: [] },
+    })
+    getBatchHistory.mockResolvedValue({ ok: true, entries: [] })
+    changeBatchCount.mockResolvedValue({ authError: SIGNED_OUT })
+
+    render(<Inventory />)
+    await user.click(await screen.findByRole('button', { name: /Original/ }))
+    const dialog = screen.getByRole('dialog')
+    await user.click(within(dialog).getByRole('button', { name: 'Change count' }))
+    const cases = within(dialog).getByLabelText('Cases counted')
     await user.clear(cases)
     await user.type(cases, '5')
-    await user.click(screen.getByRole('button', { name: 'Save' }))
+    await user.type(within(dialog).getByLabelText(/why is the count changing/i), 'Recount')
+    await user.click(within(dialog).getByRole('button', { name: 'Save count' }))
 
-    expect(await screen.findByText(SIGNED_OUT)).toBeInTheDocument()
-    expect(screen.getByRole('dialog')).toBeInTheDocument()
-    expect(screen.getByText('240')).toBeInTheDocument()
+    expect(await within(dialog).findByText(SIGNED_OUT)).toBeInTheDocument()
+    expect(
+      within(dialog).getByText('Now 240 cans (10 cases). Enter what you counted.')
+    ).toBeInTheDocument()
   })
 })
