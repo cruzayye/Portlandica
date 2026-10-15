@@ -121,7 +121,7 @@ async function insertBeforeTotals(
     const updated = [...(row as unknown[])]
     updated[9] = `=IF(I${r}-F${r}=0,"Yes","No")`
     updated[13] = `=XLOOKUP(M${r},Inventory!A:A,Inventory!P:P,0,0)`
-    updated[14] = `=N${r}*E${r - 1}`
+    updated[14] = `=N${r}*E${r}`
     updated[16] = `=TEXT(A${r},"YYYY-MM")`
     updated[17] = `=IF(B${r}="Business",IF(OR(D${r}="Junior's Roasted Coffee",D${r}="Guilder Cafe inside Powell's Books",D${r}="Guilder East"),"Guilder",IF(OR(D${r}="Ben Bridge Jeweler (Downtown)",D${r}="Ben Bridge Jeweler (Washington Square)"),"Ben Bridge Jeweler",IF(OR(REGEXMATCH(D${r},"^The Great North.*"),REGEXMATCH(D${r},"^Lovejoy Bakers.*")),"The Great North",IF(REGEXMATCH(D${r},"^Elephants Delicatessen.*"),"Elephants Delicatessen",D${r})))),"")`
     updated[18] = `=IF(B${r}="Individual","",MIN(FILTER(A:A,D:D=D${r})))`
