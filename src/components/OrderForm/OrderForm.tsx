@@ -21,13 +21,14 @@ import Autocomplete from '@mui/material/Autocomplete'
 import MenuItem from '@mui/material/MenuItem'
 import { createOrder, getLocations, getLocationTypes } from '@/app/actions/orders'
 import { getInventory } from '@/app/actions/inventory'
-import { batchesFor, customBatchesFor, preselectBatchId } from '@/lib/batches'
+import { batchesFor, chosenBatchId, customBatchesFor } from '@/lib/batches'
 import type { CustomerType, NewOrder, Inventory, OrderBatches } from '@/types/orders'
 import { CANS_PER_CASE, CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
-import { sparkCans, stillCans, toCans } from '@/lib/orders'
+import { priceForCans, sparkCans, stillCans, toCans } from '@/lib/orders'
 
-// Quantities are typed in their own boxes and turned into cans for the order.
-type OrderFields = Omit<NewOrder, 'totalStill' | 'totalSpark'>
+// Quantities are typed in their own boxes and turned into cans for the order; the price
+// is worked out from them unless one is typed in.
+type OrderFields = Omit<NewOrder, 'totalStill' | 'totalSpark' | 'price'>
 
 const defaultState: OrderFields = {
   name: '',
@@ -36,7 +37,6 @@ const defaultState: OrderFields = {
   isSpark: false,
   IsCustomStill: false,
   isCustomSpark: false,
-  price: null,
   isPaid: false,
   createInvoice: false,
   notes: '',
@@ -51,6 +51,7 @@ const defaultState: OrderFields = {
 }
 
 const noQuantity = { still: '', spark: '' }
+const noBatchPick: { still: number | ''; spark: number | '' } = { still: '', spark: '' }
 
 export default function OrderForm() {
   const [form, setForm] = useState<OrderFields>(defaultState)
@@ -65,20 +66,32 @@ export default function OrderForm() {
   const [locations, setLocations] = useState<Location[]>([])
   const [locationTypes, setLocationTypes] = useState<string[]>([])
   const [inventory, setInventory] = useState<Inventory[]>([])
-  const [selectedInventoryId, setSelectedInventoryId] = useState<number | ''>('')
-  const [selectedSparkInventoryId, setSelectedSparkInventoryId] = useState<number | ''>('')
+  const [batchPick, setBatchPick] = useState(noBatchPick)
+  const [typedPrice, setTypedPrice] = useState<{
+    value: number | null
+    autoPrice: number | null
+  } | null>(null)
   const [isPending, startTransition] = useTransition()
   const customBusinessTypeRef = useRef<HTMLInputElement>(null)
   const [showCustomPricingDialog, setShowCustomPricingDialog] = useState(false)
   const [isCustomPricing, setIsCustomPricing] = useState(false)
   const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null)
 
-  const order: NewOrder = {
-    ...form,
-    totalStill: toCans(quantity.still, manualNumber),
-    totalSpark: toCans(quantity.spark, manualNumber),
-  }
-  const totalCans = stillCans(order) + sparkCans(order)
+  const totalStill = toCans(quantity.still, manualNumber)
+  const totalSpark = toCans(quantity.spark, manualNumber)
+  const totalCans =
+    stillCans({ isStill: form.isStill, totalStill }) +
+    sparkCans({ isSpark: form.isSpark, totalSpark })
+
+  const pricePerCan = isCustomPricing
+    ? (CUSTOMER_PRICING[form.name ?? ''] ?? DEFAULT_PRICE_PER_CAN)
+    : DEFAULT_PRICE_PER_CAN
+  const autoPrice = priceForCans(totalCans, pricePerCan)
+  // A typed-in price holds until the automatic price changes (cans, customer or custom
+  // pricing); then the automatic price takes over again.
+  const price = typedPrice && typedPrice.autoPrice === autoPrice ? typedPrice.value : autoPrice
+
+  const order: NewOrder = { ...form, totalStill, totalSpark, price }
 
   const quantityHelp = (cans: number | null) =>
     manualNumber
@@ -93,6 +106,9 @@ export default function OrderForm() {
   // A batch filled specifically for this customer wins outright.
   const customStillBatches = customBatchesFor(stillBatches, form.name ?? null)
   const customSparkBatches = customBatchesFor(sparkBatches, form.name ?? null)
+
+  const selectedInventoryId = chosenBatchId(batchPick.still, stillBatches, customStillBatches)
+  const selectedSparkInventoryId = chosenBatchId(batchPick.spark, sparkBatches, customSparkBatches)
 
   const needsStillBatch = (form.isStill ?? false) && stillBatches.length > 1 && !selectedInventoryId
   const needsSparkBatch =
@@ -122,24 +138,6 @@ export default function OrderForm() {
     getInventory().then((data) => setInventory(data))
   }, [])
 
-  useEffect(() => {
-    if (CUSTOMER_PRICING[form.name ?? '']) {
-      setShowCustomPricingDialog(true)
-    } else {
-      setIsCustomPricing(false)
-    }
-
-    setSelectedInventoryId(preselectBatchId(stillBatches, customStillBatches))
-    setSelectedSparkInventoryId(preselectBatchId(sparkBatches, customSparkBatches))
-  }, [form.name, inventory])
-
-  useEffect(() => {
-    const pricePerCan = isCustomPricing
-      ? (CUSTOMER_PRICING[form.name ?? ''] ?? DEFAULT_PRICE_PER_CAN)
-      : DEFAULT_PRICE_PER_CAN
-    setForm((prev) => ({ ...prev, price: totalCans > 0 ? totalCans * pricePerCan : null }))
-  }, [totalCans, form.name, isCustomPricing])
-
   const handleCustomPricingYes = () => {
     setIsCustomPricing(true)
 
@@ -152,13 +150,23 @@ export default function OrderForm() {
     setShowCustomPricingDialog(false)
   }
 
+  // Another customer means other batches on offer, and maybe custom pricing.
+  const changeName = (name: string, address: string | null = null) => {
+    setForm((prev) => ({ ...prev, name, address }))
+    setBatchPick(noBatchPick)
+    if (CUSTOMER_PRICING[name]) {
+      setShowCustomPricingDialog(true)
+    } else {
+      setIsCustomPricing(false)
+    }
+  }
+
   // Each choice shows its own fields. Switching clears what the new choice hides, and the
   // name too when moving to or from Existing, which is picked from a list instead of typed.
-  const changeCustomerType = (customerType: CustomerType) =>
+  const changeCustomerType = (customerType: CustomerType) => {
     setForm((prev) => ({
       ...prev,
       customerType,
-      name: prev.customerType === 'existing' || customerType === 'existing' ? '' : prev.name,
       address: null,
       businessType: null,
       streetAddress: null,
@@ -166,6 +174,8 @@ export default function OrderForm() {
       state: null,
       zip: null,
     }))
+    if (form.customerType === 'existing' || customerType === 'existing') changeName('')
+  }
 
   function handleSwitch(field: keyof OrderFields) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
@@ -175,14 +185,6 @@ export default function OrderForm() {
   function handleText(field: keyof OrderFields) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.value }))
-  }
-
-  function handleNumber(field: keyof OrderFields) {
-    return (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm((prev) => ({
-        ...prev,
-        [field]: e.target.value === '' ? null : Number(e.target.value),
-      }))
   }
 
   // The batch picked for each product that is switched on, with its fill date for Trello.
@@ -220,6 +222,9 @@ export default function OrderForm() {
         setForm(defaultState)
         setQuantity(noQuantity)
         setManualNumber(false)
+        setBatchPick(noBatchPick)
+        setTypedPrice(null)
+        setIsCustomPricing(false)
         if (wasNewBusiness) setShowAppScriptDialog(true)
       } catch {
         // The request itself failed, so there's no telling whether the sheet was written.
@@ -271,7 +276,7 @@ export default function OrderForm() {
             <TextField
               label={form.customerType === 'new' ? 'New Business Name' : 'Customer Name'}
               value={form.name ?? ''}
-              onChange={handleText('name')}
+              onChange={(e) => changeName(e.target.value)}
               fullWidth
               required
             />
@@ -283,11 +288,7 @@ export default function OrderForm() {
               onChange={(_, value) => {
                 if (!value || typeof value === 'string') return
                 // The address rides along for the Trello card; Notes stay the user's own text.
-                setForm((prev) => ({
-                  ...prev,
-                  name: value.name,
-                  address: value.address || null,
-                }))
+                changeName(value.name, value.address || null)
               }}
               renderInput={(params) => <TextField {...params} label="Name" required />}
               fullWidth
@@ -412,7 +413,9 @@ export default function OrderForm() {
                 select
                 label="Batch number"
                 value={selectedInventoryId}
-                onChange={(e) => setSelectedInventoryId(Number(e.target.value))}
+                onChange={(e) =>
+                  setBatchPick((prev) => ({ ...prev, still: Number(e.target.value) }))
+                }
                 fullWidth
                 required={stillBatches.length > 1}
                 error={needsStillBatch}
@@ -452,7 +455,9 @@ export default function OrderForm() {
                 select
                 label="Batch number"
                 value={selectedSparkInventoryId}
-                onChange={(e) => setSelectedSparkInventoryId(Number(e.target.value))}
+                onChange={(e) =>
+                  setBatchPick((prev) => ({ ...prev, spark: Number(e.target.value) }))
+                }
                 fullWidth
                 required={sparkBatches.length > 1}
                 error={needsSparkBatch}
@@ -474,8 +479,13 @@ export default function OrderForm() {
           <TextField
             label="Price"
             type="number"
-            value={form.price ?? ''}
-            onChange={handleNumber('price')}
+            value={price ?? ''}
+            onChange={(e) =>
+              setTypedPrice({
+                value: e.target.value === '' ? null : Number(e.target.value),
+                autoPrice,
+              })
+            }
             fullWidth
             inputProps={{ min: 0, step: 0.01 }}
             slotProps={{ input: { startAdornment: <Typography mr={0.5}>$</Typography> } }}

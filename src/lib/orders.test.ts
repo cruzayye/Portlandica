@@ -1,6 +1,33 @@
 import { describe, it, expect } from 'vitest'
 import type { NewOrder } from '@/types/orders'
-import { orderProblem, salesType, sparkCans, stillCans } from './orders'
+import { orderProblem, priceForCans, salesType, sparkCans, stillCans, toCans } from './orders'
+
+describe('toCans', () => {
+  it('reads the box as cases of 24', () => {
+    expect(toCans('5', false)).toBe(120)
+  })
+
+  it('reads the box as single cans with Enter Manual Number on', () => {
+    expect(toCans('130', true)).toBe(130)
+  })
+
+  it('leaves a blank box blank', () => {
+    expect(toCans('', false)).toBeNull()
+  })
+})
+
+describe('priceForCans', () => {
+  it('prices cans to the cent', () => {
+    // 24 x 1.66 is 39.839999999999996 in floating point
+    expect(priceForCans(24, 1.66)).toBe(39.84)
+    expect(priceForCans(48, 1.66)).toBe(79.68)
+    expect(priceForCans(120, 1.5)).toBe(180)
+  })
+
+  it('has no price for no cans', () => {
+    expect(priceForCans(0, 1.5)).toBeNull()
+  })
+})
 
 describe('stillCans / sparkCans', () => {
   it('counts a product that is switched on', () => {

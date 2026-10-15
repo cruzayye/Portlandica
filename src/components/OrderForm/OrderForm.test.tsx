@@ -12,7 +12,10 @@ vi.mock('@/app/actions/inventory', () => ({
 
 vi.mock('@/app/actions/orders', () => ({
   getLocations: () =>
-    Promise.resolve([{ name: 'Dame', address: '123 NE Broadway', businessType: 'Restaurant' }]),
+    Promise.resolve([
+      { name: 'Dame', address: '123 NE Broadway', businessType: 'Restaurant' },
+      { name: 'Hollywood Theatre', address: '4122 NE Sandy Blvd', businessType: 'Theater' },
+    ]),
   getLocationTypes: () => Promise.resolve([{ name: 'Restaurant' }]),
   createOrder: (...args: unknown[]) => createOrder(...args),
 }))
@@ -369,5 +372,51 @@ describe('OrderForm quantities', () => {
     expect(screen.getByLabelText('Enter Manual Number (cans)')).not.toBeChecked()
     await user.click(screen.getByLabelText('Still'))
     expect(screen.getByLabelText('Total Still Cases')).toHaveValue(null)
+  })
+})
+
+describe('OrderForm price', () => {
+  const startOrder = async (user: ReturnType<typeof userEvent.setup>, customer: string) => {
+    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
+    render(<OrderForm />)
+    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+    await user.click(screen.getByLabelText(/name/i))
+    await user.click(await screen.findByRole('option', { name: customer }))
+  }
+
+  it('prices at $1.50 a can by default', async () => {
+    const user = userEvent.setup()
+    await startOrder(user, 'Dame')
+    await user.click(screen.getByLabelText('Still'))
+    await user.type(screen.getByLabelText('Total Still Cases'), '5')
+
+    expect(screen.getByLabelText('Price')).toHaveValue(180)
+  })
+
+  it('offers custom pricing and rounds it to the cent', async () => {
+    const user = userEvent.setup()
+    await startOrder(user, 'Hollywood Theatre')
+
+    expect(await screen.findByText(/has custom pricing/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Yes' }))
+    await user.click(screen.getByLabelText('Still'))
+    await user.type(screen.getByLabelText('Total Still Cases'), '1')
+
+    expect(screen.getByLabelText('Price')).toHaveValue(39.84)
+  })
+
+  it('keeps a typed price until the quantity changes', async () => {
+    const user = userEvent.setup()
+    await startOrder(user, 'Dame')
+    await user.click(screen.getByLabelText('Still'))
+    await user.type(screen.getByLabelText('Total Still Cases'), '5')
+
+    await user.clear(screen.getByLabelText('Price'))
+    await user.type(screen.getByLabelText('Price'), '150')
+    await user.click(screen.getByLabelText(/notes/i))
+    expect(screen.getByLabelText('Price')).toHaveValue(150)
+
+    await user.type(screen.getByLabelText('Total Still Cases'), '0')
+    expect(screen.getByLabelText('Price')).toHaveValue(1800)
   })
 })

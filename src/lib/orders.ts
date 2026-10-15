@@ -12,6 +12,10 @@ export const salesType = (customerType: CustomerType) =>
 export const toCans = (quantity: string, inCans: boolean): number | null =>
   quantity === '' ? null : Number(quantity) * (inCans ? 1 : CANS_PER_CASE)
 
+/** The automatic price for this many cans, to the cent. Null when there's nothing to price. */
+export const priceForCans = (cans: number, pricePerCan: number): number | null =>
+  cans > 0 ? Math.round(cans * pricePerCan * 100) / 100 : null
+
 /**
  * Cans ordered for each product. A product that is switched off counts as
  * zero, even if its quantity field still holds a number from before.
