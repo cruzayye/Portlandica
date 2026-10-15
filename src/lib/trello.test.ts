@@ -1,6 +1,87 @@
 // @vitest-environment node
-import { describe, it, expect, beforeAll, afterAll } from 'vitest'
-import { formatDeliveryDate, nextDeliveryDate } from './trello'
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
+import type { NewOrder } from '@/types/orders'
+import { createTrelloCard, formatDeliveryDate, nextDeliveryDate } from './trello'
+
+type TrelloRequest = { url: string; method: string; body?: Record<string, unknown> }
+
+const order = (over: Partial<NewOrder> = {}): NewOrder => ({
+  name: 'Dame',
+  isBusiness: true,
+  isNewBusiness: false,
+  isDTC: false,
+  isStill: false,
+  isSpark: false,
+  totalStill: null,
+  totalSpark: null,
+  IsCustomStill: false,
+  isCustomSpark: false,
+  price: null,
+  isPaid: false,
+  createInvoice: false,
+  notes: '',
+  businessType: null,
+  streetAddress: null,
+  city: null,
+  state: null,
+  zip: null,
+  deliveryType: 'Drop',
+  isDonation: false,
+  ...over,
+})
+
+// Records every Trello call; labels on the board start empty.
+const trello = { requests: [] as TrelloRequest[] }
+
+const fakeFetch = async (url: string, init?: RequestInit) => {
+  const method = init?.method ?? 'GET'
+  const body = init?.body ? JSON.parse(String(init.body)) : undefined
+  trello.requests.push({ url, method, body })
+  if (url.includes('/labels') && method === 'GET') return Response.json([])
+  if (url.includes('/labels')) return Response.json({ id: `label:${body.name}` })
+  return Response.json({ id: 'card-1' })
+}
+
+const postedCard = () =>
+  trello.requests.find((r) => r.url === 'https://api.trello.com/1/cards' && r.method === 'POST')!
+    .body!
+
+describe('createTrelloCard', () => {
+  beforeEach(() => {
+    trello.requests.length = 0
+    vi.stubGlobal('fetch', fakeFetch)
+    vi.stubEnv('TRELLO_API_KEY', 'key')
+    vi.stubEnv('TRELLO_TOKEN', 'token')
+    vi.stubEnv('TRELLO_LIST_ID', 'list')
+    vi.stubEnv('TRELLO_BOARD_ID', 'board')
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+  })
+
+  it('lists each product on the card', async () => {
+    await createTrelloCard(
+      order({ isStill: true, totalStill: 120, isSpark: true, totalSpark: 48, IsCustomStill: true })
+    )
+
+    const card = postedCard()
+    expect(card.name).toBe('Dame - Drop 120 Still (Custom) & 48 Sparkling')
+    expect(card.desc).toContain('Still Cans: 120 (Custom)')
+    expect(card.desc).toContain('Sparkling Cans: 48')
+  })
+
+  it('leaves off a switched-off product even if its quantity is still filled in', async () => {
+    await createTrelloCard(
+      order({ isStill: false, totalStill: 120, isSpark: true, totalSpark: 48 })
+    )
+
+    const card = postedCard()
+    expect(card.name).toBe('Dame - Drop 48 Sparkling')
+    expect(card.desc).not.toContain('Still')
+  })
+})
 
 const originalTz = process.env.TZ
 

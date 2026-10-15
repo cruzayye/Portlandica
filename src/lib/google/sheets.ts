@@ -1,6 +1,7 @@
 import { google } from 'googleapis'
 import type { NewOrder } from '@/types/orders'
 import { createTrelloCard } from '@/lib/trello'
+import { sparkCans, stillCans } from '@/lib/orders'
 
 export type SheetLocation = {
   name: string
@@ -208,8 +209,8 @@ export async function appendOrder(order: NewOrder, force = false): Promise<{ dup
 
   const notes = order.notes ?? ''
   const totalPrice = order.price ?? 0
-  const totalStill = order.totalStill ?? 0
-  const totalSpark = order.totalSpark ?? 0
+  const totalStill = stillCans(order)
+  const totalSpark = sparkCans(order)
   const totalUnits = totalStill + totalSpark
 
   if (products.length > 0 && totalUnits > 0 && !force) {
@@ -327,8 +328,8 @@ async function appendDonation(
 ) {
   const customer = order.name ?? ''
   const notes = order.notes ?? ''
-  const totalStill = order.totalStill ?? 0
-  const totalSpark = order.totalSpark ?? 0
+  const totalStill = stillCans(order)
+  const totalSpark = sparkCans(order)
 
   const baseRows: { invRef: string; product: string; units: number }[] = []
   if (order.isStill && totalStill > 0) {

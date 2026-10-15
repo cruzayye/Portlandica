@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import type { NewOrder } from '@/types/orders'
 
 type Write = { range: string; values: unknown[][] }
+type WriteRequest = { range: string; requestBody: { values: unknown[][] } }
 
 // An in-memory stand-in for the Sheets API that records every write.
 const sheetsApi = vi.hoisted(() => {
@@ -18,22 +19,10 @@ const sheetsApi = vi.hoisted(() => {
       },
       values: {
         get: async ({ range }: { range: string }) => ({ data: { values: tabs[range] ?? [] } }),
-        update: async ({
-          range,
-          requestBody,
-        }: {
-          range: string
-          requestBody: { values: unknown[][] }
-        }) => {
+        update: async ({ range, requestBody }: WriteRequest) => {
           writes.push({ range, values: requestBody.values })
         },
-        append: async ({
-          range,
-          requestBody,
-        }: {
-          range: string
-          requestBody: { values: unknown[][] }
-        }) => {
+        append: async ({ range, requestBody }: WriteRequest) => {
           appends.push({ range, values: requestBody.values })
         },
       },
@@ -76,6 +65,13 @@ const order = (over: Partial<NewOrder> = {}): NewOrder => ({
   ...over,
 })
 
+// Sales columns, 0-indexed
+const PRODUCT = 2
+const UNITS = 4
+const SALES = 5
+const COGS_PER_UNIT = 13
+const COGS_TOTAL = 14
+
 // Sales rows written into the inserted block (A:V), keyed by sheet row number.
 const salesRowsWritten = () =>
   sheetsApi.writes
@@ -109,8 +105,31 @@ describe('appendOrder Sales formulas', () => {
     const rows = salesRowsWritten()
     expect(rows.map((r) => r.sheetRow)).toEqual([4, 5])
     for (const { sheetRow, row } of rows) {
-      expect(row[13]).toBe(`=XLOOKUP(M${sheetRow},Inventory!A:A,Inventory!P:P,0,0)`)
-      expect(row[14]).toBe(`=N${sheetRow}*E${sheetRow}`)
+      expect(row[COGS_PER_UNIT]).toBe(`=XLOOKUP(M${sheetRow},Inventory!A:A,Inventory!P:P,0,0)`)
+      expect(row[COGS_TOTAL]).toBe(`=N${sheetRow}*E${sheetRow}`)
     }
+  })
+})
+
+describe('appendOrder products', () => {
+  it('splits the price between products by cans', async () => {
+    await appendOrder(
+      order({ isStill: true, totalStill: 120, isSpark: true, totalSpark: 48, price: 252 })
+    )
+
+    expect(salesRowsWritten().map(({ row }) => [row[PRODUCT], row[UNITS], row[SALES]])).toEqual([
+      ['Still Cans', 120, 180],
+      ['Sparkling Cans', 48, 72],
+    ])
+  })
+
+  it('ignores a switched-off product even if its quantity is still filled in', async () => {
+    await appendOrder(
+      order({ isStill: false, totalStill: 120, isSpark: true, totalSpark: 48, price: 72 })
+    )
+
+    expect(salesRowsWritten().map(({ row }) => [row[PRODUCT], row[UNITS], row[SALES]])).toEqual([
+      ['Sparkling Cans', 48, 72],
+    ])
   })
 })

@@ -1,4 +1,5 @@
 import type { NewOrder } from '@/types/orders'
+import { sparkCans, stillCans } from '@/lib/orders'
 
 // Deliveries run on Portland time, not the server's (Vercel runs in UTC).
 const DELIVERY_TIME_ZONE = 'America/Los_Angeles'
@@ -84,32 +85,33 @@ export async function createTrelloCard(order: NewOrder, fillDate?: string | null
   const customerName = order.name ?? ''
   const deliveryType = order.deliveryType 
 
+  const totalStill = stillCans(order)
+  const totalSpark = sparkCans(order)
+
   const titleParts: string[] = []
-  if ((order.totalStill ?? 0) > 0) {
+  if (totalStill > 0) {
     const label = order.IsCustomStill ? ' (Custom)' : ''
-    titleParts.push(`${order.totalStill} Still${label}`)
+    titleParts.push(`${totalStill} Still${label}`)
   }
-  if ((order.totalSpark ?? 0) > 0) {
+  if (totalSpark > 0) {
     const label = order.isCustomSpark ? ' (Custom)' : ''
-    titleParts.push(`${order.totalSpark} Sparkling${label}`)
+    titleParts.push(`${totalSpark} Sparkling${label}`)
   }
 
   const cardTitle = `${customerName} - ${deliveryType} ${titleParts.join(' & ')}`
 
   const description: string[] = [`Delivery Type: ${deliveryType}`]
 
-  if ((order.totalStill ?? 0) > 0) {
+  if (totalStill > 0) {
     description.push(
-      order.IsCustomStill
-        ? `Still Cans: ${order.totalStill} (Custom)`
-        : `Still Cans: ${order.totalStill}`
+      order.IsCustomStill ? `Still Cans: ${totalStill} (Custom)` : `Still Cans: ${totalStill}`
     )
   }
-  if ((order.totalSpark ?? 0) > 0) {
+  if (totalSpark > 0) {
     description.push(
       order.isCustomSpark
-        ? `Sparkling Cans: ${order.totalSpark} (Custom)`
-        : `Sparkling Cans: ${order.totalSpark}`
+        ? `Sparkling Cans: ${totalSpark} (Custom)`
+        : `Sparkling Cans: ${totalSpark}`
     )
   }
 

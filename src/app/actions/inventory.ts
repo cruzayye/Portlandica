@@ -3,6 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import type { Inventory, NewInventory } from '@/types/orders'
 import type { NewOrder } from '@/types/orders'
+import { sparkCans, stillCans } from '@/lib/orders'
 
 export const getInventory = async (): Promise<Inventory[]> => {
   const supabase = await createClient()
@@ -54,11 +55,11 @@ export const decrementInventory = async (order: NewOrder, stillInventoryId?: num
   const supabase = await createClient()
 
   const decrements = [
-    ...(order.totalStill ?? 0) > 0
-      ? [{ id: stillInventoryId, isStill: true, isCustom: order.IsCustomStill ?? false, name: order.IsCustomStill ? (order.name ?? '') : 'Original', amount: order.totalStill! }]
+    ...stillCans(order) > 0
+      ? [{ id: stillInventoryId, isStill: true, isCustom: order.IsCustomStill ?? false, name: order.IsCustomStill ? (order.name ?? '') : 'Original', amount: stillCans(order) }]
       : [],
-    ...(order.totalSpark ?? 0) > 0
-      ? [{ id: sparkInventoryId, isStill: false, isCustom: order.isCustomSpark ?? false, name: order.isCustomSpark ? (order.name ?? '') : 'Original', amount: order.totalSpark! }]
+    ...sparkCans(order) > 0
+      ? [{ id: sparkInventoryId, isStill: false, isCustom: order.isCustomSpark ?? false, name: order.isCustomSpark ? (order.name ?? '') : 'Original', amount: sparkCans(order) }]
       : [],
   ]
 
