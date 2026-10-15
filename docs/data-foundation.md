@@ -3,8 +3,8 @@
 Branch `feat/data-foundation` adds the database groundwork for three features: a
 customers table, a master record of every order, and a history of every inventory
 change. It contains migrations, typed server-side modules (`src/lib/db/`) and a customer
-seed script. Nothing is wired into the UI yet, and nothing has been applied to the live
-database.
+seed script. `feat/order-flow` wires it into the order form (`docs/order-flow.md`); the
+order in which to apply everything is in `ROLLOUT.md`.
 
 - **customers**: one row per business or person, so custom cans and prices no longer
   depend on typing a name exactly.

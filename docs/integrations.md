@@ -1,6 +1,8 @@
 # Integrations: Square draft invoices and address geocoding
 
-Two server-side modules. Neither is wired into the order flow yet.
+Two server-side modules, wired into the order flow on `feat/order-flow` (see
+`docs/order-flow.md`): the Square step runs after the sheet step for orders with Create
+Invoice on, and new businesses are geocoded after the order is saved.
 
 | Module               | What it does                                                                                           |
 | -------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -30,8 +32,7 @@ SQUARE_ACCESS_TOKEN=your-sandbox-access-token
 SQUARE_LOCATION_ID=your-sandbox-location-id
 ```
 
-`.env.local.example` isn't changed on this branch; add these lines to it when the invoice step
-is wired in. Give this app its own token rather than reusing one from another tool. A personal
+`.env.local.example` has these lines. Give this app its own token rather than reusing one from another tool. A personal
 access token can do everything on the account. With OAuth instead, the module needs
 `CUSTOMERS_READ`, `CUSTOMERS_WRITE`, `ORDERS_READ`, `ORDERS_WRITE`, `INVOICES_READ` and
 `INVOICES_WRITE`.
