@@ -6,6 +6,19 @@ import type { Batch, Customer, Db, NewCustomer } from './types'
 // buildSeedPlan is pure, so the plan can be written out as CSV and reviewed before
 // applySeedPlan writes anything. Run it with scripts/seed-customers.ts.
 
+/**
+ * Agreed prices per can as the order form hard-coded them before the customers table.
+ * The seed copies them onto the customers; the app reads customers.price_per_can.
+ */
+export const CUSTOMER_PRICING: Record<string, number> = {
+  'Hollywood Theatre': 1.66,
+  'The Clyde Hotel Portland by Kasa': 1.75,
+  'Tacos Fita': 1.75,
+  'Que Dice': 2.0,
+  'Hotel Vintage': 2.0,
+  'Woodlark Hotel Portland': 2.0,
+}
+
 /** Payment terms that differ from the 30-day default. Sysco Net 65 confirmed 2026-10-12. */
 export const CUSTOMER_PAYMENT_TERMS: Record<string, number> = {
   Sysco: 65,

@@ -1,190 +1,239 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import type { Inventory } from '@/types/orders'
+import type { BatchOption, OrderFormData, OrderInput } from '@/types/orders'
+import type { SalesOrderWithLines } from '@/lib/db/types'
+import { defaultDeliveryDate } from '@/lib/delivery'
 
-const getInventory = vi.fn()
+const getOrderFormData = vi.fn()
 const createOrder = vi.fn()
-
-vi.mock('@/app/actions/inventory', () => ({
-  getInventory: () => getInventory(),
-}))
+const retryOrder = vi.fn()
 
 vi.mock('@/app/actions/orders', () => ({
-  getLocations: () =>
-    Promise.resolve([
-      { name: 'Dame', address: '123 NE Broadway', businessType: 'Restaurant' },
-      { name: 'Hollywood Theatre', address: '4122 NE Sandy Blvd', businessType: 'Theater' },
-    ]),
-  getLocationTypes: () => Promise.resolve([{ name: 'Restaurant' }]),
+  getOrderFormData: () => getOrderFormData(),
   createOrder: (...args: unknown[]) => createOrder(...args),
+}))
+vi.mock('@/app/actions/orderHistory', () => ({
+  retryOrder: (...args: unknown[]) => retryOrder(...args),
 }))
 
 import OrderForm from './OrderForm'
 
-const batch = (over: Partial<Inventory> & { id: number }): Inventory => ({
-  created_at: '2026-01-01T00:00:00Z',
-  name: 'Original',
-  count: 1440,
+const DAME = 1
+const HOLLYWOOD = 2
+
+const batch = (over: Partial<BatchOption> & { id: number }): BatchOption => ({
+  name: 'Portlandica',
+  count: 12000,
   isCustom: false,
   isStill: true,
-  fillDate: '2026-01-01',
-  totalCost: null,
-  invoiceNumber: null,
+  customer_id: null,
+  product: 'water',
+  fillDate: '2026-09-26',
   source: null,
   ...over,
 })
 
-const fillRequiredFields = async (user: ReturnType<typeof userEvent.setup>) => {
+const formData = (over: Partial<OrderFormData> = {}): OrderFormData => ({
+  customers: [
+    {
+      id: DAME,
+      name: 'Dame',
+      business_type: 'Restaurant',
+      price_per_can: null,
+      custom_cans: false,
+      email: null,
+      address: '123 NE Broadway',
+    },
+    {
+      id: HOLLYWOOD,
+      name: 'Hollywood Theatre',
+      business_type: 'Theater',
+      price_per_can: 1.66,
+      custom_cans: true,
+      email: 'ap@hollywood.example',
+      address: '4122 NE Sandy Blvd',
+    },
+  ],
+  businessTypes: ['Restaurant', 'Theater'],
+  batches: [batch({ id: 45 }), batch({ id: 25, name: 'North Powder', isStill: false })],
+  squareReady: false,
+  warnings: [],
+  ...over,
+})
+
+const savedOrder = (over: Partial<SalesOrderWithLines> = {}): SalesOrderWithLines =>
+  ({
+    id: 12,
+    customer_name: 'Dame',
+    sheet_status: 'done',
+    sheet_error: null,
+    sheet_ref: 'Sales!A3126:V3126',
+    inventory_status: 'done',
+    inventory_error: null,
+    trello_status: 'done',
+    trello_error: null,
+    trello_card_id: 'card-1',
+    square_status: 'skipped',
+    square_error: null,
+    square_invoice_id: null,
+    create_invoice: false,
+    voided_at: null,
+    lines: [],
+    ...over,
+  }) as SalesOrderWithLines
+
+type User = ReturnType<typeof userEvent.setup>
+
+const renderForm = async (data = formData()) => {
+  getOrderFormData.mockResolvedValue(data)
+  render(<OrderForm />)
+  await waitFor(() => expect(getOrderFormData).toHaveBeenCalled())
+}
+
+const pickCustomer = async (user: User, name: string) => {
   // Name is a MUI Autocomplete: it commits only when an option is chosen.
-  await user.click(screen.getByLabelText(/name/i))
-  await user.click(await screen.findByRole('option', { name: 'Dame' }))
+  await user.click(screen.getByLabelText(/^name/i))
+  await user.click(await screen.findByRole('option', { name }))
+}
+
+const fillRequiredFields = async (user: User, customer = 'Dame') => {
+  await pickCustomer(user, customer)
   await user.click(screen.getByLabelText('Still'))
   await user.type(screen.getByLabelText(/total still cases/i), '5')
   await user.click(screen.getByLabelText('Drop'))
 }
 
 const submitButton = () => screen.getByRole('button', { name: /submit order/i })
+const sent = (call = 0) => createOrder.mock.calls[call][0] as OrderInput
+const sentOptions = (call = 0) => createOrder.mock.calls[call][1]
 
 beforeEach(() => {
-  getInventory.mockReset()
+  getOrderFormData.mockReset()
   createOrder.mockReset()
-  createOrder.mockResolvedValue({ status: 'saved', warnings: [] })
+  retryOrder.mockReset()
+  createOrder.mockResolvedValue({
+    status: 'saved',
+    order: savedOrder(),
+    warnings: [],
+    shortfalls: [],
+  })
 })
 
 describe('OrderForm batch selection', () => {
-  it('blocks submit while multiple still batches are unresolved', async () => {
-    const user = userEvent.setup()
-    getInventory.mockResolvedValue([
-      batch({ id: 1, fillDate: '2026-06-20' }),
-      batch({ id: 2, fillDate: '2026-08-03' }),
-    ])
+  const twoStillBatches = formData({
+    batches: [batch({ id: 1, fillDate: '2026-06-20' }), batch({ id: 2, fillDate: '2026-08-03' })],
+  })
 
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+  it('blocks submit while several still batches are unresolved', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(twoStillBatches)
     await fillRequiredFields(user)
 
-    expect(screen.getByRole('button', { name: /submit order/i })).toBeDisabled()
+    expect(submitButton()).toBeDisabled()
     expect(screen.getByText(/select which batch this order pulls from/i)).toBeInTheDocument()
   })
 
-  it('enables submit once the user picks a batch', async () => {
-    const user = userEvent.setup()
-    getInventory.mockResolvedValue([
-      batch({ id: 1, fillDate: '2026-06-20' }),
-      batch({ id: 2, fillDate: '2026-08-03' }),
-    ])
-
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+  it('sends the batch the user picks', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(twoStillBatches)
     await fillRequiredFields(user)
 
-    await user.click(screen.getByLabelText(/batch number/i))
+    await user.click(screen.getByLabelText(/still batch/i))
     await user.click(await screen.findByRole('option', { name: /2026-08-03/ }))
-
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled(),
-    )
-  })
-
-  it('does not block submit when only one batch exists', async () => {
-    const user = userEvent.setup()
-    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
-
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
-    await fillRequiredFields(user)
-
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled(),
-    )
-    expect(
-      screen.queryByText(/select which batch this order pulls from/i),
-    ).not.toBeInTheDocument()
-  })
-
-  it('auto-selects the customer\'s single custom batch despite other options', async () => {
-    const user = userEvent.setup()
-    getInventory.mockResolvedValue([
-      batch({ id: 1, name: 'Original', fillDate: '2026-06-20' }),
-      batch({ id: 2, name: 'Original', fillDate: '2026-08-03' }),
-      batch({ id: 9, name: 'Dame', isCustom: true, fillDate: '2026-08-25' }),
-    ])
-
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
-    await fillRequiredFields(user)
-
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled(),
-    )
-  })
-
-  it('ignores sparkling ambiguity for a still-only order', async () => {
-    const user = userEvent.setup()
-    getInventory.mockResolvedValue([
-      batch({ id: 1, isStill: true, fillDate: '2026-06-20' }),
-      batch({ id: 2, isStill: false, fillDate: '2026-06-20' }),
-      batch({ id: 3, isStill: false, fillDate: '2026-08-03' }),
-    ])
-
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
-    await fillRequiredFields(user)
-
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled(),
-    )
-  })
-
-  it('submits the chosen batch id to createOrder', async () => {
-    const user = userEvent.setup()
-    getInventory.mockResolvedValue([
-      batch({ id: 1, fillDate: '2026-06-20' }),
-      batch({ id: 2, fillDate: '2026-08-03' }),
-    ])
-
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
-    await fillRequiredFields(user)
-
-    await user.click(screen.getByLabelText(/batch number/i))
-    await user.click(await screen.findByRole('option', { name: /2026-08-03/ }))
-    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await user.click(submitButton())
 
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
-    const [, batches] = createOrder.mock.calls[0]
-    expect(batches.still).toEqual({ id: 2, fillDate: '2026-08-03' })
+    expect(sent().lines).toEqual([{ product: 'still', cans: 120, batchId: 2 }])
   })
 
-  it('sends only the Sparkling batch for a Sparkling-only order', async () => {
-    const user = userEvent.setup()
-    getInventory.mockResolvedValue([
-      batch({ id: 1, isStill: true, fillDate: '2026-06-20' }),
-      batch({ id: 3, isStill: false, fillDate: '2026-08-03' }),
-    ])
+  it('shows how many cans are left in each batch', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(
+      formData({
+        batches: [
+          batch({ id: 1, count: 1440, source: 'Opal Springs' }),
+          batch({ id: 2, count: 960 }),
+        ],
+      })
+    )
+    await fillRequiredFields(user)
+    await user.click(screen.getByLabelText(/still batch/i))
 
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
-    await user.click(screen.getByLabelText(/name/i))
-    await user.click(await screen.findByRole('option', { name: 'Dame' }))
+    expect(
+      await screen.findByRole('option', {
+        name: 'Portlandica Still · 2026-09-26 · 1,440 left · Opal Springs',
+      })
+    ).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /960 left/ })).toBeInTheDocument()
+  })
+
+  it("picks the customer's own custom cans, matched by customer id", async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(
+      formData({
+        batches: [
+          batch({ id: 1 }),
+          batch({ id: 2 }),
+          batch({ id: 9, name: 'Hollywood Theatre', isCustom: true, customer_id: HOLLYWOOD }),
+        ],
+      })
+    )
+    await fillRequiredFields(user, 'Hollywood Theatre')
+
+    await waitFor(() => expect(submitButton()).toBeEnabled())
+    await user.click(submitButton())
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(sent().lines).toEqual([{ product: 'still', cans: 120, batchId: 9 }])
+  })
+
+  it("never offers someone else's custom cans, unlinked ones or dog water", async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(
+      formData({
+        batches: [
+          batch({ id: 1 }),
+          batch({ id: 7, name: 'Dame', isCustom: true, customer_id: null }),
+          batch({ id: 8, name: 'Hollywood Theatre', isCustom: true, customer_id: HOLLYWOOD }),
+          batch({ id: 33, name: 'Portlandica Dog water', product: 'dog_water' }),
+        ],
+      })
+    )
+    await fillRequiredFields(user)
+
+    // Only house stock is left, so it's picked and nothing else is offered.
+    await user.click(screen.getByLabelText(/still batch/i))
+    const options = await screen.findAllByRole('option')
+    expect(options.map((o) => o.textContent)).toEqual([
+      'Portlandica Still · 2026-09-26 · 12,000 left',
+    ])
+  })
+
+  it('says when a custom-can customer has no custom batch linked yet', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await pickCustomer(user, 'Hollywood Theatre')
+    expect(
+      screen.getByText(/No custom-can batch is linked to Hollywood Theatre yet/)
+    ).toBeInTheDocument()
+  })
+
+  it('sends only the Sparkling line for a Sparkling-only order', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await pickCustomer(user, 'Dame')
     await user.click(screen.getByLabelText('Sparkling'))
     await user.type(screen.getByLabelText(/total sparkling cases/i), '2')
     await user.click(screen.getByLabelText('Drop'))
     await user.click(submitButton())
 
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
-    const [, batches] = createOrder.mock.calls[0]
-    expect(batches.spark).toEqual({ id: 3, fillDate: '2026-08-03' })
-    expect(batches.still).toBeUndefined()
+    expect(sent().lines).toEqual([{ product: 'sparkling', cans: 48, batchId: 25 }])
   })
 
   it('blocks submit when a product has no batches at all', async () => {
-    const user = userEvent.setup()
-    getInventory.mockResolvedValue([batch({ id: 1, isStill: true, fillDate: '2026-06-20' })])
-
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+    const user = userEvent.setup({ delay: null })
+    await renderForm(formData({ batches: [batch({ id: 45 })] }))
     await fillRequiredFields(user)
     expect(submitButton()).toBeEnabled()
 
@@ -196,251 +245,318 @@ describe('OrderForm batch selection', () => {
   })
 })
 
+describe('OrderForm when a batch is short', () => {
+  const smallBatch = formData({ batches: [batch({ id: 45, count: 100 })] })
+
+  it('warns, asks before booking, and books it once confirmed', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(smallBatch)
+    await fillRequiredFields(user)
+
+    expect(
+      screen.getByText(
+        /Portlandica Still has 100 cans left; this order needs 120\. You'll be asked/
+      )
+    ).toBeInTheDocument()
+    expect(submitButton()).toBeEnabled()
+
+    await user.click(submitButton())
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText(/has 100 cans left; this order needs 120/)).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(createOrder).not.toHaveBeenCalled()
+
+    await user.click(submitButton())
+    await user.click(await screen.findByRole('button', { name: 'Book Anyway' }))
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(sentOptions()).toMatchObject({ allowOversell: true })
+  })
+
+  it('asks the same when the server finds the batch short, keeping the order key', async () => {
+    const user = userEvent.setup({ delay: null })
+    createOrder.mockResolvedValueOnce({
+      status: 'short',
+      shortfalls: [{ batchId: 45, batchName: 'Portlandica Still', available: 60, needed: 120 }],
+    })
+    await renderForm()
+    await fillRequiredFields(user)
+    await user.click(submitButton())
+
+    await user.click(await screen.findByRole('button', { name: 'Book Anyway' }))
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(2))
+    expect(sentOptions(1)).toEqual({
+      allowOversell: true,
+      idempotencyKey: sentOptions(0).idempotencyKey,
+    })
+  })
+})
+
 describe('OrderForm submit results', () => {
-  const submitDameOrder = async (user: ReturnType<typeof userEvent.setup>) => {
-    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+  const submitDameOrder = async (user: User) => {
+    await renderForm()
     await fillRequiredFields(user)
     await user.click(submitButton())
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
   }
 
-  it('starts a fresh form and shows the warning when a later step failed', async () => {
-    const user = userEvent.setup()
+  it('shows how each step went, starts a fresh order and reloads the batches', async () => {
+    const user = userEvent.setup({ delay: null })
+    await submitDameOrder(user)
+
+    expect(await screen.findByText('Order #12 saved for Dame.')).toBeInTheDocument()
+    expect(screen.getByText('Sales sheet: done')).toBeInTheDocument()
+    expect(screen.getByText('Sales sheet: Sales row 3126')).toBeInTheDocument()
+    expect(screen.getByText('Square: skipped')).toBeInTheDocument()
+    expect(screen.getByLabelText(/^name/i)).toHaveValue('')
+    await waitFor(() => expect(getOrderFormData).toHaveBeenCalledTimes(2))
+
+    // The next order gets its own key.
+    await fillRequiredFields(user)
+    await user.click(submitButton())
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(2))
+    expect(sentOptions(1).idempotencyKey).not.toBe(sentOptions(0).idempotencyKey)
+  })
+
+  it('offers a retry for a step that failed', async () => {
+    const user = userEvent.setup({ delay: null })
     createOrder.mockResolvedValue({
       status: 'saved',
-      warnings: [
-        'Order saved, but the Trello card failed (Trello API error: 503). Add the card by hand.',
-      ],
+      order: savedOrder({
+        trello_status: 'failed',
+        trello_error: 'Trello API error: 503',
+        trello_card_id: null,
+      }),
+      warnings: [],
+      shortfalls: [],
     })
-
+    retryOrder.mockResolvedValue({
+      status: 'done',
+      order: savedOrder(),
+      warnings: [],
+      shortfalls: [],
+    })
     await submitDameOrder(user)
 
-    expect(await screen.findByText(/Trello card failed.*Add the card by hand/)).toBeInTheDocument()
-    expect(screen.queryByText(/submitted successfully/i)).not.toBeInTheDocument()
-    expect(screen.getByLabelText(/name/i)).toHaveValue('')
+    expect(await screen.findByText('Trello: Trello API error: 503')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Retry Trello' }))
+
+    await waitFor(() =>
+      expect(retryOrder).toHaveBeenCalledWith(12, { allowNegativeInventory: false })
+    )
+    expect(await screen.findByText('Trello: done')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^Retry/ })).not.toBeInTheDocument()
   })
 
-  it('keeps the form and shows the message when the order was not saved', async () => {
-    const user = userEvent.setup()
-    createOrder.mockResolvedValue({
+  it('keeps the form and the order key when the order was not saved', async () => {
+    const user = userEvent.setup({ delay: null })
+    createOrder.mockResolvedValueOnce({
       status: 'failed',
-      message: 'The order may not have been saved: writing to the Google Sheet failed (quota).',
+      message: "The order wasn't saved (network). Submitting again is safe.",
     })
-
     await submitDameOrder(user)
 
-    expect(await screen.findByText(/may not have been saved/)).toBeInTheDocument()
-    expect(screen.getByLabelText(/name/i)).toHaveValue('Dame')
+    expect(await screen.findByText(/Submitting again is safe/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/^name/i)).toHaveValue('Dame')
+    await user.click(await screen.findByRole('button', { name: /submit order/i }))
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(2))
+    expect(sentOptions(1).idempotencyKey).toBe(sentOptions(0).idempotencyKey)
   })
 
-  it('asks to check the sheet when the server cannot be reached', async () => {
-    const user = userEvent.setup()
-    createOrder.mockRejectedValue(new Error('An error occurred in the Server Components render.'))
-
+  it('says a resubmit is safe when the server cannot be reached', async () => {
+    const user = userEvent.setup({ delay: null })
+    createOrder.mockRejectedValueOnce(
+      new Error('An error occurred in the Server Components render.')
+    )
     await submitDameOrder(user)
 
     expect(
-      await screen.findByText(/Check the Sales sheet before submitting again/)
+      await screen.findByText(/Submit again: the same order is never booked twice/)
     ).toBeInTheDocument()
-    expect(screen.getByLabelText(/name/i)).toHaveValue('Dame')
+    expect(screen.getByLabelText(/^name/i)).toHaveValue('Dame')
+  })
+
+  it('books a second order today only when asked, under a new key', async () => {
+    const user = userEvent.setup({ delay: null })
+    createOrder.mockResolvedValueOnce({
+      status: 'duplicate',
+      message: 'Dame already has an order today (order #11).',
+    })
+    await submitDameOrder(user)
+
+    expect(await screen.findByText(/already has an order today \(order #11\)/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Submit Anyway' }))
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(2))
+    expect(sentOptions(1)).toMatchObject({ force: true })
+    expect(sentOptions(1).idempotencyKey).not.toBe(sentOptions(0).idempotencyKey)
+  })
+
+  it('moves to a new key when its key already saved a different order', async () => {
+    const user = userEvent.setup({ delay: null })
+    createOrder.mockResolvedValueOnce({
+      status: 'already_saved',
+      orderId: 11,
+      message: 'This form already saved order #11 with different details.',
+    })
+    await submitDameOrder(user)
+
+    expect(await screen.findByText(/already saved order #11/)).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: /submit order/i }))
+    await waitFor(() => expect(createOrder).toHaveBeenCalledTimes(2))
+    expect(sentOptions(1).idempotencyKey).not.toBe(sentOptions(0).idempotencyKey)
   })
 })
 
-describe('OrderForm existing customer', () => {
-  it('keeps the address out of Notes and sends it separately', async () => {
-    const user = userEvent.setup()
-    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
-
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+describe('OrderForm customers', () => {
+  it("sends an existing customer's address for the card and keeps Notes for notes", async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
     await fillRequiredFields(user)
 
+    expect(screen.getByText('123 NE Broadway')).toBeInTheDocument()
     expect(screen.getByLabelText(/notes/i)).toHaveValue('')
     await user.type(screen.getByLabelText(/notes/i), 'Leave at the back door')
     await user.click(submitButton())
 
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
-    const [order] = createOrder.mock.calls[0]
-    expect(order.address).toBe('123 NE Broadway')
-    expect(order.notes).toBe('Leave at the back door')
+    expect(sent()).toMatchObject({
+      customerType: 'existing',
+      customerId: DAME,
+      name: 'Dame',
+      deliveryAddress: '123 NE Broadway',
+      notes: 'Leave at the back door',
+    })
   })
-})
 
-describe('OrderForm customer type', () => {
-  const renderForm = async () => {
-    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
-  }
-
-  it('offers one choice, starting at Existing business', async () => {
+  it('takes a new business with its address', async () => {
+    const user = userEvent.setup({ delay: null })
     await renderForm()
+    await user.click(screen.getByRole('button', { name: 'New business' }))
+    await user.type(screen.getByLabelText(/new business name/i), 'Baerlic Brewery')
+    await user.type(screen.getByLabelText(/street address/i), '2235 SE 11th Ave')
+    await user.type(screen.getByLabelText(/city/i), 'Portland')
+    await user.type(screen.getByLabelText(/state/i), 'OR')
+    await user.type(screen.getByLabelText(/zip/i), '97214')
+    await user.click(screen.getByLabelText('Still'))
+    await user.type(screen.getByLabelText(/total still cases/i), '2')
+    await user.click(screen.getByLabelText('Drop'))
+    await user.click(submitButton())
 
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(sent()).toMatchObject({
+      customerType: 'new',
+      customerId: null,
+      name: 'Baerlic Brewery',
+      streetAddress: '2235 SE 11th Ave',
+      city: 'Portland',
+      state: 'OR',
+      zip: '97214',
+      deliveryAddress: null,
+    })
+    expect(await screen.findByText('New Business Added')).toBeInTheDocument()
+    expect(screen.getByText(/App Scripts still updates the store-locator map/)).toBeInTheDocument()
+  })
+
+  it('points out a "new" business that is already a customer', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await user.click(screen.getByRole('button', { name: 'New business' }))
+    await user.type(screen.getByLabelText(/new business name/i), 'dame ')
+
+    expect(screen.getByText('Dame is already a customer.')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Pick them' }))
     expect(screen.getByRole('button', { name: 'Existing business' })).toHaveAttribute(
       'aria-pressed',
       'true'
     )
-    expect(screen.getByRole('button', { name: 'New business' })).toHaveAttribute(
-      'aria-pressed',
-      'false'
-    )
-    expect(screen.getByRole('button', { name: 'Individual (DTC)' })).toBeInTheDocument()
-    // The old independent switches are gone.
-    expect(screen.queryByLabelText(/^business$/i)).not.toBeInTheDocument()
-    expect(screen.queryByLabelText(/^dtc$/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/^name/i)).toHaveValue('Dame')
   })
 
-  it('shows the new-business fields only for New business', async () => {
-    const user = userEvent.setup()
+  it("puts an individual's delivery address on the card, not in Notes", async () => {
+    const user = userEvent.setup({ delay: null })
     await renderForm()
-    expect(screen.queryByLabelText(/street address/i)).not.toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: 'New business' }))
-    expect(screen.getByLabelText(/new business name/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/type of business/i)).toBeInTheDocument()
-    expect(screen.getByLabelText(/street address/i)).toBeInTheDocument()
-
     await user.click(screen.getByRole('button', { name: 'Individual (DTC)' }))
-    expect(screen.getByLabelText(/customer name/i)).toBeInTheDocument()
-    expect(screen.queryByLabelText(/type of business/i)).not.toBeInTheDocument()
-    expect(screen.queryByLabelText(/street address/i)).not.toBeInTheDocument()
-  })
-
-  it('clears the fields a new choice hides', async () => {
-    const user = userEvent.setup()
-    await renderForm()
-
-    await user.click(screen.getByRole('button', { name: 'New business' }))
-    await user.type(screen.getByLabelText(/new business name/i), 'Fresh Cafe')
-    await user.type(screen.getByLabelText(/street address/i), '1 SW Main St')
-    await user.click(screen.getByRole('button', { name: 'Individual (DTC)' }))
-    await user.click(screen.getByRole('button', { name: 'New business' }))
-
-    // The typed name carries over between the two typed-in choices; the address doesn't.
-    expect(screen.getByLabelText(/new business name/i)).toHaveValue('Fresh Cafe')
-    expect(screen.getByLabelText(/street address/i)).toHaveValue('')
-
-    await user.click(screen.getByRole('button', { name: 'Existing business' }))
-    expect(screen.getByLabelText(/name/i)).toHaveValue('')
-  })
-
-  it('drops an existing customer when switching to a typed-in name', async () => {
-    const user = userEvent.setup()
-    await renderForm()
-    await fillRequiredFields(user)
-
-    await user.click(screen.getByRole('button', { name: 'Individual (DTC)' }))
-    expect(screen.getByLabelText(/customer name/i)).toHaveValue('')
     await user.type(screen.getByLabelText(/customer name/i), 'Pat Doe')
+    await user.type(screen.getByLabelText(/delivery address/i), '12 SE Ash St, Portland')
+    await user.click(screen.getByLabelText('Still'))
+    await user.type(screen.getByLabelText(/total still cases/i), '1')
+    await user.click(screen.getByLabelText('Pickup'))
     await user.click(submitButton())
 
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
-    const [order] = createOrder.mock.calls[0]
-    expect(order).toMatchObject({
+    expect(sent()).toMatchObject({
       customerType: 'individual',
       name: 'Pat Doe',
-      address: null,
-      businessType: null,
-      streetAddress: null,
+      deliveryAddress: '12 SE Ash St, Portland',
+      notes: null,
+      deliveryType: 'Pickup',
     })
   })
-})
 
-describe('OrderForm quantities', () => {
-  const startStillOrder = async (user: ReturnType<typeof userEvent.setup>) => {
-    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
-    await fillRequiredFields(user)
-  }
-
-  it('shows cases as cans and leaves the number alone when focus moves', async () => {
-    const user = userEvent.setup()
-    await startStillOrder(user)
-
-    const cases = screen.getByLabelText(/total still cases/i)
-    expect(cases).toHaveValue(5)
-    expect(screen.getByText('= 120 cans')).toBeInTheDocument()
-
-    // Leaving and re-entering the box used to multiply it by 24 each time.
-    await user.click(cases)
-    await user.click(screen.getByLabelText(/notes/i))
-    await user.click(cases)
-    await user.click(screen.getByLabelText(/notes/i))
-    expect(cases).toHaveValue(5)
-    expect(screen.getByText('= 120 cans')).toBeInTheDocument()
-
-    await user.click(submitButton())
-    await waitFor(() => expect(createOrder).toHaveBeenCalled())
-    expect(createOrder.mock.calls[0][0].totalStill).toBe(120)
+  it('offers one choice of customer type, starting at Existing business', async () => {
+    await renderForm()
+    expect(screen.getByRole('button', { name: 'Existing business' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    expect(screen.queryByLabelText(/street address/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/delivery address/i)).not.toBeInTheDocument()
   })
 
-  it('takes single cans with Enter Manual Number on', async () => {
-    const user = userEvent.setup()
-    await startStillOrder(user)
-
-    await user.click(screen.getByLabelText('Enter Manual Number (cans)'))
-    expect(screen.queryByLabelText(/total still cases/i)).not.toBeInTheDocument()
-    await user.clear(screen.getByLabelText(/total still cans/i))
-    await user.type(screen.getByLabelText(/total still cans/i), '130')
-    expect(screen.getByText('Single cans, not cases')).toBeInTheDocument()
-
-    await user.click(submitButton())
-    await waitFor(() => expect(createOrder).toHaveBeenCalled())
-    expect(createOrder.mock.calls[0][0].totalStill).toBe(130)
+  it('drops the picked customer when switching to a typed-in name', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await pickCustomer(user, 'Dame')
+    await user.click(screen.getByRole('button', { name: 'New business' }))
+    expect(screen.getByLabelText(/new business name/i)).toHaveValue('')
+    await user.click(screen.getByRole('button', { name: 'Existing business' }))
+    expect(screen.getByLabelText(/^name/i)).toHaveValue('')
   })
 
-  it('goes back to cases after a saved order', async () => {
-    const user = userEvent.setup()
-    await startStillOrder(user)
-    await user.click(screen.getByLabelText('Enter Manual Number (cans)'))
-
-    await user.click(submitButton())
-    await screen.findByText(/submitted successfully/i)
-
-    expect(screen.getByLabelText('Enter Manual Number (cans)')).not.toBeChecked()
-    await user.click(screen.getByLabelText('Still'))
-    expect(screen.getByLabelText(/total still cases/i)).toHaveValue(null)
+  it('shows problems loading the form', async () => {
+    await renderForm(formData({ warnings: ["Couldn't read the Current Locations Addresses tab"] }))
+    expect(
+      await screen.findByText("Couldn't read the Current Locations Addresses tab")
+    ).toBeInTheDocument()
   })
 })
 
 describe('OrderForm price', () => {
-  const startOrder = async (user: ReturnType<typeof userEvent.setup>, customer: string) => {
-    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
-    await user.click(screen.getByLabelText(/name/i))
-    await user.click(await screen.findByRole('option', { name: customer }))
-  }
-
   it('prices at $1.50 a can by default', async () => {
-    const user = userEvent.setup()
-    await startOrder(user, 'Dame')
-    await user.click(screen.getByLabelText('Still'))
-    await user.type(screen.getByLabelText(/total still cases/i), '5')
-
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await fillRequiredFields(user)
     expect(screen.getByLabelText('Price')).toHaveValue(180)
   })
 
-  it('offers custom pricing and rounds it to the cent', async () => {
-    const user = userEvent.setup()
-    await startOrder(user, 'Hollywood Theatre')
-
-    expect(await screen.findByText(/has custom pricing/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Yes' }))
+  it("charges a customer's custom price when their custom cans are picked, without asking", async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(
+      formData({
+        batches: [
+          batch({ id: 1 }),
+          batch({ id: 9, name: 'Hollywood Theatre', isCustom: true, customer_id: HOLLYWOOD }),
+        ],
+      })
+    )
+    await pickCustomer(user, 'Hollywood Theatre')
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
     await user.click(screen.getByLabelText('Still'))
     await user.type(screen.getByLabelText(/total still cases/i), '1')
 
     expect(screen.getByLabelText('Price')).toHaveValue(39.84)
+    expect(screen.getByText("$1.66 a can: Hollywood Theatre's price")).toBeInTheDocument()
+
+    // House stock instead: the default price.
+    await user.click(screen.getByLabelText(/still batch/i))
+    await user.click(await screen.findByRole('option', { name: /^Portlandica Still/ }))
+    expect(screen.getByLabelText('Price')).toHaveValue(36)
   })
 
   it('keeps a typed price until the quantity changes', async () => {
-    const user = userEvent.setup()
-    await startOrder(user, 'Dame')
-    await user.click(screen.getByLabelText('Still'))
-    await user.type(screen.getByLabelText(/total still cases/i), '5')
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await fillRequiredFields(user)
 
     await user.clear(screen.getByLabelText('Price'))
     await user.type(screen.getByLabelText('Price'), '150')
@@ -450,110 +566,146 @@ describe('OrderForm price', () => {
     await user.type(screen.getByLabelText(/total still cases/i), '0')
     expect(screen.getByLabelText('Price')).toHaveValue(1800)
   })
-})
 
-describe('OrderForm donations and $0 orders', () => {
-  const startDameOrder = async (user: ReturnType<typeof userEvent.setup>) => {
-    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+  it('books a donation at $0 with the price locked and no invoice', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
     await fillRequiredFields(user)
-  }
-
-  it('books a donation at $0 with the price locked', async () => {
-    const user = userEvent.setup()
-    await startDameOrder(user)
-    expect(screen.getByLabelText('Price')).toHaveValue(180)
-
+    await user.click(screen.getByLabelText('Create Invoice'))
     await user.click(screen.getByLabelText('Donut'))
+
     expect(screen.getByLabelText('Price')).toHaveValue(0)
     expect(screen.getByLabelText('Price')).toBeDisabled()
+    expect(screen.getByLabelText('Create Invoice')).toBeDisabled()
+    expect(screen.getByLabelText('Create Invoice')).not.toBeChecked()
 
     await user.click(submitButton())
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
-    expect(createOrder.mock.calls[0][0]).toMatchObject({ isDonation: true, price: 0 })
+    expect(sent()).toMatchObject({ isDonation: true, price: 0, createInvoice: false })
   })
 
-  it('goes back to the automatic price when Donut is turned off', async () => {
-    const user = userEvent.setup()
-    await startDameOrder(user)
-
-    await user.click(screen.getByLabelText('Donut'))
-    await user.click(screen.getByLabelText('Donut'))
-
-    expect(screen.getByLabelText('Price')).toHaveValue(180)
-    expect(screen.getByLabelText('Price')).toBeEnabled()
-  })
-
-  it.each([
-    ['cleared', ''],
-    ['set to $0', '0'],
-  ])('blocks a sale whose price is %s and offers to mark it a donation', async (_, typed) => {
-    const user = userEvent.setup()
-    await startDameOrder(user)
-
+  it('blocks a sale with no price and offers to mark it a donation', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await fillRequiredFields(user)
     await user.clear(screen.getByLabelText('Price'))
-    if (typed) await user.type(screen.getByLabelText('Price'), typed)
 
     expect(screen.getByText(/No price\. Enter one, or mark this order as a donation/)).toBeVisible()
     expect(submitButton()).toBeDisabled()
-
     await user.click(screen.getByRole('button', { name: 'Mark as donation' }))
-    expect(screen.getByLabelText('Donut')).toBeChecked()
-    expect(submitButton()).toBeEnabled()
-  })
-
-  it('lets a typed price through', async () => {
-    const user = userEvent.setup()
-    await startDameOrder(user)
-
-    await user.clear(screen.getByLabelText('Price'))
-    await user.type(screen.getByLabelText('Price'), '150')
-
-    expect(screen.queryByText(/No price/)).not.toBeInTheDocument()
     expect(submitButton()).toBeEnabled()
   })
 })
 
-describe('OrderForm product switches', () => {
+describe('OrderForm invoice details', () => {
+  it("asks for a PO number and billing email, filling in the customer's email", async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await fillRequiredFields(user, 'Hollywood Theatre')
+    expect(screen.queryByLabelText(/po number/i)).not.toBeInTheDocument()
+
+    await user.click(screen.getByLabelText('Create Invoice'))
+    expect(screen.getByText(/Square isn't set up in this app yet/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/billing email/i)).toHaveValue('ap@hollywood.example')
+    await user.type(screen.getByLabelText(/po number/i), '28487630')
+    await user.click(submitButton())
+
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(sent()).toMatchObject({
+      createInvoice: true,
+      poNumber: '28487630',
+      email: 'ap@hollywood.example',
+    })
+  })
+
+  it("doesn't send invoice details once Create Invoice is off", async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(formData({ squareReady: true }))
+    await fillRequiredFields(user)
+    await user.click(screen.getByLabelText('Create Invoice'))
+    expect(screen.queryByText(/Square isn't set up/)).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText(/po number/i), '123')
+    await user.click(screen.getByLabelText('Create Invoice'))
+    await user.click(submitButton())
+
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(sent()).toMatchObject({ createInvoice: false, poNumber: null, email: null })
+  })
+})
+
+describe('OrderForm delivery date', () => {
+  it('starts at the next delivery day and sends the date picked', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await fillRequiredFields(user)
+    const date = screen.getByLabelText(/delivery date/i)
+    expect(date).toHaveValue(defaultDeliveryDate(new Date()))
+
+    await user.clear(date)
+    await user.type(date, '2026-12-02')
+    await user.click(submitButton())
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(sent().deliveryDate).toBe('2026-12-02')
+  })
+
+  it('needs a date', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await fillRequiredFields(user)
+    await user.clear(screen.getByLabelText(/delivery date/i))
+    expect(submitButton()).toBeDisabled()
+  })
+})
+
+describe('OrderForm quantities', () => {
+  it('shows cases as cans and leaves the number alone when focus moves', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await fillRequiredFields(user)
+
+    const cases = screen.getByLabelText(/total still cases/i)
+    expect(screen.getByText('= 120 cans')).toBeInTheDocument()
+    // Leaving and re-entering the box used to multiply it by 24 each time.
+    await user.click(cases)
+    await user.click(screen.getByLabelText(/notes/i))
+    await user.click(cases)
+    await user.click(screen.getByLabelText(/notes/i))
+    expect(cases).toHaveValue(5)
+  })
+
+  it('takes single cans with Enter Manual Number on', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await fillRequiredFields(user)
+
+    await user.click(screen.getByLabelText('Enter Manual Number (cans)'))
+    await user.clear(screen.getByLabelText(/total still cans/i))
+    await user.type(screen.getByLabelText(/total still cans/i), '130')
+    await user.click(submitButton())
+
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(sent().lines).toEqual([{ product: 'still', cans: 130, batchId: 45 }])
+  })
+
   it('forgets a quantity once its product is switched off', async () => {
-    const user = userEvent.setup()
-    getInventory.mockResolvedValue([
-      batch({ id: 1, isStill: true, fillDate: '2026-06-20' }),
-      batch({ id: 2, isStill: false, fillDate: '2026-08-03' }),
-    ])
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
     await fillRequiredFields(user)
     await user.click(screen.getByLabelText('Sparkling'))
     await user.type(screen.getByLabelText(/total sparkling cases/i), '2')
     expect(screen.getByLabelText('Price')).toHaveValue(252)
 
-    // Still off: its 5 cases no longer count toward the price or the order.
     await user.click(screen.getByLabelText('Still'))
     expect(screen.getByLabelText('Price')).toHaveValue(72)
-
-    // Back on, the box starts empty instead of bringing the old number back.
     await user.click(screen.getByLabelText('Still'))
     expect(screen.getByLabelText(/total still cases/i)).toHaveValue(null)
     await user.click(screen.getByLabelText('Still'))
 
     await user.click(submitButton())
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
-    const [order, batches] = createOrder.mock.calls[0]
-    expect(order).toMatchObject({ isStill: false, totalStill: null, totalSpark: 48, price: 72 })
-    expect(batches.still).toBeUndefined()
-  })
-
-  it('requires a quantity for each product that is on', async () => {
-    const user = userEvent.setup()
-    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
-    render(<OrderForm />)
-    await waitFor(() => expect(getInventory).toHaveBeenCalled())
-    await fillRequiredFields(user)
-    expect(submitButton()).toBeEnabled()
-
-    await user.clear(screen.getByLabelText(/total still cases/i))
-    expect(submitButton()).toBeDisabled()
+    expect(sent()).toMatchObject({
+      lines: [{ product: 'sparkling', cans: 48, batchId: 25 }],
+      price: 72,
+    })
   })
 })

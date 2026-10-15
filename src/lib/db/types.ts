@@ -87,6 +87,14 @@ export type SalesOrder = {
   voided_at: string | null
   voided_by: string | null
   void_reason: string | null
+  /** Where the order goes, as shown on the Trello card. */
+  delivery_address: string | null
+  /** Billing email given with the order, for the Square invoice. */
+  customer_email: string | null
+  /** Where the sheet step wrote, e.g. 'Sales!A3126:V3127'. */
+  sheet_ref: string | null
+  /** This order added the customer, so the sheet step also lists them on the locations tab. */
+  new_customer: boolean
   created_by: string | null
   created_at: string
   updated_at: string

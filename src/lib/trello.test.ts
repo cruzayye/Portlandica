@@ -1,36 +1,28 @@
 // @vitest-environment node
-import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest'
-import type { NewOrder } from '@/types/orders'
-import { createTrelloCard, formatDeliveryDate, nextDeliveryDate } from './trello'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { archiveTrelloCard, cardFor, createTrelloCard, type TrelloOrder } from './trello'
 
 type TrelloRequest = { url: string; method: string; body?: Record<string, unknown> }
 
-const order = (over: Partial<NewOrder> = {}): NewOrder => ({
-  name: 'Dame',
-  customerType: 'existing',
-  isStill: false,
-  isSpark: false,
-  totalStill: null,
-  totalSpark: null,
-  IsCustomStill: false,
-  isCustomSpark: false,
-  price: null,
-  isPaid: false,
-  createInvoice: false,
-  notes: '',
+const order = (over: Partial<TrelloOrder> = {}): TrelloOrder => ({
+  orderId: 42,
+  customerName: 'Dame',
+  deliveryType: 'drop',
+  deliveryDate: '2026-10-21',
+  lines: [{ product: 'still', cans: 120, isCustom: false, fillDate: '2026-09-26' }],
   address: null,
-  businessType: null,
-  streetAddress: null,
-  city: null,
-  state: null,
-  zip: null,
-  deliveryType: 'Drop',
-  isDonation: false,
+  poNumber: null,
+  notes: null,
   ...over,
 })
 
-// Records every Trello call; labels on the board start empty.
-const trello = { requests: [] as TrelloRequest[] }
+// Records every Trello call. Labels on the board start empty; the board's open cards are
+// whatever a test puts in `cards`.
+const trello = {
+  requests: [] as TrelloRequest[],
+  cards: [] as { id: string; desc: string }[],
+  failCreate: false,
+}
 
 const fakeFetch = async (url: string, init?: RequestInit) => {
   const method = init?.method ?? 'GET'
@@ -38,16 +30,85 @@ const fakeFetch = async (url: string, init?: RequestInit) => {
   trello.requests.push({ url, method, body })
   if (url.includes('/labels') && method === 'GET') return Response.json([])
   if (url.includes('/labels')) return Response.json({ id: `label:${body.name}` })
+  if (url.includes('/cards/open')) return Response.json(trello.cards)
+  if (method === 'PUT') return Response.json({ id: 'card-1', closed: true })
+  if (trello.failCreate) return new Response('board is full', { status: 400 })
   return Response.json({ id: 'card-1' })
 }
 
 const postedCard = () =>
-  trello.requests.find((r) => r.url === 'https://api.trello.com/1/cards' && r.method === 'POST')!
-    .body!
+  trello.requests.find((r) => r.url === 'https://api.trello.com/1/cards' && r.method === 'POST')
+    ?.body
+
+describe('cardFor', () => {
+  it('titles the card with the customer, delivery type and cans', () => {
+    const card = cardFor(
+      order({
+        deliveryType: 'ship',
+        lines: [
+          { product: 'still', cans: 240, isCustom: true, fillDate: '2026-08-25' },
+          { product: 'sparkling', cans: 48, isCustom: false, fillDate: '2026-08-03' },
+        ],
+      })
+    )
+    expect(card.name).toBe('Dame - Ship 240 Still (Custom) & 48 Sparkling')
+    expect(card.desc.split('\n')).toEqual([
+      'Delivery Type: Ship',
+      'Still Cans: 240 (Custom)',
+      'Sparkling Cans: 48',
+      'Delivery Date: 10/21/2026',
+      'Order #42',
+    ])
+  })
+
+  it('is due at 9 AM Pacific on the picked delivery date', () => {
+    expect(cardFor(order({ deliveryDate: '2026-10-24' })).due.toISOString()).toBe(
+      '2026-10-24T16:00:00.000Z'
+    )
+  })
+
+  it('falls back to the next delivery day when no date was picked', () => {
+    const card = cardFor(order({ deliveryDate: null }), new Date('2026-10-16T18:00:00Z'))
+    expect(card.due.toISOString()).toBe('2026-10-21T16:00:00.000Z')
+  })
+
+  it('puts the address, PO and notes on their own lines', () => {
+    const lines = cardFor(
+      order({
+        address: '2310 NE Broadway, Portland, OR 97232',
+        poNumber: '28487630',
+        notes: 'Leave at the back door',
+      })
+    ).desc.split('\n')
+    expect(lines).toContain('Address: 2310 NE Broadway, Portland, OR 97232')
+    expect(lines).toContain('PO: 28487630')
+    expect(lines).toContain('Notes: Leave at the back door')
+    expect(lines.at(-1)).toBe('Order #42')
+  })
+
+  it('labels the card with each batch fill date once', () => {
+    expect(
+      cardFor(
+        order({
+          lines: [
+            { product: 'still', cans: 24, isCustom: false, fillDate: '2026-08-25' },
+            { product: 'sparkling', cans: 24, isCustom: false, fillDate: '2026-08-25' },
+          ],
+        })
+      ).fillDates
+    ).toEqual(['2026-08-25'])
+    expect(
+      cardFor(order({ lines: [{ product: 'still', cans: 24, isCustom: false, fillDate: null }] }))
+        .fillDates
+    ).toEqual([])
+  })
+})
 
 describe('createTrelloCard', () => {
   beforeEach(() => {
     trello.requests.length = 0
+    trello.cards = []
+    trello.failCreate = false
     vi.stubGlobal('fetch', fakeFetch)
     vi.stubEnv('TRELLO_API_KEY', 'key')
     vi.stubEnv('TRELLO_TOKEN', 'token')
@@ -60,177 +121,52 @@ describe('createTrelloCard', () => {
     vi.unstubAllEnvs()
   })
 
-  it('lists each product on the card', async () => {
-    await createTrelloCard(
-      order({ isStill: true, totalStill: 120, isSpark: true, totalSpark: 48, IsCustomStill: true })
-    )
-
-    const card = postedCard()
-    expect(card.name).toBe('Dame - Drop 120 Still (Custom) & 48 Sparkling')
-    expect(card.desc).toContain('Still Cans: 120 (Custom)')
-    expect(card.desc).toContain('Sparkling Cans: 48')
-  })
-
-  it('leaves off a switched-off product even if its quantity is still filled in', async () => {
-    await createTrelloCard(
-      order({ isStill: false, totalStill: 120, isSpark: true, totalSpark: 48 })
-    )
-
-    const card = postedCard()
-    expect(card.name).toBe('Dame - Drop 48 Sparkling')
-    expect(card.desc).not.toContain('Still')
-  })
-
-  it("puts an existing customer's address and the notes on separate lines", async () => {
-    await createTrelloCard(
-      order({
-        isStill: true,
-        totalStill: 120,
-        address: '123 NE Broadway, Portland, OR 97232',
-        notes: 'Leave at the back door',
-      })
-    )
-
-    const lines = String(postedCard().desc).split('\n')
-    expect(lines).toContain('Address: 123 NE Broadway, Portland, OR 97232')
-    expect(lines).toContain('Notes: Leave at the back door')
-  })
-
-  it('uses the typed address for a new business', async () => {
-    await createTrelloCard(
-      order({
-        customerType: 'new',
-        isStill: true,
-        totalStill: 120,
-        streetAddress: '1 SW Main St',
-        city: 'Portland',
-        state: 'OR',
-        zip: '97204',
-      })
-    )
-
-    expect(String(postedCard().desc).split('\n')).toContain(
-      'Address: 1 SW Main St, Portland, OR, 97204'
-    )
-  })
-
-  it('never repeats the notes as the address', async () => {
-    await createTrelloCard(order({ isStill: true, totalStill: 120, notes: 'Call ahead' }))
-
-    const desc = String(postedCard().desc)
-    expect(desc).not.toContain('Address:')
-    expect(desc).toContain('Notes: Call ahead')
-  })
-
-  describe('fill-date labels', () => {
-    const batches = {
-      still: { id: 1, fillDate: '2026-06-20' },
-      spark: { id: 2, fillDate: '2026-08-03' },
-    }
-
-    it('labels a Sparkling-only order with the Sparkling batch', async () => {
-      await createTrelloCard(order({ isSpark: true, totalSpark: 48 }), batches)
-      expect(postedCard().idLabels).toEqual(['label:2026-08-03'])
-    })
-
-    it('labels a Still-only order with the Still batch', async () => {
-      await createTrelloCard(order({ isStill: true, totalStill: 120 }), batches)
-      expect(postedCard().idLabels).toEqual(['label:2026-06-20'])
-    })
-
-    it('labels a mixed order with both batches', async () => {
-      await createTrelloCard(
-        order({ isStill: true, totalStill: 120, isSpark: true, totalSpark: 48 }),
-        batches
-      )
-      expect(postedCard().idLabels).toEqual(['label:2026-06-20', 'label:2026-08-03'])
-    })
-
-    it('adds a shared fill date once', async () => {
-      await createTrelloCard(
-        order({ isStill: true, totalStill: 120, isSpark: true, totalSpark: 48 }),
-        { still: { id: 1, fillDate: '2026-08-03' }, spark: { id: 2, fillDate: '2026-08-03' } }
-      )
-      expect(postedCard().idLabels).toEqual(['label:2026-08-03'])
-    })
-
-    it('skips a batch with no fill date', async () => {
-      await createTrelloCard(order({ isStill: true, totalStill: 120 }), {
-        still: { id: 1, fillDate: null },
-      })
-      expect(postedCard().idLabels).toEqual([])
+  it('posts the card to the list with its labels and returns its id', async () => {
+    expect(await createTrelloCard(order())).toBe('card-1')
+    expect(postedCard()).toMatchObject({
+      name: 'Dame - Drop 120 Still',
+      due: '2026-10-21T16:00:00.000Z',
+      idList: 'list',
+      idLabels: ['label:2026-09-26'],
     })
   })
-})
 
-const originalTz = process.env.TZ
-
-const restoreTz = () => {
-  if (originalTz === undefined) delete process.env.TZ
-  else process.env.TZ = originalTz
-}
-
-// Vercel runs in UTC; a laptop in Portland runs in Pacific time. Both must agree.
-describe.each(['UTC', 'America/Los_Angeles'])('nextDeliveryDate with TZ=%s', (tz) => {
-  beforeAll(() => {
-    process.env.TZ = tz
-  })
-  afterAll(restoreTz)
-
-  it('runs in the intended server time zone', () => {
-    expect(new Date('2026-10-13T03:30:00Z').getHours()).toBe(tz === 'UTC' ? 3 : 20)
+  it('reuses a card an earlier attempt made for the same order', async () => {
+    trello.cards = [
+      { id: 'card-7', desc: 'Delivery Type: Drop\nOrder #4' },
+      { id: 'card-9', desc: 'Delivery Type: Drop\nOrder #42' },
+    ]
+    expect(await createTrelloCard(order(), { findExisting: true })).toBe('card-9')
+    expect(postedCard()).toBeUndefined()
   })
 
-  it.each([
-    ['Monday morning', '2026-10-12T17:00:00Z', '2026-10-14T16:00:00.000Z'],
-    [
-      'Monday 8:30 PM Pacific (already Tuesday in UTC)',
-      '2026-10-13T03:30:00Z',
-      '2026-10-14T16:00:00.000Z',
-    ],
-    ['Tuesday', '2026-10-13T18:00:00Z', '2026-10-17T16:00:00.000Z'],
-    ['Wednesday', '2026-10-14T18:00:00Z', '2026-10-17T16:00:00.000Z'],
-    ['Thursday', '2026-10-15T18:00:00Z', '2026-10-17T16:00:00.000Z'],
-    [
-      'Thursday 11 PM Pacific (already Friday in UTC)',
-      '2026-10-16T06:00:00Z',
-      '2026-10-17T16:00:00.000Z',
-    ],
-    ['Friday', '2026-10-16T18:00:00Z', '2026-10-21T16:00:00.000Z'],
-    ['Saturday', '2026-10-17T18:00:00Z', '2026-10-21T16:00:00.000Z'],
-    ['Sunday', '2026-10-18T18:00:00Z', '2026-10-21T16:00:00.000Z'],
-  ])('%s → Wednesday or Saturday at 9 AM PDT', (_, now, due) => {
-    expect(nextDeliveryDate(new Date(now)).toISOString()).toBe(due)
+  it('makes a new card when no earlier one is on the board', async () => {
+    trello.cards = [{ id: 'card-7', desc: 'Order #421' }]
+    expect(await createTrelloCard(order(), { findExisting: true })).toBe('card-1')
+    expect(postedCard()).toBeDefined()
   })
 
-  it('uses 9 AM PST in winter', () => {
-    expect(nextDeliveryDate(new Date('2026-12-07T18:00:00Z')).toISOString()).toBe(
-      '2026-12-09T17:00:00.000Z'
+  it('says what Trello answered when it refuses', async () => {
+    trello.failCreate = true
+    await expect(createTrelloCard(order())).rejects.toThrow('Trello API error: 400 board is full')
+  })
+
+  it('names the missing settings', async () => {
+    vi.stubEnv('TRELLO_LIST_ID', '')
+    await expect(createTrelloCard(order())).rejects.toThrow(
+      'Missing Trello env vars: TRELLO_LIST_ID'
     )
+    expect(trello.requests).toEqual([])
   })
 
-  it('crosses the end of daylight saving time', () => {
-    // Friday Oct 30 → Sunday Nov 1 (clocks fall back) → Wednesday Nov 4, 9 AM PST
-    expect(nextDeliveryDate(new Date('2026-10-30T18:00:00Z')).toISOString()).toBe(
-      '2026-11-04T17:00:00.000Z'
-    )
-  })
-
-  it('crosses the start of daylight saving time', () => {
-    // Friday Mar 6 → Sunday Mar 8 (clocks spring forward) → Wednesday Mar 11, 9 AM PDT
-    expect(nextDeliveryDate(new Date('2026-03-06T19:00:00Z')).toISOString()).toBe(
-      '2026-03-11T16:00:00.000Z'
-    )
-  })
-
-  it('rolls over the year', () => {
-    // Wednesday Dec 30 → Friday Jan 1 → Saturday Jan 2
-    expect(nextDeliveryDate(new Date('2026-12-30T18:00:00Z')).toISOString()).toBe(
-      '2027-01-02T17:00:00.000Z'
-    )
-  })
-
-  it('formats the card date in Pacific time', () => {
-    expect(formatDeliveryDate(new Date('2026-10-14T16:00:00.000Z'))).toBe('10/14/2026')
+  it('archives a card', async () => {
+    await archiveTrelloCard('card-1')
+    expect(trello.requests).toEqual([
+      {
+        url: 'https://api.trello.com/1/cards/card-1',
+        method: 'PUT',
+        body: { closed: true, key: 'key', token: 'token' },
+      },
+    ])
   })
 })

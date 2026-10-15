@@ -3,8 +3,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { requireUser, type AuthFailure } from '@/lib/auth/requireUser'
 import type { Inventory, NewInventory } from '@/types/orders'
-import type { NewOrder } from '@/types/orders'
-import { sparkCans, stillCans } from '@/lib/orders'
 
 export const getInventory = async (): Promise<Inventory[] | AuthFailure> => {
   const { failure } = await requireUser()
@@ -62,44 +60,4 @@ export const updateInventoryCount = async (id: number, count: number): Promise<v
     .eq('id', id)
 
   if (error) throw new Error(error.message)
-}
-
-export const decrementInventory = async (order: NewOrder, stillInventoryId?: number, sparkInventoryId?: number): Promise<void> => {
-  // Exported from a 'use server' file, so it gets the check too. Only
-  // createOrder calls it (after its own check), so it throws on failure like
-  // the rest of this function instead of returning the failure.
-  const { failure } = await requireUser()
-  if (failure) throw new Error(failure.authError)
-
-  const supabase = await createClient()
-
-  const decrements = [
-    ...stillCans(order) > 0
-      ? [{ id: stillInventoryId, product: 'Still', amount: stillCans(order) }]
-      : [],
-    ...sparkCans(order) > 0
-      ? [{ id: sparkInventoryId, product: 'Sparkling', amount: sparkCans(order) }]
-      : [],
-  ]
-
-  // Every product needs the batch it was picked from; check them all before changing any count.
-  const unpicked = decrements.find(({ id }) => !id)
-  if (unpicked) throw new Error(`No ${unpicked.product} batch was selected`)
-
-  for (const { id: inventoryId, amount } of decrements) {
-    const { data: item, error: fetchError } = await supabase
-      .from('inventory')
-      .select('count')
-      .eq('id', inventoryId)
-      .single()
-
-    if (fetchError || !item) throw new Error(`Inventory item not found: id ${inventoryId}`)
-
-    const { error: updateError } = await supabase
-      .from('inventory')
-      .update({ count: item.count - amount })
-      .eq('id', inventoryId)
-
-    if (updateError) throw new Error(updateError.message)
-  }
 }

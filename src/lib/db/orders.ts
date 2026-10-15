@@ -11,12 +11,12 @@ import type {
   SalesOrderWithLines,
 } from './types'
 
-// Sales orders. The intended server flow for one form submission:
+// Sales orders. The server flow for one form submission (src/lib/orderSteps.ts):
 //   1. createSalesOrder with the form's idempotency key (a retry returns the same order)
-//   2. applyOrderInventory; on 'insufficient_stock' ask the user, then retry with
-//      allowNegative; on any other error recordOrderStep(..., 'inventory', 'failed')
-//   3. write the Sales sheet, create the Trello card and the Square invoice, recording
-//      each outcome with recordOrderStep
+//   2. write the Sales sheet, recording the outcome with recordOrderStep
+//   3. applyOrderInventory; on 'insufficient_stock' the user can retry with allowNegative;
+//      on any error recordOrderStep(..., 'inventory', 'failed')
+//   4. create the Trello card and the Square invoice, recording each outcome
 // pendingSteps(order) says what is left, so a retry only repeats what didn't finish.
 
 export type NewOrderLine = {
@@ -48,6 +48,12 @@ export type NewSalesOrder = {
   is_donation?: boolean
   /** Defaults to today in Portland. */
   order_date?: string | null
+  /** Where the order goes, for the Trello card. */
+  delivery_address?: string | null
+  /** Billing email given with the order. */
+  customer_email?: string | null
+  /** This order added the customer. */
+  new_customer?: boolean
 }
 
 export type CreatedSalesOrder = {
@@ -107,7 +113,8 @@ export const priceLines = (
   return lines.map((line) => ({ ...line, unit_price: unitPrice }))
 }
 
-const STEP_ORDER: OrderStep[] = ['inventory', 'sheet', 'trello', 'square']
+// The Sales sheet is the book of record Paul's reports read, so it goes first.
+export const STEP_ORDER: OrderStep[] = ['sheet', 'inventory', 'trello', 'square']
 
 /** Steps still to run or retry, in the order to run them. None for a voided order. */
 export const pendingSteps = (
@@ -146,6 +153,9 @@ export const createSalesOrder = async (db: Db, order: NewSalesOrder) =>
       p_is_donation: order.is_donation ?? false,
       p_order_date: order.order_date ?? null,
       p_po_number: order.po_number ?? null,
+      p_delivery_address: order.delivery_address ?? null,
+      p_customer_email: order.customer_email ?? null,
+      p_new_customer: order.new_customer ?? false,
     })
   )
 
@@ -199,6 +209,40 @@ export const getSalesOrder = async (db: Db, id: number): Promise<SalesOrderWithL
     await db.from('sales_order_lines').select('*').eq('order_id', id).order('id')
   )
   return { ...order, lines }
+}
+
+/** The order this idempotency key created, if any. */
+export const getSalesOrderByKey = async (
+  db: Db,
+  idempotencyKey: string
+): Promise<SalesOrderWithLines | null> => {
+  const order = unwrap<SalesOrder | null>(
+    await db.from('sales_orders').select('*').eq('idempotency_key', idempotencyKey).maybeSingle()
+  )
+  return order ? getSalesOrder(db, order.id) : null
+}
+
+/** Newest orders first, voided ones included, each with its lines. */
+export const listRecentOrders = async (
+  db: Db,
+  { limit = 50 }: { limit?: number } = {}
+): Promise<SalesOrderWithLines[]> => {
+  const orders = await listSalesOrders(db, { includeVoided: true, limit })
+  if (!orders.length) return []
+  const lines = unwrap<SalesOrderLine[]>(
+    await db
+      .from('sales_order_lines')
+      .select('*')
+      .in(
+        'order_id',
+        orders.map((order) => order.id)
+      )
+      .order('id')
+  )
+  return orders.map((order) => ({
+    ...order,
+    lines: lines.filter((line) => line.order_id === order.id),
+  }))
 }
 
 export const listSalesOrders = async (
