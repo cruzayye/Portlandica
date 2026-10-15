@@ -1,22 +1,55 @@
 import type { NewOrder } from '@/types/orders'
 
-function calculateNextDeliveryDate(): Date {
-  const today = new Date()
-  const deliveryDate = new Date(today)
-  deliveryDate.setDate(today.getDate() + 2)
+// Deliveries run on Portland time, not the server's (Vercel runs in UTC).
+const DELIVERY_TIME_ZONE = 'America/Los_Angeles'
+const DELIVERY_DAYS = [3, 6] // Wednesday, Saturday
+const DELIVERY_HOUR = 9
 
-  const day = deliveryDate.getDay()
-  if (day !== 3 && day !== 6) {
-    if (day < 3) {
-      deliveryDate.setDate(deliveryDate.getDate() + (3 - day))
-    } else {
-      deliveryDate.setDate(deliveryDate.getDate() + (6 - day))
-    }
-  }
-
-  deliveryDate.setHours(9, 0, 0, 0)
-  return deliveryDate
+const pacificDateParts = (now: Date) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: DELIVERY_TIME_ZONE,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(now)
+  const part = (type: string) => Number(parts.find((p) => p.type === type)!.value)
+  return { year: part('year'), month: part('month'), day: part('day') }
 }
+
+// 9:00 AM Pacific on the given calendar date, whether that falls in PST or PDT.
+const atDeliveryHour = (date: Date) => {
+  const assumingPst = Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    DELIVERY_HOUR + 8
+  )
+  const pacificHour = Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: DELIVERY_TIME_ZONE,
+      hour: 'numeric',
+      hourCycle: 'h23',
+    }).format(assumingPst)
+  )
+  return new Date(assumingPst - (pacificHour - DELIVERY_HOUR) * 60 * 60 * 1000)
+}
+
+/**
+ * First Wednesday or Saturday at least two days after today's date in
+ * Portland, due at 9:00 AM Pacific.
+ */
+export const nextDeliveryDate = (now: Date): Date => {
+  const { year, month, day } = pacificDateParts(now)
+  // A UTC-midnight date used only as a calendar, so the server's zone can't shift the day.
+  const date = new Date(Date.UTC(year, month - 1, day + 2))
+  while (!DELIVERY_DAYS.includes(date.getUTCDay())) {
+    date.setUTCDate(date.getUTCDate() + 1)
+  }
+  return atDeliveryHour(date)
+}
+
+export const formatDeliveryDate = (date: Date) =>
+  date.toLocaleDateString('en-US', { timeZone: DELIVERY_TIME_ZONE })
 // right now we only can create one label per fill date, but if we wanted to get fancy we could encode the fill date in the label name and then parse it out here to assign multiple labels for different fill dates
 // or we could send this data to our google sales sheet
 const getOrCreateLabel = async (boardId: string, name: string, apiKey: string, token: string): Promise<string> => {
@@ -47,7 +80,7 @@ export async function createTrelloCard(order: NewOrder, fillDate?: string | null
     throw new Error(`Missing Trello env vars: ${[!apiKey && 'TRELLO_API_KEY', !token && 'TRELLO_TOKEN', !listId && 'TRELLO_LIST_ID', !boardId && 'TRELLO_BOARD_ID'].filter(Boolean).join(', ')}`)
   }
 
-  const nextDeliveryDate = calculateNextDeliveryDate()
+  const deliveryDate = nextDeliveryDate(new Date())
   const customerName = order.name ?? ''
   const deliveryType = order.deliveryType 
 
@@ -80,7 +113,7 @@ export async function createTrelloCard(order: NewOrder, fillDate?: string | null
     )
   }
 
-  description.push(`Delivery Date: ${nextDeliveryDate.toLocaleDateString()}`)
+  description.push(`Delivery Date: ${formatDeliveryDate(deliveryDate)}`)
 
   const address = order.isNewBusiness
     ? [order.streetAddress, order.city, order.state, order.zip].filter(Boolean).join(', ')
@@ -99,7 +132,7 @@ export async function createTrelloCard(order: NewOrder, fillDate?: string | null
     body: JSON.stringify({
       name: cardTitle,
       desc: description.join('\n'),
-      due: nextDeliveryDate.toISOString(),
+      due: deliveryDate.toISOString(),
       idList: listId,
       idLabels,
       key: apiKey,
