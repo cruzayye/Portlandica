@@ -93,7 +93,11 @@ describe('migrations on the live schema', () => {
     )
     await bare.exec('drop function public.is_partner()')
     const first = readFileSync(
-      path.join(process.cwd(), 'supabase/migrations', migrationFiles()[0]),
+      path.join(
+        process.cwd(),
+        'supabase/migrations',
+        migrationFiles().find((file) => file.endsWith('_customers.sql')) ?? ''
+      ),
       'utf8'
     )
     await expect(bare.exec(first)).rejects.toThrow(/is_partner\(\) is missing/)
