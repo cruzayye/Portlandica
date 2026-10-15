@@ -133,3 +133,33 @@ describe('appendOrder products', () => {
     ])
   })
 })
+
+describe('appendOrder donations', () => {
+  beforeEach(() => {
+    sheetsApi.tabs['Donations!A:A'] = [['Date'], ['09/30/2026']]
+  })
+
+  it.each([
+    ['with the auto price still filled in', 180],
+    ['at $0', 0],
+    ['with no price', null],
+  ])('writes a donation %s to the Donations tab only', async (_, price) => {
+    await appendOrder(
+      order({ isDonation: true, isStill: true, totalStill: 120, price, notes: 'Gala' })
+    )
+
+    expect(salesRowsWritten()).toEqual([])
+    expect(sheetsApi.inserts).toEqual([])
+    const donation = sheetsApi.writes.find((w) => w.range.startsWith('Donations!'))!
+    expect(donation.range).toBe('Donations!A3:K3')
+    expect(donation.values[0].slice(1, 6)).toEqual(['DONATIONS', 'Still Cans', 'Dame', 120, 'A7'])
+    expect(donation.values[0][10]).toBe('Gala')
+  })
+
+  it('writes nothing to Donations for a sale', async () => {
+    await appendOrder(order({ isStill: true, totalStill: 120, price: 180 }))
+
+    expect(salesRowsWritten()).toHaveLength(1)
+    expect(sheetsApi.writes.some((w) => w.range.startsWith('Donations!'))).toBe(false)
+  })
+})

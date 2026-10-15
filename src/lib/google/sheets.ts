@@ -291,7 +291,8 @@ export async function appendOrder(order: NewOrder, force = false): Promise<{ dup
 
   const promises: Promise<unknown>[] = []
 
-  if (salesRows.length > 0 && (order.price ?? 0) > 0) {
+  // A donation is never a sale, whatever price came with it.
+  if (!order.isDonation && salesRows.length > 0 && (order.price ?? 0) > 0) {
     promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID!, salesRows, order.createInvoice ?? false))
   }
 
@@ -309,7 +310,7 @@ export async function appendOrder(order: NewOrder, force = false): Promise<{ dup
 
   // promises.push(createTrelloCard(order))
 
-  if (order.isDonation && (order.price === 0 || order.price === null)) {
+  if (order.isDonation) {
     promises.push(appendDonation(sheets, order, order_date))
   }
 
