@@ -452,6 +452,69 @@ describe('OrderForm price', () => {
   })
 })
 
+describe('OrderForm donations and $0 orders', () => {
+  const startDameOrder = async (user: ReturnType<typeof userEvent.setup>) => {
+    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
+    render(<OrderForm />)
+    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+    await fillRequiredFields(user)
+  }
+
+  it('books a donation at $0 with the price locked', async () => {
+    const user = userEvent.setup()
+    await startDameOrder(user)
+    expect(screen.getByLabelText('Price')).toHaveValue(180)
+
+    await user.click(screen.getByLabelText('Donut'))
+    expect(screen.getByLabelText('Price')).toHaveValue(0)
+    expect(screen.getByLabelText('Price')).toBeDisabled()
+
+    await user.click(submitButton())
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(createOrder.mock.calls[0][0]).toMatchObject({ isDonation: true, price: 0 })
+  })
+
+  it('goes back to the automatic price when Donut is turned off', async () => {
+    const user = userEvent.setup()
+    await startDameOrder(user)
+
+    await user.click(screen.getByLabelText('Donut'))
+    await user.click(screen.getByLabelText('Donut'))
+
+    expect(screen.getByLabelText('Price')).toHaveValue(180)
+    expect(screen.getByLabelText('Price')).toBeEnabled()
+  })
+
+  it.each([
+    ['cleared', ''],
+    ['set to $0', '0'],
+  ])('blocks a sale whose price is %s and offers to mark it a donation', async (_, typed) => {
+    const user = userEvent.setup()
+    await startDameOrder(user)
+
+    await user.clear(screen.getByLabelText('Price'))
+    if (typed) await user.type(screen.getByLabelText('Price'), typed)
+
+    expect(screen.getByText(/No price\. Enter one, or mark this order as a donation/)).toBeVisible()
+    expect(submitButton()).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: 'Mark as donation' }))
+    expect(screen.getByLabelText('Donut')).toBeChecked()
+    expect(submitButton()).toBeEnabled()
+  })
+
+  it('lets a typed price through', async () => {
+    const user = userEvent.setup()
+    await startDameOrder(user)
+
+    await user.clear(screen.getByLabelText('Price'))
+    await user.type(screen.getByLabelText('Price'), '150')
+
+    expect(screen.queryByText(/No price/)).not.toBeInTheDocument()
+    expect(submitButton()).toBeEnabled()
+  })
+})
+
 describe('OrderForm product switches', () => {
   it('forgets a quantity once its product is switched off', async () => {
     const user = userEvent.setup()

@@ -87,9 +87,15 @@ export default function OrderForm() {
     ? (CUSTOMER_PRICING[form.name ?? ''] ?? DEFAULT_PRICE_PER_CAN)
     : DEFAULT_PRICE_PER_CAN
   const autoPrice = priceForCans(totalCans, pricePerCan)
-  // A typed-in price holds until the automatic price changes (cans, customer or custom
-  // pricing); then the automatic price takes over again.
-  const price = typedPrice && typedPrice.autoPrice === autoPrice ? typedPrice.value : autoPrice
+  // A donation is always $0. Otherwise a typed-in price holds until the automatic price
+  // changes (cans, customer or custom pricing); then the automatic price takes over again.
+  const price = form.isDonation
+    ? 0
+    : typedPrice && typedPrice.autoPrice === autoPrice
+      ? typedPrice.value
+      : autoPrice
+  // A sale with cans but no price is either a donation or a mistake.
+  const needsPrice = !form.isDonation && totalCans > 0 && !((price ?? 0) > 0)
 
   const order: NewOrder = { ...form, totalStill, totalSpark, price }
 
@@ -507,10 +513,30 @@ export default function OrderForm() {
               })
             }
             fullWidth
+            disabled={form.isDonation ?? false}
+            error={needsPrice}
+            helperText={form.isDonation ? 'Donations go on the Donations tab at $0' : undefined}
             inputProps={{ min: 0, step: 0.01 }}
             slotProps={{ input: { startAdornment: <Typography mr={0.5}>$</Typography> } }}
             sx={{ '& .MuiInputBase-root': { backgroundColor: '#e3f2fd' } }}
           />
+
+          {needsPrice && (
+            <Alert
+              severity="warning"
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => setForm((prev) => ({ ...prev, isDonation: true }))}
+                >
+                  Mark as donation
+                </Button>
+              }
+            >
+              No price. Enter one, or mark this order as a donation.
+            </Alert>
+          )}
 
           <Box display="flex" gap={2} flexWrap="wrap">
             <FormControlLabel
