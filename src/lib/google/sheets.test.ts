@@ -55,6 +55,7 @@ const order = (over: Partial<NewOrder> = {}): NewOrder => ({
   isPaid: false,
   createInvoice: false,
   notes: '',
+  address: null,
   businessType: null,
   streetAddress: null,
   city: null,
@@ -71,6 +72,7 @@ const UNITS = 4
 const SALES = 5
 const COGS_PER_UNIT = 13
 const COGS_TOTAL = 14
+const NOTES = 15
 
 // Sales rows written into the inserted block (A:V), keyed by sheet row number.
 const salesRowsWritten = () =>
@@ -161,5 +163,33 @@ describe('appendOrder donations', () => {
 
     expect(salesRowsWritten()).toHaveLength(1)
     expect(sheetsApi.writes.some((w) => w.range.startsWith('Donations!'))).toBe(false)
+  })
+})
+
+describe('appendOrder new business', () => {
+  it('adds the typed address to Current Locations Addresses and keeps notes in Sales', async () => {
+    await appendOrder(
+      order({
+        name: 'Fresh Cafe',
+        isNewBusiness: true,
+        businessType: 'Cafe',
+        streetAddress: '1 SW Main St',
+        city: 'Portland',
+        state: 'OR',
+        zip: '97204',
+        notes: 'Call ahead',
+        isStill: true,
+        totalStill: 120,
+        price: 180,
+      })
+    )
+
+    expect(sheetsApi.appends).toEqual([
+      {
+        range: 'Current Locations Addresses!A:E',
+        values: [['Fresh Cafe', '1 SW Main St, Portland, OR, 97204', '', '', 'Cafe']],
+      },
+    ])
+    expect(salesRowsWritten()[0].row[NOTES]).toBe('Call ahead')
   })
 })

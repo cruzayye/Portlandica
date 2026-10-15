@@ -277,9 +277,10 @@ export async function appendOrder(order: NewOrder, force = false): Promise<{ dup
     ])
   }
 
-  const address = order.isNewBusiness
-    ? [order.streetAddress, order.city, order.state, order.zip].filter(Boolean).join(', ')
-    : (order.notes ?? '')
+  // Only new businesses get a locations row, so the address is the one typed into the form.
+  const address = [order.streetAddress, order.city, order.state, order.zip]
+    .filter(Boolean)
+    .join(', ')
 
   const locationsRow = [
     order.name,                // A: Business Name

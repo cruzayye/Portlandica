@@ -34,6 +34,7 @@ describe('orderProblem', () => {
     isPaid: false,
     createInvoice: false,
     notes: '',
+    address: null,
     businessType: null,
     streetAddress: null,
     city: null,

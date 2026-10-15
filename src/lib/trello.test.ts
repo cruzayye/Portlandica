@@ -20,6 +20,7 @@ const order = (over: Partial<NewOrder> = {}): NewOrder => ({
   isPaid: false,
   createInvoice: false,
   notes: '',
+  address: null,
   businessType: null,
   streetAddress: null,
   city: null,
@@ -80,6 +81,47 @@ describe('createTrelloCard', () => {
     const card = postedCard()
     expect(card.name).toBe('Dame - Drop 48 Sparkling')
     expect(card.desc).not.toContain('Still')
+  })
+
+  it("puts an existing customer's address and the notes on separate lines", async () => {
+    await createTrelloCard(
+      order({
+        isStill: true,
+        totalStill: 120,
+        address: '123 NE Broadway, Portland, OR 97232',
+        notes: 'Leave at the back door',
+      })
+    )
+
+    const lines = String(postedCard().desc).split('\n')
+    expect(lines).toContain('Address: 123 NE Broadway, Portland, OR 97232')
+    expect(lines).toContain('Notes: Leave at the back door')
+  })
+
+  it('uses the typed address for a new business', async () => {
+    await createTrelloCard(
+      order({
+        isNewBusiness: true,
+        isStill: true,
+        totalStill: 120,
+        streetAddress: '1 SW Main St',
+        city: 'Portland',
+        state: 'OR',
+        zip: '97204',
+      })
+    )
+
+    expect(String(postedCard().desc).split('\n')).toContain(
+      'Address: 1 SW Main St, Portland, OR, 97204'
+    )
+  })
+
+  it('never repeats the notes as the address', async () => {
+    await createTrelloCard(order({ isStill: true, totalStill: 120, notes: 'Call ahead' }))
+
+    const desc = String(postedCard().desc)
+    expect(desc).not.toContain('Address:')
+    expect(desc).toContain('Notes: Call ahead')
   })
 
   describe('fill-date labels', () => {

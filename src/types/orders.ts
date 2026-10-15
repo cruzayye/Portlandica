@@ -24,7 +24,10 @@ export type Order = {
   isDonation: boolean | null
 }
 
-export type NewOrder = Omit<Order, 'id' | 'created_at'>
+export type NewOrder = Omit<Order, 'id' | 'created_at'> & {
+  /** An existing customer's address from Current Locations Addresses, for the Trello card. */
+  address: string | null
+}
 
 export type Inventory = {
   id: number

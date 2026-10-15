@@ -214,3 +214,23 @@ describe('OrderForm submit results', () => {
     expect(screen.getByLabelText(/name/i)).toHaveValue('Dame')
   })
 })
+
+describe('OrderForm existing customer', () => {
+  it('keeps the address out of Notes and sends it separately', async () => {
+    const user = userEvent.setup()
+    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
+
+    render(<OrderForm />)
+    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+    await fillRequiredFields(user)
+
+    expect(screen.getByLabelText(/notes/i)).toHaveValue('')
+    await user.type(screen.getByLabelText(/notes/i), 'Leave at the back door')
+    await user.click(screen.getByRole('button', { name: /submit order/i }))
+
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    const [order] = createOrder.mock.calls[0]
+    expect(order.address).toBe('123 NE Broadway')
+    expect(order.notes).toBe('Leave at the back door')
+  })
+})

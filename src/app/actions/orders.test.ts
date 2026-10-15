@@ -32,6 +32,7 @@ const order = (over: Partial<NewOrder> = {}): NewOrder => ({
   isPaid: false,
   createInvoice: false,
   notes: '',
+  address: null,
   businessType: null,
   streetAddress: null,
   city: null,

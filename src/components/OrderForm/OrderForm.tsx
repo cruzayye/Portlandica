@@ -38,6 +38,7 @@ const defaultState: NewOrder = {
   isPaid: false,
   createInvoice: false,
   notes: '',
+  address: null,
   businessType: null,
   streetAddress: null,
   city: null,
@@ -251,7 +252,7 @@ export default function OrderForm() {
             <TextField
               label="DTC or New Business Name"
               value={form.name ?? ''}
-              onChange={handleText('name')}
+              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value, address: null }))}
               fullWidth
               required
             />
@@ -262,10 +263,11 @@ export default function OrderForm() {
               value={locations.find((l) => l.name === form.name) ?? null}
               onChange={(_, value) => {
                 if (!value || typeof value === 'string') return
+                // The address rides along for the Trello card; Notes stay the user's own text.
                 setForm((prev) => ({
                   ...prev,
                   name: value.name,
-                  notes: value.address,
+                  address: value.address || null,
                 }))
               }}
               renderInput={(params) => <TextField {...params} label="Name" required />}

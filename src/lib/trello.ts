@@ -119,7 +119,7 @@ export async function createTrelloCard(order: NewOrder, batches: OrderBatches = 
 
   const address = order.isNewBusiness
     ? [order.streetAddress, order.city, order.state, order.zip].filter(Boolean).join(', ')
-    : (order.notes ?? '')
+    : (order.address ?? '')
 
   if (address) description.push(`Address: ${address}`)
   if (order.notes) description.push(`Notes: ${order.notes}`)
