@@ -38,7 +38,7 @@ const archived = batch({
   archived_at: '2026-10-01T17:00:00Z',
 })
 
-const user = () => userEvent.setup()
+const user = () => userEvent.setup({ delay: null })
 
 const open = async (name: RegExp) => {
   const u = user()
@@ -205,7 +205,8 @@ describe('Batch details', () => {
       within(dialog).getByText('Now 216 cans (9 cases). Enter what you counted.')
     ).toBeInTheDocument()
 
-    await u.click(within(dialog).getByRole('button', { name: 'Save count' }))
+    // The button reads "Saving…" until the first save has finished.
+    await u.click(await within(dialog).findByRole('button', { name: 'Save count' }))
     expect(actions.changeBatchCount).toHaveBeenLastCalledWith(
       expect.objectContaining({ newCount: 192, expectedCount: 216 })
     )

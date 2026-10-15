@@ -190,7 +190,7 @@ describe('Inventory tab', () => {
   })
 
   it('keeps archived batches behind a toggle', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<Inventory />)
 
     await screen.findByRole('region', { name: 'Still · House stock' })
@@ -223,7 +223,7 @@ describe('Inventory tab', () => {
   })
 
   it('reloads on refresh, keeping the list if the reload fails', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     render(<Inventory />)
     await screen.findByRole('button', { name: /Dame/ })
 
@@ -231,14 +231,17 @@ describe('Inventory tab', () => {
     await user.click(screen.getByRole('button', { name: 'Refresh' }))
     await waitFor(() => expect(screen.queryByText('Dame')).not.toBeInTheDocument())
 
+    // Refresh stays disabled until the first reload has finished.
+    const refresh = screen.getByRole('button', { name: 'Refresh' })
+    await waitFor(() => expect(refresh).toBeEnabled())
     actions.loadInventory.mockRejectedValueOnce(new Error('offline'))
-    await user.click(screen.getByRole('button', { name: 'Refresh' }))
+    await user.click(refresh)
     expect(await screen.findByText('Could not load the inventory. Try again.')).toBeInTheDocument()
     expect(screen.getByRole('region', { name: 'Still · House stock' })).toBeInTheDocument()
   })
 
   it('adds a batch and shows it in its group', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     actions.addBatch.mockResolvedValue({
       ok: true,
       batch: batch({ id: 101, name: 'Portlandica', count: 1440, fillDate: '2026-10-15' }),

@@ -20,7 +20,7 @@ const onClose = vi.fn()
 const onAdded = vi.fn()
 
 const setup = () => {
-  const user = userEvent.setup()
+  const user = userEvent.setup({ delay: null })
   render(
     <AddBatchDialog
       customers={customers}

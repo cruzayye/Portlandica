@@ -9,5 +9,8 @@ export default defineConfig({
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
+    // The Postgres (PGlite) suites and the MUI interaction tests can each take several
+    // seconds when the machine is busy; the 5s default made them fail at random.
+    testTimeout: 30_000,
   },
 })

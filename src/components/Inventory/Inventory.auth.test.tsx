@@ -37,7 +37,7 @@ describe('Inventory when the caller is refused', () => {
   })
 
   it('shows the sign-in message in place of a batch history', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     loadInventory.mockResolvedValue({
       ok: true,
       batches: [row],
@@ -53,7 +53,7 @@ describe('Inventory when the caller is refused', () => {
   })
 
   it('keeps the form open with the message when a count change is refused', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ delay: null })
     loadInventory.mockResolvedValue({
       ok: true,
       batches: [row],
