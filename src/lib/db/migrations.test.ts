@@ -136,6 +136,44 @@ describe('migrations on the live schema', () => {
     expect(row).toMatchObject({ name: 'Portlandica', isStill: true, product: 'water' })
   })
 
+  it('can be rolled back to the schema it started from', async () => {
+    const fingerprint = async (db: PGlite) =>
+      (
+        await db.query<{ x: string }>(`
+          select 'column ' || table_schema || '.' || table_name || '.' || column_name || ' ' || data_type as x
+          from information_schema.columns where table_schema in ('public', 'private')
+          union all
+          select 'function ' || n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
+          from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'private')
+          union all
+          select 'trigger ' || tgrelid::regclass || '.' || tgname from pg_trigger where not tgisinternal
+          union all
+          select 'policy ' || schemaname || '.' || tablename || '.' || policyname from pg_policies
+          order by 1`)
+      ).rows.map((r) => r.x)
+
+    const before = new PGlite()
+    const sqlDir = path.join(process.cwd(), 'src/lib/db/testing/sql')
+    await before.exec(readFileSync(path.join(sqlDir, 'supabase-stub.sql'), 'utf8'))
+    await before.exec(readFileSync(path.join(sqlDir, 'live-baseline.sql'), 'utf8'))
+
+    const { order } = await createOrder(PAUL, 'rollback', [
+      { product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 },
+    ])
+    await query(PAUL, 'select public.apply_order_inventory($1)', [order.id])
+    await query(PAUL, `select public.archive_batch(46)`)
+
+    await pg.exec(
+      readFileSync(
+        path.join(process.cwd(), 'supabase/rollback/20261017_data_foundation.sql'),
+        'utf8'
+      )
+    )
+    expect(await fingerprint(pg)).toEqual(await fingerprint(before))
+    expect(await batchCount(45)).toBe(12000 - 24)
+    await before.close()
+  })
+
   it('leaves the legacy orders table alone', async () => {
     await expect(
       pg.query('select "isSpark", "totalStill" from public.orders')
