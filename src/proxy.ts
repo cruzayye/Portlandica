@@ -1,7 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+// Next.js 16 renamed middleware.ts to proxy.ts. It lives in src/ because the
+// app does (src/app). It runs on the Node.js runtime by default.
+export const proxy = async (request: NextRequest) => {
   let supabaseResponse = NextResponse.next({ request })
 
   const supabase = createServerClient(
