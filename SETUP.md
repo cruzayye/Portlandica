@@ -113,7 +113,11 @@ rather than in a migration so they stay out of this public repository.
 
 (The repo has no `supabase/config.toml`, so the SQL Editor is the simplest way
 to run it. Both migration files are safe to run twice if they ever go through
-`supabase db push` later.)
+`supabase db push` later. If you set up the Supabase CLI and run
+`supabase db pull`, rename the baseline file it creates to
+`20261015000000_remote_schema.sql` so it sorts before these migrations, which
+expect the `inventory` and `orders` tables to exist, then use
+`supabase migration repair` to mark the files you already ran as applied.)
 
 ## 4. Vercel env vars, then deploy
 
