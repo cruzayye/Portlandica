@@ -42,7 +42,13 @@ const LoginForm = ({ errorMessage, googleEnabled, allowlistMissing }: LoginFormP
   return (
     <Paper
       elevation={2}
-      sx={{ p: { xs: 3, sm: 4 }, width: '100%', maxWidth: 400, alignSelf: 'flex-start', mt: { xs: 4, sm: 10 } }}
+      sx={{
+        p: { xs: 3, sm: 4 },
+        width: '100%',
+        maxWidth: 400,
+        alignSelf: 'flex-start',
+        mt: { xs: 4, sm: 10 },
+      }}
     >
       <Typography variant="h5" fontWeight={600}>
         Portlandica
@@ -81,14 +87,22 @@ const LoginForm = ({ errorMessage, googleEnabled, allowlistMissing }: LoginFormP
           autoFocus
         />
         {state.status === 'error' && <Alert severity="error">{state.message}</Alert>}
-        <SubmitButton label="Email me a sign-in link" pendingLabel="Sending..." variant="contained" />
+        <SubmitButton
+          label="Email me a sign-in link"
+          pendingLabel="Sending..."
+          variant="contained"
+        />
       </Box>
 
       {googleEnabled && (
         <>
           <Divider sx={{ my: 3 }}>or</Divider>
           <form action={signInWithGoogle}>
-            <SubmitButton label="Continue with Google" pendingLabel="Opening Google..." variant="outlined" />
+            <SubmitButton
+              label="Continue with Google"
+              pendingLabel="Opening Google..."
+              variant="outlined"
+            />
           </form>
         </>
       )}

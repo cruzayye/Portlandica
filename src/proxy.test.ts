@@ -87,7 +87,9 @@ describe('proxy', () => {
 
   it('keeps refreshed session cookies when it redirects', async () => {
     supabase.claims = { email: 'partner@example.com' }
-    supabase.refreshedCookies = [{ name: 'sb-test-auth-token', value: 'fresh', options: { path: '/' } }]
+    supabase.refreshedCookies = [
+      { name: 'sb-test-auth-token', value: 'fresh', options: { path: '/' } },
+    ]
     const response = await proxy(request('/login'))
     expect(location(response)).toBe('https://portlandica.example/')
     expect(response.headers.get('set-cookie')).toContain('sb-test-auth-token=fresh')
@@ -95,7 +97,9 @@ describe('proxy', () => {
 
   it('keeps refreshed session cookies when it lets the request through', async () => {
     supabase.claims = { email: 'partner@example.com' }
-    supabase.refreshedCookies = [{ name: 'sb-test-auth-token', value: 'fresh', options: { path: '/' } }]
+    supabase.refreshedCookies = [
+      { name: 'sb-test-auth-token', value: 'fresh', options: { path: '/' } },
+    ]
     const response = await proxy(request('/'))
     expect(response.headers.get('set-cookie')).toContain('sb-test-auth-token=fresh')
   })

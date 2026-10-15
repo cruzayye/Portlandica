@@ -9,7 +9,7 @@ export const parseAllowlist = (raw: string | undefined): string[] => [
     (raw ?? '')
       .split(/[\s,;]+/)
       .map((email) => email.trim().toLowerCase())
-      .filter(Boolean),
+      .filter(Boolean)
   ),
 ]
 

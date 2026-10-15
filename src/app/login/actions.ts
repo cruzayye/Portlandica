@@ -26,7 +26,9 @@ const callbackUrl = async () => {
 }
 
 export const sendMagicLink = async (_prev: LoginState, formData: FormData): Promise<LoginState> => {
-  const email = String(formData.get('email') ?? '').trim().toLowerCase()
+  const email = String(formData.get('email') ?? '')
+    .trim()
+    .toLowerCase()
   if (!email.includes('@')) return { status: 'error', message: 'Enter your email address.' }
 
   // Only partners are sent a link. Everyone gets the same reply, so this
