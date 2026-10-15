@@ -4,7 +4,7 @@ import ThemeRegistry from '@/components/ThemeRegistry/ThemeRegistry'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'App',
+  title: 'Portlandica',
   description: '',
 }
 

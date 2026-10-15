@@ -216,8 +216,7 @@ database.
   `const { failure } = await requireUser()` and `if (failure) return failure`.
   `src/app/actions/auth.test.ts` calls every exported action while signed out
   and fails if one gets past the check.
-- The Supabase key is only used on the server. Importing
-  `src/lib/supabase/client.ts` into a client component would put it in the
-  browser bundle.
+- The Supabase key is only used on the server (`src/lib/supabase/server.ts`).
+  There is no browser Supabase client; keep it that way.
 - The sign-in actions live in `src/app/login/actions.ts` (not
   `src/app/actions/`) because they have to work before anyone is signed in.
