@@ -1,6 +1,5 @@
 import { google } from 'googleapis'
 import type { NewOrder } from '@/types/orders'
-import { createTrelloCard } from '@/lib/trello'
 import { salesType, sparkCans, stillCans } from '@/lib/orders'
 
 export type SheetLocation = {
