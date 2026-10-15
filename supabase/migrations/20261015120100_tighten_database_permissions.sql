@@ -7,7 +7,9 @@
 --
 -- It stops with an error, changing nothing, unless step 1
 -- (20261015120000_partner_access.sql) is applied and private.partner_emails
--- has at least one row.
+-- has at least one row. The partner-list check is skipped when inventory is
+-- empty, so a fresh database (such as `supabase db reset`, which runs
+-- migrations before seed.sql) can still be built.
 --
 -- inventory: drops the older insert, update and delete policies, so only the
 --   "Partners can manage inventory" policy from step 1 allows changes.
@@ -34,7 +36,10 @@ begin
     raise exception 'Apply 20261015120000_partner_access.sql first.';
   end if;
 
-  if not exists (select 1 from private.partner_emails) then
+  -- Only insist on partners when there is inventory to protect. The live
+  -- database always has rows; a freshly built one has none yet.
+  if exists (select 1 from public.inventory)
+     and not exists (select 1 from private.partner_emails) then
     raise exception 'private.partner_emails is empty. Add the partner emails first, or nobody will be able to change inventory.';
   end if;
 end

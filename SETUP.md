@@ -111,19 +111,14 @@ insert into private.partner_emails (email) values
 The live site keeps working exactly as before. The emails go in this table
 rather than in a migration so they stay out of this public repository.
 
-This step also creates `public.is_partner()`, which this policy and later
-migrations use. Supabase's Security Advisor will list it under warning 0029
+This step also creates `public.is_partner()`, which the new inventory policy
+and later migrations use. Supabase's Security Advisor will list it under warning 0029
 ("SECURITY DEFINER function callable by signed-in users"). That is expected:
 it only tells a signed-in user whether their own email is on the list.
 Signed-out callers can't run it.
 
-(The repo has no `supabase/config.toml`, so the SQL Editor is the simplest way
-to run it. Both migration files are safe to run twice if they ever go through
-`supabase db push` later. If you set up the Supabase CLI and run
-`supabase db pull`, rename the baseline file it creates to
-`20261015000000_remote_schema.sql` so it sorts before these migrations, which
-expect the `inventory` and `orders` tables to exist, then use
-`supabase migration repair` to mark the files you already ran as applied.)
+The repo has no `supabase/config.toml`, so the SQL Editor is the simplest way
+to run these files. Both are safe to run twice.
 
 ## 4. Vercel env vars, then deploy
 
@@ -186,6 +181,34 @@ write without a signed-in user.
   stops accepting their changes at once), remove the email from
   `ALLOWED_EMAILS` and redeploy, and delete the user under Authentication →
   Users.
+
+## Using the Supabase CLI later
+
+Do this only after both database steps are done: the last command below marks
+them as already run. These migrations expect the existing `inventory` and
+`orders` tables, so the CLI needs a baseline of the live schema that sorts
+before them. Run
+`npx supabase login`, `npx supabase init` and
+`npx supabase link --project-ref <project-ref>` first. `db pull` needs Docker
+Desktop running, and an empty `supabase/migrations` folder:
+
+```bash
+mkdir -p supabase/migrations
+mv supabase/migrations supabase/migrations.aside
+mkdir supabase/migrations
+npx supabase db pull
+mv supabase/migrations/*_remote_schema.sql supabase/migrations.aside/20261015000000_remote_schema.sql
+rmdir supabase/migrations
+mv supabase/migrations.aside supabase/migrations
+npx supabase migration repair --status applied 20261015000000
+npx supabase migration repair --status applied 20261015120000 20261015120100
+```
+
+If `db pull` asks "Update remote migration history table?", answer **n**. The
+last line marks these two files as already run (you ran them in the SQL
+Editor). After that, a local `supabase db reset` rebuilds everything; step 2
+skips its partner-list check when inventory is empty, as it is on a fresh
+database.
 
 ## Notes for development
 
