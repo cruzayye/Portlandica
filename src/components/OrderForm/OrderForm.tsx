@@ -23,15 +23,17 @@ import { createOrder, getLocations, getLocationTypes } from '@/app/actions/order
 import { getInventory } from '@/app/actions/inventory'
 import { batchesFor, customBatchesFor, preselectBatchId } from '@/lib/batches'
 import type { CustomerType, NewOrder, Inventory, OrderBatches } from '@/types/orders'
-import { CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
+import { CANS_PER_CASE, CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
+import { sparkCans, stillCans, toCans } from '@/lib/orders'
 
-const defaultState: NewOrder = {
+// Quantities are typed in their own boxes and turned into cans for the order.
+type OrderFields = Omit<NewOrder, 'totalStill' | 'totalSpark'>
+
+const defaultState: OrderFields = {
   name: '',
   customerType: 'existing',
   isStill: false,
   isSpark: false,
-  totalStill: null,
-  totalSpark: null,
   IsCustomStill: false,
   isCustomSpark: false,
   price: null,
@@ -48,8 +50,12 @@ const defaultState: NewOrder = {
   isDonation: false,
 }
 
+const noQuantity = { still: '', spark: '' }
+
 export default function OrderForm() {
-  const [form, setForm] = useState<NewOrder>(defaultState)
+  const [form, setForm] = useState<OrderFields>(defaultState)
+  // What was typed in each quantity box: cases, or single cans when manualNumber is on.
+  const [quantity, setQuantity] = useState(noQuantity)
   const [manualNumber, setManualNumber] = useState(false)
   const [success, setSuccess] = useState(false)
   const [warnings, setWarnings] = useState<string[]>([])
@@ -66,6 +72,20 @@ export default function OrderForm() {
   const [showCustomPricingDialog, setShowCustomPricingDialog] = useState(false)
   const [isCustomPricing, setIsCustomPricing] = useState(false)
   const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null)
+
+  const order: NewOrder = {
+    ...form,
+    totalStill: toCans(quantity.still, manualNumber),
+    totalSpark: toCans(quantity.spark, manualNumber),
+  }
+  const totalCans = stillCans(order) + sparkCans(order)
+
+  const quantityHelp = (cans: number | null) =>
+    manualNumber
+      ? 'Single cans, not cases'
+      : cans
+        ? `= ${cans.toLocaleString('en-US')} cans`
+        : `Cases of ${CANS_PER_CASE} cans`
 
   const stillBatches = batchesFor(inventory, true, form.name ?? null)
   const sparkBatches = batchesFor(inventory, false, form.name ?? null)
@@ -114,12 +134,11 @@ export default function OrderForm() {
   }, [form.name, inventory])
 
   useEffect(() => {
-    const total = (form.totalStill ?? 0) + (form.totalSpark ?? 0)
     const pricePerCan = isCustomPricing
       ? (CUSTOMER_PRICING[form.name ?? ''] ?? DEFAULT_PRICE_PER_CAN)
       : DEFAULT_PRICE_PER_CAN
-    setForm((prev) => ({ ...prev, price: total > 0 ? total * pricePerCan : null }))
-  }, [form.totalStill, form.totalSpark, form.name, isCustomPricing])
+    setForm((prev) => ({ ...prev, price: totalCans > 0 ? totalCans * pricePerCan : null }))
+  }, [totalCans, form.name, isCustomPricing])
 
   const handleCustomPricingYes = () => {
     setIsCustomPricing(true)
@@ -148,32 +167,22 @@ export default function OrderForm() {
       zip: null,
     }))
 
-  function handleSwitch(field: keyof NewOrder) {
+  function handleSwitch(field: keyof OrderFields) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.checked }))
   }
 
-  function handleText(field: keyof NewOrder) {
+  function handleText(field: keyof OrderFields) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.value }))
   }
 
-  function handleNumber(field: keyof NewOrder) {
+  function handleNumber(field: keyof OrderFields) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((prev) => ({
         ...prev,
         [field]: e.target.value === '' ? null : Number(e.target.value),
       }))
-  }
-
-  function handleCasesBlur(field: 'totalStill' | 'totalSpark') {
-    return () => {
-      if (manualNumber) return
-      setForm((prev) => ({
-        ...prev,
-        [field]: prev[field] != null ? (prev[field] as number) * 24 : null,
-      }))
-    }
   }
 
   // The batch picked for each product that is switched on, with its fill date for Trello.
@@ -196,7 +205,7 @@ export default function OrderForm() {
     startTransition(async () => {
       try {
         const wasNewBusiness = form.customerType === 'new'
-        const result = await createOrder(form, orderBatches(), force)
+        const result = await createOrder(order, orderBatches(), force)
         if (result.status === 'duplicate') {
           setDuplicateMessage(result.message)
           return
@@ -209,6 +218,8 @@ export default function OrderForm() {
         setSuccess(true)
         setWarnings(result.warnings)
         setForm(defaultState)
+        setQuantity(noQuantity)
+        setManualNumber(false)
         if (wasNewBusiness) setShowAppScriptDialog(true)
       } catch {
         // The request itself failed, so there's no telling whether the sheet was written.
@@ -373,18 +384,18 @@ export default function OrderForm() {
                   onChange={(e) => setManualNumber(e.target.checked)}
                 />
               }
-              label="Enter Manual Number"
+              label="Enter Manual Number (cans)"
             />
           </Box>
 
           {form.isStill && (
             <Box display="flex" flexDirection="column" gap={1}>
               <TextField
-                label="Total Still Cases"
+                label={manualNumber ? 'Total Still Cans' : 'Total Still Cases'}
                 type="number"
-                value={form.totalStill ?? ''}
-                onChange={handleNumber('totalStill')}
-                onBlur={handleCasesBlur('totalStill')}
+                value={quantity.still}
+                onChange={(e) => setQuantity((prev) => ({ ...prev, still: e.target.value }))}
+                helperText={quantityHelp(order.totalStill)}
                 inputProps={{ min: 0 }}
                 sx={{ '& .MuiInputBase-root': { backgroundColor: '#e3f2fd' } }}
               />
@@ -420,11 +431,11 @@ export default function OrderForm() {
           {form.isSpark && (
             <Box display="flex" flexDirection="column" gap={1}>
               <TextField
-                label="Total Sparkling Cases"
+                label={manualNumber ? 'Total Sparkling Cans' : 'Total Sparkling Cases'}
                 type="number"
-                value={form.totalSpark ?? ''}
-                onChange={handleNumber('totalSpark')}
-                onBlur={handleCasesBlur('totalSpark')}
+                value={quantity.spark}
+                onChange={(e) => setQuantity((prev) => ({ ...prev, spark: e.target.value }))}
+                helperText={quantityHelp(order.totalSpark)}
                 inputProps={{ min: 0 }}
                 sx={{ '& .MuiInputBase-root': { backgroundColor: '#e3f2fd' } }}
               />

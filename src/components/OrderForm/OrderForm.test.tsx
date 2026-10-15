@@ -314,3 +314,60 @@ describe('OrderForm customer type', () => {
     })
   })
 })
+
+describe('OrderForm quantities', () => {
+  const startStillOrder = async (user: ReturnType<typeof userEvent.setup>) => {
+    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
+    render(<OrderForm />)
+    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+    await fillRequiredFields(user)
+  }
+
+  it('shows cases as cans and leaves the number alone when focus moves', async () => {
+    const user = userEvent.setup()
+    await startStillOrder(user)
+
+    const cases = screen.getByLabelText('Total Still Cases')
+    await user.type(cases, '5')
+    expect(screen.getByText('= 120 cans')).toBeInTheDocument()
+
+    // Leaving and re-entering the box used to multiply it by 24 each time.
+    await user.click(screen.getByLabelText(/notes/i))
+    await user.click(cases)
+    await user.click(screen.getByLabelText(/notes/i))
+    expect(cases).toHaveValue(5)
+    expect(screen.getByText('= 120 cans')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(createOrder.mock.calls[0][0].totalStill).toBe(120)
+  })
+
+  it('takes single cans with Enter Manual Number on', async () => {
+    const user = userEvent.setup()
+    await startStillOrder(user)
+
+    await user.click(screen.getByLabelText('Enter Manual Number (cans)'))
+    expect(screen.queryByLabelText('Total Still Cases')).not.toBeInTheDocument()
+    await user.type(screen.getByLabelText('Total Still Cans'), '130')
+    expect(screen.getByText('Single cans, not cases')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(createOrder.mock.calls[0][0].totalStill).toBe(130)
+  })
+
+  it('goes back to cases after a saved order', async () => {
+    const user = userEvent.setup()
+    await startStillOrder(user)
+    await user.click(screen.getByLabelText('Enter Manual Number (cans)'))
+    await user.type(screen.getByLabelText('Total Still Cans'), '130')
+
+    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await screen.findByText(/submitted successfully/i)
+
+    expect(screen.getByLabelText('Enter Manual Number (cans)')).not.toBeChecked()
+    await user.click(screen.getByLabelText('Still'))
+    expect(screen.getByLabelText('Total Still Cases')).toHaveValue(null)
+  })
+})

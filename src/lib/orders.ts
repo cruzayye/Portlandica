@@ -1,8 +1,16 @@
 import type { CustomerType, NewOrder, OrderBatches } from '@/types/orders'
+import { CANS_PER_CASE } from '@/globals/constants'
 
 /** The Sales sheet's Type column (B) for each kind of customer. */
 export const salesType = (customerType: CustomerType) =>
   customerType === 'individual' ? 'Individual' : 'Business'
+
+/**
+ * Cans for a quantity typed into the order form: cases by default, single
+ * cans when Enter Manual Number is on. Blank stays blank.
+ */
+export const toCans = (quantity: string, inCans: boolean): number | null =>
+  quantity === '' ? null : Number(quantity) * (inCans ? 1 : CANS_PER_CASE)
 
 /**
  * Cans ordered for each product. A product that is switched off counts as
