@@ -92,7 +92,6 @@ describe.each([
   it('finds the action files', () => {
     expect(actions.map((a) => a.label)).toEqual(
       expect.arrayContaining([
-        'inventory.ts getInventory',
         'orders.ts createOrder',
         'orders.ts getOrderFormData',
         'orderHistory.ts listOrders',

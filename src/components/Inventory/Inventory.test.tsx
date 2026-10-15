@@ -12,11 +12,6 @@ const actions = vi.hoisted(() => ({
 }))
 
 vi.mock('@/app/actions/batches', () => actions)
-// The tab changes stock only through the ledger actions above. If anything in it imported
-// the old direct-write actions again, these tests would fail here.
-vi.mock('@/app/actions/inventory', () => {
-  throw new Error('The Inventory tab must not use the old inventory actions')
-})
 
 import Inventory from './Inventory'
 import { portlandToday } from './dates'

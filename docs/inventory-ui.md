@@ -13,9 +13,10 @@ through one of the ledger's SQL functions, so it is recorded with who made it an
 | History      | `inventory_movements` (read)    | Newest first.                                                                                |
 | Banner       | `inventory_ledger_check` (read) | Shown only when a batch's count doesn't match its history.                                   |
 
-The tab no longer calls `createInventoryItem`, `updateInventoryCount` or
-`deleteInventoryItem` in `src/app/actions/inventory.ts`. They stay until the order-flow
-branch is merged, then they can be deleted.
+The old direct-write actions in `src/app/actions/inventory.ts` (`createInventoryItem`,
+`updateInventoryCount`, `deleteInventoryItem`, plus the unused `getInventory`) were deleted
+when this branch and the order-flow branch were merged. Stock now changes only through the
+ledger actions in `src/app/actions/batches.ts`.
 
 ## What partners see
 
