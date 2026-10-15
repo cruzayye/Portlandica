@@ -25,6 +25,7 @@ export type Customer = {
   zip: string | null
   latitude: number | null
   longitude: number | null
+  email: string | null
   square_customer_id: string | null
   active: boolean
   notes: string | null
@@ -66,6 +67,7 @@ export type SalesOrder = {
   type: CustomerType
   delivery_type: DeliveryType
   delivery_date: string | null
+  po_number: string | null
   notes: string | null
   total_cans: number
   total_price: number

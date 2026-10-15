@@ -38,6 +38,8 @@ export type NewSalesOrder = {
   /** Defaults to the customer's type, else business. */
   type?: CustomerType | null
   delivery_date?: string | null
+  /** The customer's purchase order number, if they sent one. */
+  po_number?: string | null
   notes?: string | null
   /** What to charge. Defaults to the sum of the line totals. */
   total_price?: number | null
@@ -143,6 +145,7 @@ export const createSalesOrder = async (db: Db, order: NewSalesOrder) =>
       p_create_invoice: order.create_invoice ?? false,
       p_is_donation: order.is_donation ?? false,
       p_order_date: order.order_date ?? null,
+      p_po_number: order.po_number ?? null,
     })
   )
 

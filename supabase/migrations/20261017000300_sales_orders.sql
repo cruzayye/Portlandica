@@ -15,6 +15,7 @@ create table public.sales_orders (
   type text not null default 'business',
   delivery_type text not null,
   delivery_date date,
+  po_number text,
   notes text,
   total_cans integer not null default 0,
   total_price numeric(10, 2) not null default 0,
@@ -78,6 +79,8 @@ comment on table public.sales_orders is
 comment on column public.sales_orders.order_date is 'Order date in Portland time (the Sales sheet''s Date).';
 comment on column public.sales_orders.customer_name is
   'Customer name as it was when the order was placed (kept even if the customer is renamed).';
+comment on column public.sales_orders.po_number is
+  'The customer''s purchase order number, when they send one (Sysco does, per order).';
 comment on column public.sales_orders.total_price is
   'What the customer is charged, in dollars. Can differ from the sum of line totals by rounding or a manual price.';
 comment on column public.sales_orders.inventory_status is

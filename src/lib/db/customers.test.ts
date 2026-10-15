@@ -71,6 +71,7 @@ describe('customer queries', () => {
       state: 'or',
       zip: '97205',
       notes: '   ',
+      email: ' Frontdesk@HotelVintage.example ',
       price_per_can: 2,
       custom_cans: true,
     })
@@ -81,6 +82,7 @@ describe('customer queries', () => {
       street_address: '422 SW Broadway',
       state: 'OR',
       notes: null,
+      email: 'frontdesk@hotelvintage.example',
       price_per_can: 2,
       custom_cans: true,
       active: true,

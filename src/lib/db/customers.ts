@@ -30,6 +30,7 @@ const TEXT_FIELDS = [
   'city',
   'state',
   'zip',
+  'email',
   'square_customer_id',
   'notes',
 ] as const
@@ -40,13 +41,14 @@ const cleanText = (value: string | null | undefined) => {
   return trimmed === '' ? null : trimmed
 }
 
-/** Trim text fields (blank becomes null), upper-case the state, and require a name. */
+/** Trim text fields (blank becomes null), upper-case the state, lower-case the email, and require a name. */
 const cleanCustomer = <T extends CustomerPatch>(input: T): T => {
   const cleaned: CustomerPatch = { ...input }
   for (const field of TEXT_FIELDS) {
     if (field in cleaned) cleaned[field] = cleanText(cleaned[field])
   }
   if (cleaned.state) cleaned.state = cleaned.state.toUpperCase()
+  if (cleaned.email) cleaned.email = cleaned.email.toLowerCase()
   if (input.name !== undefined) {
     cleaned.name = input.name.trim()
     if (!cleaned.name)

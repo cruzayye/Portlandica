@@ -45,6 +45,7 @@ create table public.customers (
   zip text,
   latitude double precision,
   longitude double precision,
+  email text,
   square_customer_id text,
   active boolean not null default true,
   notes text,
@@ -56,6 +57,7 @@ create table public.customers (
   constraint customers_type_valid check (type in ('business', 'individual')),
   constraint customers_price_positive check (price_per_can > 0),
   constraint customers_terms_valid check (payment_terms_days between 0 and 365),
+  constraint customers_email_valid check (email ~ '^[^@\s]+@[^@\s]+$'),
   constraint customers_lat_lng_pair check ((latitude is null) = (longitude is null)),
   constraint customers_latitude_range check (latitude between -90 and 90),
   constraint customers_longitude_range check (longitude between -180 and 180)
@@ -84,6 +86,7 @@ comment on column public.customers.price_per_can is
 comment on column public.customers.custom_cans is 'True when the customer buys custom-printed cans.';
 comment on column public.customers.payment_terms_days is
   'Invoice terms in days (Sysco is 65). NULL means the default terms (30 days).';
+comment on column public.customers.email is 'Where invoices go, when known.';
 comment on column public.customers.square_customer_id is 'Matching customer id in Square, once linked.';
 comment on column public.customers.active is 'False hides the customer without deleting history.';
 

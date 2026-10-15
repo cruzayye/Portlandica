@@ -48,7 +48,8 @@ create function public.create_sales_order(
   p_is_paid boolean default false,
   p_create_invoice boolean default false,
   p_is_donation boolean default false,
-  p_order_date date default null
+  p_order_date date default null,
+  p_po_number text default null
 )
 returns jsonb
 language plpgsql
@@ -93,7 +94,7 @@ begin
 
   insert into public.sales_orders (
     idempotency_key, order_date, customer_id, customer_name, type, delivery_type, delivery_date,
-    notes, is_paid, create_invoice, is_donation, square_status
+    po_number, notes, is_paid, create_invoice, is_donation, square_status
   )
   values (
     p_idempotency_key,
@@ -103,6 +104,7 @@ begin
     coalesce(p_type, v_customer.type, 'business'),
     p_delivery_type,
     p_delivery_date,
+    nullif(btrim(p_po_number), ''),
     nullif(btrim(p_notes), ''),
     coalesce(p_is_paid, false),
     coalesce(p_create_invoice, false),
@@ -383,13 +385,13 @@ $$;
 comment on function public.record_order_step is
   'Record the outcome of a downstream order step (sheet, trello, square; or an inventory failure).';
 
-revoke execute on function public.create_sales_order(text, text, jsonb, bigint, text, text, date, text, numeric, boolean, boolean, boolean, date)
+revoke execute on function public.create_sales_order(text, text, jsonb, bigint, text, text, date, text, numeric, boolean, boolean, boolean, date, text)
   from public, anon;
 revoke execute on function public.apply_order_inventory(bigint, boolean) from public, anon;
 revoke execute on function public.void_order(bigint, text) from public, anon;
 revoke execute on function public.record_order_step(bigint, text, text, text, text) from public, anon;
 
-grant execute on function public.create_sales_order(text, text, jsonb, bigint, text, text, date, text, numeric, boolean, boolean, boolean, date)
+grant execute on function public.create_sales_order(text, text, jsonb, bigint, text, text, date, text, numeric, boolean, boolean, boolean, date, text)
   to authenticated, service_role;
 grant execute on function public.apply_order_inventory(bigint, boolean) to authenticated, service_role;
 grant execute on function public.void_order(bigint, text) to authenticated, service_role;
