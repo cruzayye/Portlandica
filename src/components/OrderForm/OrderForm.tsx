@@ -19,6 +19,7 @@ import Autocomplete from '@mui/material/Autocomplete'
 import MenuItem from '@mui/material/MenuItem'
 import { createOrder, getLocations, getLocationTypes } from '@/app/actions/orders'
 import { getInventory } from '@/app/actions/inventory'
+import { batchesFor, customBatchesFor, preselectBatchId } from '@/lib/batches'
 import type { NewOrder, Inventory } from '@/types/orders'
 import { CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
 
@@ -64,20 +65,12 @@ export default function OrderForm() {
   const [isCustomPricing, setIsCustomPricing] = useState(false)
   const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null)
 
-  const stillBatches = inventory.filter(
-    (item) => item.isStill && (!item.isCustom || item.name === form.name),
-  )
-  const sparkBatches = inventory.filter(
-    (item) => !item.isStill && (!item.isCustom || item.name === form.name),
-  )
+  const stillBatches = batchesFor(inventory, true, form.name ?? null)
+  const sparkBatches = batchesFor(inventory, false, form.name ?? null)
 
   // A batch filled specifically for this customer wins outright.
-  const customStillBatches = stillBatches.filter(
-    (item) => item.isCustom && item.name === form.name,
-  )
-  const customSparkBatches = sparkBatches.filter(
-    (item) => item.isCustom && item.name === form.name,
-  )
+  const customStillBatches = customBatchesFor(stillBatches, form.name ?? null)
+  const customSparkBatches = customBatchesFor(sparkBatches, form.name ?? null)
 
   const needsStillBatch = (form.isStill ?? false) && stillBatches.length > 1 && !selectedInventoryId
   const needsSparkBatch =
@@ -114,13 +107,8 @@ export default function OrderForm() {
       setIsCustomPricing(false)
     }
 
-    // Preselect a batch filled for this customer, or the only batch available.
-    // Anything still ambiguous is left blank so the user picks explicitly.
-    const pick = (all: Inventory[], custom: Inventory[]) =>
-      custom.length === 1 ? custom[0].id : all.length === 1 ? all[0].id : ''
-
-    setSelectedInventoryId(pick(stillBatches, customStillBatches))
-    setSelectedSparkInventoryId(pick(sparkBatches, customSparkBatches))
+    setSelectedInventoryId(preselectBatchId(stillBatches, customStillBatches))
+    setSelectedSparkInventoryId(preselectBatchId(sparkBatches, customSparkBatches))
   }, [form.name, inventory])
 
   useEffect(() => {

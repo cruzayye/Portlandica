@@ -35,15 +35,15 @@ const defaultNewItem: NewInventory = {
   source: null,
 }
 
-const toCases = (count: number) => {
+export const toCases = (count: number) => {
   const cases = count / CANS_PER_CASE
   return `${+cases.toFixed(2)} case${cases === 1 ? '' : 's'}`
 }
 
-const toCost = (cost: number | null) =>
+export const toCost = (cost: number | null) =>
   cost === null ? null : `$${Number(cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
-const toPallets = (count: number) => {
+export const toPallets = (count: number) => {
   const pallets = count / CANS_PER_PALLET
   return `${+pallets.toFixed(2)} pallet${pallets === 1 ? '' : 's'}`
 }
