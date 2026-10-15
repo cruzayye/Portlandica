@@ -56,28 +56,18 @@ export const decrementInventory = async (order: NewOrder, stillInventoryId?: num
 
   const decrements = [
     ...stillCans(order) > 0
-      ? [{ id: stillInventoryId, isStill: true, isCustom: order.IsCustomStill ?? false, name: order.IsCustomStill ? (order.name ?? '') : 'Original', amount: stillCans(order) }]
+      ? [{ id: stillInventoryId, product: 'Still', amount: stillCans(order) }]
       : [],
     ...sparkCans(order) > 0
-      ? [{ id: sparkInventoryId, isStill: false, isCustom: order.isCustomSpark ?? false, name: order.isCustomSpark ? (order.name ?? '') : 'Original', amount: sparkCans(order) }]
+      ? [{ id: sparkInventoryId, product: 'Sparkling', amount: sparkCans(order) }]
       : [],
   ]
 
-  for (const { id, isStill, isCustom, name, amount } of decrements) {
-    let inventoryId = id
-    if (!inventoryId) {
-      const { data, error } = await supabase
-        .from('inventory')
-        .select('id, count')
-        .eq('isStill', isStill)
-        .eq('isCustom', isCustom)
-        .eq('name', name)
-        .single()
+  // Every product needs the batch it was picked from; check them all before changing any count.
+  const unpicked = decrements.find(({ id }) => !id)
+  if (unpicked) throw new Error(`No ${unpicked.product} batch was selected`)
 
-      if (error || !data) throw new Error(`Inventory item not found: ${name} (${isStill ? 'Still' : 'Spark'})`)
-      inventoryId = data.id
-    }
-
+  for (const { id: inventoryId, amount } of decrements) {
     const { data: item, error: fetchError } = await supabase
       .from('inventory')
       .select('count')

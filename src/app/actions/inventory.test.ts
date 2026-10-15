@@ -105,4 +105,19 @@ describe('decrementInventory', () => {
     expect(db.updates).toEqual([{ id: SPARK_BATCH, count: 912 }])
     expect(db.counts.get(STILL_BATCH)).toBe(1440)
   })
+
+  it('refuses a product with no batch instead of guessing one', async () => {
+    await expect(
+      decrementInventory(
+        order({ isStill: true, totalStill: 120, isSpark: true, totalSpark: 48 }),
+        undefined,
+        SPARK_BATCH
+      )
+    ).rejects.toThrow('No Still batch was selected')
+
+    // Nothing is decremented, not even the product that did have a batch,
+    // and no batch is looked up by name.
+    expect(db.updates).toEqual([])
+    expect(db.lookups.some((filters) => 'name' in filters)).toBe(false)
+  })
 })
