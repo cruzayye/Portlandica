@@ -17,6 +17,7 @@ import Typography from '@mui/material/Typography'
 import CircularProgress from '@mui/material/CircularProgress'
 import Alert from '@mui/material/Alert'
 import { getInventory, updateInventoryCount, deleteInventoryItem, createInventoryItem } from '@/app/actions/inventory'
+import { isAuthFailure } from '@/lib/auth/authFailure'
 import type { Inventory as InventoryType, NewInventory } from '@/types/orders'
 
 const CANS_PER_CASE = 24
@@ -63,7 +64,7 @@ const Inventory = () => {
 
   useEffect(() => {
     getInventory()
-      .then(setItems)
+      .then((result) => (isAuthFailure(result) ? setError(result.authError) : setItems(result)))
       .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load inventory'))
       .finally(() => setLoading(false))
   }, [])
@@ -84,7 +85,11 @@ const Inventory = () => {
     if (!selected) return
     startTransition(async () => {
       try {
-        await deleteInventoryItem(selected.id)
+        const result = await deleteInventoryItem(selected.id)
+        if (isAuthFailure(result)) {
+          setSaveError(result.authError)
+          return
+        }
         setItems((prev) => prev.filter((i) => i.id !== selected.id))
         handleClose()
       } catch (err) {
@@ -98,7 +103,11 @@ const Inventory = () => {
     const count = Number(caseCount) * CANS_PER_CASE
     startTransition(async () => {
       try {
-        await updateInventoryCount(selected.id, count)
+        const result = await updateInventoryCount(selected.id, count)
+        if (isAuthFailure(result)) {
+          setSaveError(result.authError)
+          return
+        }
         setItems((prev) => prev.map((i) => (i.id === selected.id ? { ...i, count } : i)))
         handleClose()
       } catch (err) {
@@ -114,6 +123,10 @@ const Inventory = () => {
           ...newItem,
           count: newItem.count * CANS_PER_CASE,
         })
+        if (isAuthFailure(created)) {
+          setAddError(created.authError)
+          return
+        }
         setItems((prev) => [...prev, created])
         setShowAddDialog(false)
         setNewItem(defaultNewItem)

@@ -19,6 +19,7 @@ import Autocomplete from '@mui/material/Autocomplete'
 import MenuItem from '@mui/material/MenuItem'
 import { createOrder, getLocations, getLocationTypes } from '@/app/actions/orders'
 import { getInventory } from '@/app/actions/inventory'
+import { isAuthFailure } from '@/lib/auth/authFailure'
 import { batchesFor, customBatchesFor, preselectBatchId } from '@/lib/batches'
 import type { NewOrder, Inventory } from '@/types/orders'
 import { CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
@@ -92,12 +93,17 @@ export default function OrderForm() {
 
   useEffect(() => {
     getLocations().then((data) => {
-      if (data) setLocations(data as Location[])
+      if (isAuthFailure(data)) setError(data.authError)
+      else if (data) setLocations(data as Location[])
     })
     getLocationTypes().then((data) => {
-      if (data) setLocationTypes(data.map((d) => d.name))
+      if (isAuthFailure(data)) setError(data.authError)
+      else if (data) setLocationTypes(data.map((d) => d.name))
     })
-    getInventory().then((data) => setInventory(data))
+    getInventory().then((data) => {
+      if (isAuthFailure(data)) setError(data.authError)
+      else setInventory(data)
+    })
   }, [])
 
   useEffect(() => {
@@ -174,6 +180,10 @@ export default function OrderForm() {
           fillDate,
           force,
         )
+        if (isAuthFailure(result)) {
+          setError(result.authError)
+          return
+        }
         if (result.duplicate) {
           setDuplicateMessage(result.message)
           return

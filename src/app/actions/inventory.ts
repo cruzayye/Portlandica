@@ -1,10 +1,14 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { requireUser, type AuthFailure } from '@/lib/auth/requireUser'
 import type { Inventory, NewInventory } from '@/types/orders'
 import type { NewOrder } from '@/types/orders'
 
-export const getInventory = async (): Promise<Inventory[]> => {
+export const getInventory = async (): Promise<Inventory[] | AuthFailure> => {
+  const { failure } = await requireUser()
+  if (failure) return failure
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('inventory')
@@ -16,7 +20,10 @@ export const getInventory = async (): Promise<Inventory[]> => {
   return data ?? []
 }
 
-export const createInventoryItem = async (item: NewInventory): Promise<Inventory> => {
+export const createInventoryItem = async (item: NewInventory): Promise<Inventory | AuthFailure> => {
+  const { failure } = await requireUser()
+  if (failure) return failure
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('inventory')
@@ -28,7 +35,10 @@ export const createInventoryItem = async (item: NewInventory): Promise<Inventory
   return data
 }
 
-export const deleteInventoryItem = async (id: number): Promise<void> => {
+export const deleteInventoryItem = async (id: number): Promise<void | AuthFailure> => {
+  const { failure } = await requireUser()
+  if (failure) return failure
+
   const supabase = await createClient()
   console.log(`Deleting inventory item with ID: ${id}`)
   const { error } = await supabase
@@ -40,7 +50,10 @@ export const deleteInventoryItem = async (id: number): Promise<void> => {
   
 }
 
-export const updateInventoryCount = async (id: number, count: number): Promise<void> => {
+export const updateInventoryCount = async (id: number, count: number): Promise<void | AuthFailure> => {
+  const { failure } = await requireUser()
+  if (failure) return failure
+
   const supabase = await createClient()
   const { error } = await supabase
     .from('inventory')
@@ -51,6 +64,12 @@ export const updateInventoryCount = async (id: number, count: number): Promise<v
 }
 
 export const decrementInventory = async (order: NewOrder, stillInventoryId?: number, sparkInventoryId?: number): Promise<void> => {
+  // Exported from a 'use server' file, so it gets the check too. Only
+  // createOrder calls it (after its own check), so it throws on failure like
+  // the rest of this function instead of returning the failure.
+  const { failure } = await requireUser()
+  if (failure) throw new Error(failure.authError)
+
   const supabase = await createClient()
 
   const decrements = [

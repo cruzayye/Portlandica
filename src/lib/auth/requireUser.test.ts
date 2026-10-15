@@ -8,7 +8,8 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: async () => ({ auth: { getUser } }),
 }))
 
-import { AUTH_UNAVAILABLE, NOT_A_PARTNER, SIGNED_OUT, isAuthFailure, requireUser } from './requireUser'
+import { requireUser } from './requireUser'
+import { AUTH_UNAVAILABLE, NOT_A_PARTNER, SIGNED_OUT, isAuthFailure } from './authFailure'
 
 const signedInAs = (email: string | undefined) =>
   getUser.mockResolvedValue({ data: { user: { id: 'user-1', email } }, error: null })

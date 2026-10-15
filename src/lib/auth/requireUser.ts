@@ -1,21 +1,9 @@
 import { isAuthRetryableFetchError, type User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/server'
 import { getAllowlist, isAllowedEmail } from './allowlist'
+import { AUTH_UNAVAILABLE, NOT_A_PARTNER, SIGNED_OUT, type AuthFailure } from './authFailure'
 
-/**
- * What a server action returns instead of its result when the caller isn't a
- * signed-in partner. It is returned, not thrown, because production builds
- * replace thrown messages with a generic one and this message is meant to be
- * shown to the person using the app.
- */
-export type AuthFailure = { authError: string }
-
-export const isAuthFailure = (value: unknown): value is AuthFailure =>
-  typeof value === 'object' && value !== null && 'authError' in value
-
-export const SIGNED_OUT = 'You are signed out. Reload the page to sign in again.'
-export const NOT_A_PARTNER = 'This account is not on the partner list.'
-export const AUTH_UNAVAILABLE = 'Could not check your sign-in just now. Please try again.'
+export type { AuthFailure } from './authFailure'
 
 /**
  * Call this first in every server action. Server actions can be called
