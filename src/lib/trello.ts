@@ -1,24 +1,58 @@
-import type { NewOrder } from '@/types/orders'
+import type { NewOrder, OrderBatches } from '@/types/orders'
+import { sparkCans, stillCans } from '@/lib/orders'
 
-function calculateNextDeliveryDate(): Date {
-  const today = new Date()
-  const deliveryDate = new Date(today)
-  deliveryDate.setDate(today.getDate() + 2)
+// Deliveries run on Portland time, not the server's (Vercel runs in UTC).
+const DELIVERY_TIME_ZONE = 'America/Los_Angeles'
+const DELIVERY_DAYS = [3, 6] // Wednesday, Saturday
+const DELIVERY_HOUR = 9
 
-  const day = deliveryDate.getDay()
-  if (day !== 3 && day !== 6) {
-    if (day < 3) {
-      deliveryDate.setDate(deliveryDate.getDate() + (3 - day))
-    } else {
-      deliveryDate.setDate(deliveryDate.getDate() + (6 - day))
-    }
-  }
-
-  deliveryDate.setHours(9, 0, 0, 0)
-  return deliveryDate
+const pacificDateParts = (now: Date) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: DELIVERY_TIME_ZONE,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+  }).formatToParts(now)
+  const part = (type: string) => Number(parts.find((p) => p.type === type)!.value)
+  return { year: part('year'), month: part('month'), day: part('day') }
 }
-// right now we only can create one label per fill date, but if we wanted to get fancy we could encode the fill date in the label name and then parse it out here to assign multiple labels for different fill dates
-// or we could send this data to our google sales sheet
+
+// 9:00 AM Pacific on the given calendar date, whether that falls in PST or PDT.
+const atDeliveryHour = (date: Date) => {
+  const assumingPst = Date.UTC(
+    date.getUTCFullYear(),
+    date.getUTCMonth(),
+    date.getUTCDate(),
+    DELIVERY_HOUR + 8
+  )
+  const pacificHour = Number(
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: DELIVERY_TIME_ZONE,
+      hour: 'numeric',
+      hourCycle: 'h23',
+    }).format(assumingPst)
+  )
+  return new Date(assumingPst - (pacificHour - DELIVERY_HOUR) * 60 * 60 * 1000)
+}
+
+/**
+ * First Wednesday or Saturday at least two days after today's date in
+ * Portland, due at 9:00 AM Pacific.
+ */
+export const nextDeliveryDate = (now: Date): Date => {
+  const { year, month, day } = pacificDateParts(now)
+  // A UTC-midnight date used only as a calendar, so the server's zone can't shift the day.
+  const date = new Date(Date.UTC(year, month - 1, day + 2))
+  while (!DELIVERY_DAYS.includes(date.getUTCDay())) {
+    date.setUTCDate(date.getUTCDate() + 1)
+  }
+  return atDeliveryHour(date)
+}
+
+export const formatDeliveryDate = (date: Date) =>
+  date.toLocaleDateString('en-US', { timeZone: DELIVERY_TIME_ZONE })
+
+// Board labels are named after a batch's fill date.
 const getOrCreateLabel = async (boardId: string, name: string, apiKey: string, token: string): Promise<string> => {
   const res = await fetch(`https://api.trello.com/1/boards/${boardId}/labels?key=${apiKey}&token=${token}`)
   if (!res.ok) throw new Error(`Trello API error fetching labels: ${res.status}`)
@@ -37,7 +71,7 @@ const getOrCreateLabel = async (boardId: string, name: string, apiKey: string, t
   return created.id
 }
 
-export async function createTrelloCard(order: NewOrder, fillDate?: string | null) {
+export async function createTrelloCard(order: NewOrder, batches: OrderBatches = {}) {
   const apiKey = process.env.TRELLO_API_KEY
   const token = process.env.TRELLO_TOKEN
   const listId = process.env.TRELLO_LIST_ID
@@ -47,51 +81,60 @@ export async function createTrelloCard(order: NewOrder, fillDate?: string | null
     throw new Error(`Missing Trello env vars: ${[!apiKey && 'TRELLO_API_KEY', !token && 'TRELLO_TOKEN', !listId && 'TRELLO_LIST_ID', !boardId && 'TRELLO_BOARD_ID'].filter(Boolean).join(', ')}`)
   }
 
-  const nextDeliveryDate = calculateNextDeliveryDate()
+  const deliveryDate = nextDeliveryDate(new Date())
   const customerName = order.name ?? ''
   const deliveryType = order.deliveryType 
 
+  const totalStill = stillCans(order)
+  const totalSpark = sparkCans(order)
+
   const titleParts: string[] = []
-  if ((order.totalStill ?? 0) > 0) {
+  if (totalStill > 0) {
     const label = order.IsCustomStill ? ' (Custom)' : ''
-    titleParts.push(`${order.totalStill} Still${label}`)
+    titleParts.push(`${totalStill} Still${label}`)
   }
-  if ((order.totalSpark ?? 0) > 0) {
+  if (totalSpark > 0) {
     const label = order.isCustomSpark ? ' (Custom)' : ''
-    titleParts.push(`${order.totalSpark} Sparkling${label}`)
+    titleParts.push(`${totalSpark} Sparkling${label}`)
   }
 
   const cardTitle = `${customerName} - ${deliveryType} ${titleParts.join(' & ')}`
 
   const description: string[] = [`Delivery Type: ${deliveryType}`]
 
-  if ((order.totalStill ?? 0) > 0) {
+  if (totalStill > 0) {
     description.push(
-      order.IsCustomStill
-        ? `Still Cans: ${order.totalStill} (Custom)`
-        : `Still Cans: ${order.totalStill}`
+      order.IsCustomStill ? `Still Cans: ${totalStill} (Custom)` : `Still Cans: ${totalStill}`
     )
   }
-  if ((order.totalSpark ?? 0) > 0) {
+  if (totalSpark > 0) {
     description.push(
       order.isCustomSpark
-        ? `Sparkling Cans: ${order.totalSpark} (Custom)`
-        : `Sparkling Cans: ${order.totalSpark}`
+        ? `Sparkling Cans: ${totalSpark} (Custom)`
+        : `Sparkling Cans: ${totalSpark}`
     )
   }
 
-  description.push(`Delivery Date: ${nextDeliveryDate.toLocaleDateString()}`)
+  description.push(`Delivery Date: ${formatDeliveryDate(deliveryDate)}`)
 
-  const address = order.isNewBusiness
-    ? [order.streetAddress, order.city, order.state, order.zip].filter(Boolean).join(', ')
-    : (order.notes ?? '')
+  const address =
+    order.customerType === 'existing'
+      ? (order.address ?? '')
+      : [order.streetAddress, order.city, order.state, order.zip].filter(Boolean).join(', ')
 
   if (address) description.push(`Address: ${address}`)
   if (order.notes) description.push(`Notes: ${order.notes}`)
 
-  const idLabels = fillDate
-    ? [await getOrCreateLabel(boardId, fillDate, apiKey, token)]
-    : []
+  // One label per batch actually used: a Sparkling-only order gets the Sparkling batch's
+  // fill date, and a mixed order gets both (once, if they share a date).
+  const fillDates = new Set([
+    ...(totalStill > 0 && batches.still?.fillDate ? [batches.still.fillDate] : []),
+    ...(totalSpark > 0 && batches.spark?.fillDate ? [batches.spark.fillDate] : []),
+  ])
+  const idLabels: string[] = []
+  for (const fillDate of fillDates) {
+    idLabels.push(await getOrCreateLabel(boardId, fillDate, apiKey, token))
+  }
 
   const res = await fetch('https://api.trello.com/1/cards', {
     method: 'POST',
@@ -99,7 +142,7 @@ export async function createTrelloCard(order: NewOrder, fillDate?: string | null
     body: JSON.stringify({
       name: cardTitle,
       desc: description.join('\n'),
-      due: nextDeliveryDate.toISOString(),
+      due: deliveryDate.toISOString(),
       idList: listId,
       idLabels,
       key: apiKey,

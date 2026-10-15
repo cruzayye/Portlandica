@@ -13,6 +13,8 @@ import Link from '@mui/material/Link'
 import Paper from '@mui/material/Paper'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
@@ -20,25 +22,26 @@ import MenuItem from '@mui/material/MenuItem'
 import { createOrder, getLocations, getLocationTypes } from '@/app/actions/orders'
 import { getInventory } from '@/app/actions/inventory'
 import { isAuthFailure } from '@/lib/auth/authFailure'
-import { batchesFor, customBatchesFor, preselectBatchId } from '@/lib/batches'
-import type { NewOrder, Inventory } from '@/types/orders'
-import { CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
+import { batchesFor, chosenBatchId, customBatchesFor } from '@/lib/batches'
+import type { CustomerType, NewOrder, Inventory, OrderBatches } from '@/types/orders'
+import { CANS_PER_CASE, CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
+import { orderProblem, priceForCans, sparkCans, stillCans, toCans } from '@/lib/orders'
 
-const defaultState: NewOrder = {
+// Quantities are typed in their own boxes and turned into cans for the order; the price
+// is worked out from them unless one is typed in.
+type OrderFields = Omit<NewOrder, 'totalStill' | 'totalSpark' | 'price'>
+
+const defaultState: OrderFields = {
   name: '',
-  isBusiness: true,
-  isNewBusiness: false,
-  isDTC: false,
+  customerType: 'existing',
   isStill: false,
   isSpark: false,
-  totalStill: null,
-  totalSpark: null,
   IsCustomStill: false,
   isCustomSpark: false,
-  price: null,
   isPaid: false,
   createInvoice: false,
   notes: '',
+  address: null,
   businessType: null,
   streetAddress: null,
   city: null,
@@ -48,23 +51,61 @@ const defaultState: NewOrder = {
   isDonation: false,
 }
 
+const noQuantity = { still: '', spark: '' }
+const noBatchPick: { still: number | ''; spark: number | '' } = { still: '', spark: '' }
+
 export default function OrderForm() {
-  const [form, setForm] = useState<NewOrder>(defaultState)
+  const [form, setForm] = useState<OrderFields>(defaultState)
+  // What was typed in each quantity box: cases, or single cans when manualNumber is on.
+  const [quantity, setQuantity] = useState(noQuantity)
   const [manualNumber, setManualNumber] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [warnings, setWarnings] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [showAppScriptDialog, setShowAppScriptDialog] = useState(false)
   type Location = { name: string; address: string; businessType: string }
   const [locations, setLocations] = useState<Location[]>([])
   const [locationTypes, setLocationTypes] = useState<string[]>([])
   const [inventory, setInventory] = useState<Inventory[]>([])
-  const [selectedInventoryId, setSelectedInventoryId] = useState<number | ''>('')
-  const [selectedSparkInventoryId, setSelectedSparkInventoryId] = useState<number | ''>('')
+  const [batchPick, setBatchPick] = useState(noBatchPick)
+  const [typedPrice, setTypedPrice] = useState<{
+    value: number | null
+    autoPrice: number | null
+  } | null>(null)
   const [isPending, startTransition] = useTransition()
   const customBusinessTypeRef = useRef<HTMLInputElement>(null)
   const [showCustomPricingDialog, setShowCustomPricingDialog] = useState(false)
   const [isCustomPricing, setIsCustomPricing] = useState(false)
   const [duplicateMessage, setDuplicateMessage] = useState<string | null>(null)
+
+  const totalStill = toCans(quantity.still, manualNumber)
+  const totalSpark = toCans(quantity.spark, manualNumber)
+  const totalCans =
+    stillCans({ isStill: form.isStill, totalStill }) +
+    sparkCans({ isSpark: form.isSpark, totalSpark })
+
+  const pricePerCan = isCustomPricing
+    ? (CUSTOMER_PRICING[form.name ?? ''] ?? DEFAULT_PRICE_PER_CAN)
+    : DEFAULT_PRICE_PER_CAN
+  const autoPrice = priceForCans(totalCans, pricePerCan)
+  // A donation is always $0. Otherwise a typed-in price holds until the automatic price
+  // changes (cans, customer or custom pricing); then the automatic price takes over again.
+  const price = form.isDonation
+    ? 0
+    : typedPrice && typedPrice.autoPrice === autoPrice
+      ? typedPrice.value
+      : autoPrice
+  // A sale with cans but no price is either a donation or a mistake.
+  const needsPrice = !form.isDonation && totalCans > 0 && !((price ?? 0) > 0)
+
+  const order: NewOrder = { ...form, totalStill, totalSpark, price }
+
+  const quantityHelp = (cans: number | null) =>
+    manualNumber
+      ? 'Single cans, not cases'
+      : cans
+        ? `= ${cans.toLocaleString('en-US')} cans`
+        : `Cases of ${CANS_PER_CASE} cans`
 
   const stillBatches = batchesFor(inventory, true, form.name ?? null)
   const sparkBatches = batchesFor(inventory, false, form.name ?? null)
@@ -73,9 +114,21 @@ export default function OrderForm() {
   const customStillBatches = customBatchesFor(stillBatches, form.name ?? null)
   const customSparkBatches = customBatchesFor(sparkBatches, form.name ?? null)
 
+  const selectedInventoryId = chosenBatchId(batchPick.still, stillBatches, customStillBatches)
+  const selectedSparkInventoryId = chosenBatchId(batchPick.spark, sparkBatches, customSparkBatches)
+
   const needsStillBatch = (form.isStill ?? false) && stillBatches.length > 1 && !selectedInventoryId
   const needsSparkBatch =
     (form.isSpark ?? false) && sparkBatches.length > 1 && !selectedSparkInventoryId
+  const noStillBatches = (form.isStill ?? false) && stillBatches.length === 0
+  const noSparkBatches = (form.isSpark ?? false) && sparkBatches.length === 0
+
+  const batchHelp = (product: string, noBatches: boolean, needsBatch: boolean) =>
+    noBatches
+      ? `No ${product} batches in inventory. Add one on the Inventory tab first.`
+      : needsBatch
+        ? 'Select which batch this order pulls from'
+        : ' '
 
   const batchLabel = (item: Inventory) =>
     `${item.name} ${item.isStill ? 'Still' : 'Spark'} — ${item.fillDate ?? ''}${
@@ -106,25 +159,6 @@ export default function OrderForm() {
     })
   }, [])
 
-  useEffect(() => {
-    if (CUSTOMER_PRICING[form.name ?? '']) {
-      setShowCustomPricingDialog(true)
-    } else {
-      setIsCustomPricing(false)
-    }
-
-    setSelectedInventoryId(preselectBatchId(stillBatches, customStillBatches))
-    setSelectedSparkInventoryId(preselectBatchId(sparkBatches, customSparkBatches))
-  }, [form.name, inventory])
-
-  useEffect(() => {
-    const total = (form.totalStill ?? 0) + (form.totalSpark ?? 0)
-    const pricePerCan = isCustomPricing
-      ? (CUSTOMER_PRICING[form.name ?? ''] ?? DEFAULT_PRICE_PER_CAN)
-      : DEFAULT_PRICE_PER_CAN
-    setForm((prev) => ({ ...prev, price: total > 0 ? total * pricePerCan : null }))
-  }, [form.totalStill, form.totalSpark, form.name, isCustomPricing])
-
   const handleCustomPricingYes = () => {
     setIsCustomPricing(true)
 
@@ -137,62 +171,102 @@ export default function OrderForm() {
     setShowCustomPricingDialog(false)
   }
 
-  function handleSwitch(field: keyof NewOrder) {
+  // Another customer means other batches on offer, and maybe custom pricing.
+  const changeName = (name: string, address: string | null = null) => {
+    setForm((prev) => ({ ...prev, name, address }))
+    setBatchPick(noBatchPick)
+    if (CUSTOMER_PRICING[name]) {
+      setShowCustomPricingDialog(true)
+    } else {
+      setIsCustomPricing(false)
+    }
+  }
+
+  // Each choice shows its own fields. Switching clears what the new choice hides, and the
+  // name too when moving to or from Existing, which is picked from a list instead of typed.
+  const changeCustomerType = (customerType: CustomerType) => {
+    setForm((prev) => ({
+      ...prev,
+      customerType,
+      address: null,
+      businessType: null,
+      streetAddress: null,
+      city: null,
+      state: null,
+      zip: null,
+    }))
+    if (form.customerType === 'existing' || customerType === 'existing') changeName('')
+  }
+
+  // Switching a product off clears its quantity and batch, so nothing hidden gets ordered.
+  const toggleProduct =
+    (product: 'still' | 'spark') => (e: React.ChangeEvent<HTMLInputElement>) => {
+      const on = e.target.checked
+      setForm((prev) => ({ ...prev, [product === 'still' ? 'isStill' : 'isSpark']: on }))
+      if (!on) {
+        setQuantity((prev) => ({ ...prev, [product]: '' }))
+        setBatchPick((prev) => ({ ...prev, [product]: '' }))
+      }
+    }
+
+  function handleSwitch(field: keyof OrderFields) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.checked }))
   }
 
-  function handleText(field: keyof NewOrder) {
+  function handleText(field: keyof OrderFields) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.value }))
   }
 
-  function handleNumber(field: keyof NewOrder) {
-    return (e: React.ChangeEvent<HTMLInputElement>) =>
-      setForm((prev) => ({
-        ...prev,
-        [field]: e.target.value === '' ? null : Number(e.target.value),
-      }))
-  }
-
-  function handleCasesBlur(field: 'totalStill' | 'totalSpark') {
-    return () => {
-      if (manualNumber) return
-      setForm((prev) => ({
-        ...prev,
-        [field]: prev[field] != null ? (prev[field] as number) * 24 : null,
-      }))
+  // The batch picked for each product that is switched on, with its fill date for Trello.
+  const orderBatches = (): OrderBatches => {
+    const pick = (id: number | '') => {
+      const batch = inventory.find((i) => i.id === id)
+      return batch ? { id: batch.id, fillDate: batch.fillDate } : undefined
+    }
+    return {
+      still: form.isStill ? pick(selectedInventoryId) : undefined,
+      spark: form.isSpark ? pick(selectedSparkInventoryId) : undefined,
     }
   }
 
   const submitOrder = (force = false) => {
     setError(null)
     setSuccess(false)
+    setWarnings([])
 
     startTransition(async () => {
       try {
-        const wasNewBusiness = form.isNewBusiness
-        const fillDate = inventory.find((i) => i.id === selectedInventoryId)?.fillDate
-        const result = await createOrder(
-          form,
-          selectedInventoryId || undefined,
-          selectedSparkInventoryId || undefined,
-          fillDate,
-          force,
-        )
+        const wasNewBusiness = form.customerType === 'new'
+        const result = await createOrder(order, orderBatches(), force)
         if (isAuthFailure(result)) {
           setError(result.authError)
           return
         }
-        if (result.duplicate) {
+        if (result.status === 'duplicate') {
           setDuplicateMessage(result.message)
           return
         }
+        if (result.status === 'failed') {
+          setError(result.message)
+          return
+        }
+        // The order is in the sheet: start a fresh form even if a later step needs fixing by hand.
         setSuccess(true)
+        setWarnings(result.warnings)
         setForm(defaultState)
+        setQuantity(noQuantity)
+        setManualNumber(false)
+        setBatchPick(noBatchPick)
+        setTypedPrice(null)
+        setIsCustomPricing(false)
         if (wasNewBusiness) setShowAppScriptDialog(true)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Something went wrong')
+      } catch {
+        // The request itself failed, so there's no telling whether the sheet was written.
+        setError(
+          "Couldn't confirm the order was saved. Check the Sales sheet before submitting again."
+        )
       }
     })
   }
@@ -217,37 +291,30 @@ export default function OrderForm() {
           />
         </Box>
 
-        <Box display="flex" gap={2} flexWrap="wrap">
-          <FormControlLabel
-            control={
-              <Switch checked={form.isBusiness ?? false} onChange={handleSwitch('isBusiness')} />
-            }
-            label="Business"
-          />
-          {(form.isBusiness || form.isDTC) && (
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={form.isNewBusiness ?? false}
-                  onChange={handleSwitch('isNewBusiness')}
-                />
-              }
-              label="New Business"
-            />
-          )}
-          <FormControlLabel
-            control={<Switch checked={form.isDTC ?? false} onChange={handleSwitch('isDTC')} />}
-            label="DTC"
-          />
-        </Box>
+        <ToggleButtonGroup
+          exclusive
+          fullWidth
+          size="small"
+          color="primary"
+          aria-label="Customer type"
+          value={form.customerType}
+          onChange={(_, value: CustomerType | null) => {
+            if (value) changeCustomerType(value)
+          }}
+          sx={{ mb: 3 }}
+        >
+          <ToggleButton value="existing">Existing business</ToggleButton>
+          <ToggleButton value="new">New business</ToggleButton>
+          <ToggleButton value="individual">Individual (DTC)</ToggleButton>
+        </ToggleButtonGroup>
 
         <Box component="form" onSubmit={handleSubmit} display="flex" flexDirection="column" gap={3}>
           {/* Customer */}
-          {form.isNewBusiness || form.isDTC || !form.isBusiness ? (
+          {form.customerType !== 'existing' ? (
             <TextField
-              label="DTC or New Business Name"
+              label={form.customerType === 'new' ? 'New Business Name' : 'Customer Name'}
               value={form.name ?? ''}
-              onChange={handleText('name')}
+              onChange={(e) => changeName(e.target.value)}
               fullWidth
               required
             />
@@ -258,54 +325,47 @@ export default function OrderForm() {
               value={locations.find((l) => l.name === form.name) ?? null}
               onChange={(_, value) => {
                 if (!value || typeof value === 'string') return
-                setForm((prev) => ({
-                  ...prev,
-                  name: value.name,
-                  notes: value.address,
-                }))
+                // The address rides along for the Trello card; Notes stay the user's own text.
+                changeName(value.name, value.address || null)
               }}
               renderInput={(params) => <TextField {...params} label="Name" required />}
               fullWidth
             />
           )}
 
-          {(form.isNewBusiness || form.isDTC) && (
+          {form.customerType === 'new' && (
             <>
-              {!form.isDTC && (
-                <>
-                  <TextField
-                    select
-                    label="Type of Business"
-                    value={
-                      locationTypes.includes(form.businessType ?? '')
-                        ? (form.businessType ?? '')
-                        : form.businessType
-                          ? 'Other'
-                          : ''
-                    }
-                    onChange={(e) => {
-                      const val = e.target.value
-                      setForm((prev) => ({ ...prev, businessType: val === 'Other' ? '' : val }))
-                    }}
-                    fullWidth
-                  >
-                    {locationTypes.map((type) => (
-                      <MenuItem key={type} value={type}>
-                        {type}
-                      </MenuItem>
-                    ))}
-                    <MenuItem value="Other">Other</MenuItem>
-                  </TextField>
-                  {isCustomBusinessType && (
-                    <TextField
-                      label="Specify Business Type"
-                      value={form.businessType ?? ''}
-                      onChange={handleText('businessType')}
-                      fullWidth
-                      inputRef={customBusinessTypeRef}
-                    />
-                  )}
-                </>
+              <TextField
+                select
+                label="Type of Business"
+                value={
+                  locationTypes.includes(form.businessType ?? '')
+                    ? (form.businessType ?? '')
+                    : form.businessType
+                      ? 'Other'
+                      : ''
+                }
+                onChange={(e) => {
+                  const val = e.target.value
+                  setForm((prev) => ({ ...prev, businessType: val === 'Other' ? '' : val }))
+                }}
+                fullWidth
+              >
+                {locationTypes.map((type) => (
+                  <MenuItem key={type} value={type}>
+                    {type}
+                  </MenuItem>
+                ))}
+                <MenuItem value="Other">Other</MenuItem>
+              </TextField>
+              {isCustomBusinessType && (
+                <TextField
+                  label="Specify Business Type"
+                  value={form.businessType ?? ''}
+                  onChange={handleText('businessType')}
+                  fullWidth
+                  inputRef={customBusinessTypeRef}
+                />
               )}
               <TextField
                 label="Street Address"
@@ -345,15 +405,11 @@ export default function OrderForm() {
 
           <Box display="flex" gap={2} flexWrap="wrap">
             <FormControlLabel
-              control={
-                <Switch checked={form.isStill ?? false} onChange={handleSwitch('isStill')} />
-              }
+              control={<Switch checked={form.isStill ?? false} onChange={toggleProduct('still')} />}
               label="Still"
             />
             <FormControlLabel
-              control={
-                <Switch checked={form.isSpark ?? false} onChange={handleSwitch('isSpark')} />
-              }
+              control={<Switch checked={form.isSpark ?? false} onChange={toggleProduct('spark')} />}
               label="Sparkling"
             />
             <FormControlLabel
@@ -363,18 +419,19 @@ export default function OrderForm() {
                   onChange={(e) => setManualNumber(e.target.checked)}
                 />
               }
-              label="Enter Manual Number"
+              label="Enter Manual Number (cans)"
             />
           </Box>
 
           {form.isStill && (
             <Box display="flex" flexDirection="column" gap={1}>
               <TextField
-                label="Total Still Cases"
+                label={manualNumber ? 'Total Still Cans' : 'Total Still Cases'}
                 type="number"
-                value={form.totalStill ?? ''}
-                onChange={handleNumber('totalStill')}
-                onBlur={handleCasesBlur('totalStill')}
+                required
+                value={quantity.still}
+                onChange={(e) => setQuantity((prev) => ({ ...prev, still: e.target.value }))}
+                helperText={quantityHelp(order.totalStill)}
                 inputProps={{ min: 0 }}
                 sx={{ '& .MuiInputBase-root': { backgroundColor: '#e3f2fd' } }}
               />
@@ -391,11 +448,13 @@ export default function OrderForm() {
                 select
                 label="Batch number"
                 value={selectedInventoryId}
-                onChange={(e) => setSelectedInventoryId(Number(e.target.value))}
+                onChange={(e) =>
+                  setBatchPick((prev) => ({ ...prev, still: Number(e.target.value) }))
+                }
                 fullWidth
                 required={stillBatches.length > 1}
-                error={needsStillBatch}
-                helperText={needsStillBatch ? 'Select which batch this order pulls from' : ' '}
+                error={needsStillBatch || noStillBatches}
+                helperText={batchHelp('Still', noStillBatches, needsStillBatch)}
                 sx={{ '& .MuiInputBase-root': { backgroundColor: '#fffde7' } }}
               >
                 {stillBatches.map((item) => (
@@ -410,11 +469,12 @@ export default function OrderForm() {
           {form.isSpark && (
             <Box display="flex" flexDirection="column" gap={1}>
               <TextField
-                label="Total Sparkling Cases"
+                label={manualNumber ? 'Total Sparkling Cans' : 'Total Sparkling Cases'}
                 type="number"
-                value={form.totalSpark ?? ''}
-                onChange={handleNumber('totalSpark')}
-                onBlur={handleCasesBlur('totalSpark')}
+                required
+                value={quantity.spark}
+                onChange={(e) => setQuantity((prev) => ({ ...prev, spark: e.target.value }))}
+                helperText={quantityHelp(order.totalSpark)}
                 inputProps={{ min: 0 }}
                 sx={{ '& .MuiInputBase-root': { backgroundColor: '#e3f2fd' } }}
               />
@@ -431,11 +491,13 @@ export default function OrderForm() {
                 select
                 label="Batch number"
                 value={selectedSparkInventoryId}
-                onChange={(e) => setSelectedSparkInventoryId(Number(e.target.value))}
+                onChange={(e) =>
+                  setBatchPick((prev) => ({ ...prev, spark: Number(e.target.value) }))
+                }
                 fullWidth
                 required={sparkBatches.length > 1}
-                error={needsSparkBatch}
-                helperText={needsSparkBatch ? 'Select which batch this order pulls from' : ' '}
+                error={needsSparkBatch || noSparkBatches}
+                helperText={batchHelp('Sparkling', noSparkBatches, needsSparkBatch)}
                 sx={{ '& .MuiInputBase-root': { backgroundColor: '#fffde7' } }}
               >
                 {sparkBatches.map((item) => (
@@ -453,13 +515,38 @@ export default function OrderForm() {
           <TextField
             label="Price"
             type="number"
-            value={form.price ?? ''}
-            onChange={handleNumber('price')}
+            value={price ?? ''}
+            onChange={(e) =>
+              setTypedPrice({
+                value: e.target.value === '' ? null : Number(e.target.value),
+                autoPrice,
+              })
+            }
             fullWidth
+            disabled={form.isDonation ?? false}
+            error={needsPrice}
+            helperText={form.isDonation ? 'Donations go on the Donations tab at $0' : undefined}
             inputProps={{ min: 0, step: 0.01 }}
             slotProps={{ input: { startAdornment: <Typography mr={0.5}>$</Typography> } }}
             sx={{ '& .MuiInputBase-root': { backgroundColor: '#e3f2fd' } }}
           />
+
+          {needsPrice && (
+            <Alert
+              severity="warning"
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  onClick={() => setForm((prev) => ({ ...prev, isDonation: true }))}
+                >
+                  Mark as donation
+                </Button>
+              }
+            >
+              No price. Enter one, or mark this order as a donation.
+            </Alert>
+          )}
 
           <Box display="flex" gap={2} flexWrap="wrap">
             <FormControlLabel
@@ -535,21 +622,21 @@ export default function OrderForm() {
             rows={3}
           />
 
-          {success && <Alert severity="success">Order submitted successfully!</Alert>}
+          {success && warnings.length === 0 && (
+            <Alert severity="success">Order submitted successfully!</Alert>
+          )}
+          {warnings.map((warning) => (
+            <Alert key={warning} severity="warning">
+              {warning}
+            </Alert>
+          ))}
           {error && <Alert severity="error">{error}</Alert>}
 
           <Button
             type="submit"
             variant="contained"
             size="large"
-            disabled={
-              isPending ||
-              !form.name ||
-              (!form.isStill && !form.isSpark) ||
-              !form.deliveryType ||
-              needsStillBatch ||
-              needsSparkBatch
-            }
+            disabled={isPending || orderProblem(order, orderBatches()) !== null}
           >
             {isPending ? 'Submitting...' : 'Submit Order'}
           </Button>
