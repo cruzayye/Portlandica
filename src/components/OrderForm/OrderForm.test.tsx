@@ -420,3 +420,35 @@ describe('OrderForm price', () => {
     expect(screen.getByLabelText('Price')).toHaveValue(1800)
   })
 })
+
+describe('OrderForm product switches', () => {
+  it('forgets a quantity once its product is switched off', async () => {
+    const user = userEvent.setup()
+    getInventory.mockResolvedValue([
+      batch({ id: 1, isStill: true, fillDate: '2026-06-20' }),
+      batch({ id: 2, isStill: false, fillDate: '2026-08-03' }),
+    ])
+    render(<OrderForm />)
+    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+    await fillRequiredFields(user)
+    await user.type(screen.getByLabelText('Total Still Cases'), '5')
+    await user.click(screen.getByLabelText('Sparkling'))
+    await user.type(screen.getByLabelText('Total Sparkling Cases'), '2')
+    expect(screen.getByLabelText('Price')).toHaveValue(252)
+
+    // Still off: its 5 cases no longer count toward the price or the order.
+    await user.click(screen.getByLabelText('Still'))
+    expect(screen.getByLabelText('Price')).toHaveValue(72)
+
+    // Back on, the box starts empty instead of bringing the old number back.
+    await user.click(screen.getByLabelText('Still'))
+    expect(screen.getByLabelText('Total Still Cases')).toHaveValue(null)
+    await user.click(screen.getByLabelText('Still'))
+
+    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    const [order, batches] = createOrder.mock.calls[0]
+    expect(order).toMatchObject({ isStill: false, totalStill: null, totalSpark: 48, price: 72 })
+    expect(batches.still).toBeUndefined()
+  })
+})

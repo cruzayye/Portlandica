@@ -177,6 +177,17 @@ export default function OrderForm() {
     if (form.customerType === 'existing' || customerType === 'existing') changeName('')
   }
 
+  // Switching a product off clears its quantity and batch, so nothing hidden gets ordered.
+  const toggleProduct =
+    (product: 'still' | 'spark') => (e: React.ChangeEvent<HTMLInputElement>) => {
+      const on = e.target.checked
+      setForm((prev) => ({ ...prev, [product === 'still' ? 'isStill' : 'isSpark']: on }))
+      if (!on) {
+        setQuantity((prev) => ({ ...prev, [product]: '' }))
+        setBatchPick((prev) => ({ ...prev, [product]: '' }))
+      }
+    }
+
   function handleSwitch(field: keyof OrderFields) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.checked }))
@@ -228,7 +239,9 @@ export default function OrderForm() {
         if (wasNewBusiness) setShowAppScriptDialog(true)
       } catch {
         // The request itself failed, so there's no telling whether the sheet was written.
-        setError("Couldn't confirm the order was saved. Check the Sales sheet before submitting again.")
+        setError(
+          "Couldn't confirm the order was saved. Check the Sales sheet before submitting again."
+        )
       }
     })
   }
@@ -367,15 +380,11 @@ export default function OrderForm() {
 
           <Box display="flex" gap={2} flexWrap="wrap">
             <FormControlLabel
-              control={
-                <Switch checked={form.isStill ?? false} onChange={handleSwitch('isStill')} />
-              }
+              control={<Switch checked={form.isStill ?? false} onChange={toggleProduct('still')} />}
               label="Still"
             />
             <FormControlLabel
-              control={
-                <Switch checked={form.isSpark ?? false} onChange={handleSwitch('isSpark')} />
-              }
+              control={<Switch checked={form.isSpark ?? false} onChange={toggleProduct('spark')} />}
               label="Sparkling"
             />
             <FormControlLabel
