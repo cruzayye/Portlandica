@@ -52,6 +52,7 @@ describe('OrderForm when the caller is refused', () => {
     await user.click(screen.getByLabelText(/name/i))
     await user.click(await screen.findByRole('option', { name: 'Dame' }))
     await user.click(screen.getByLabelText('Still'))
+    await user.type(screen.getByLabelText(/total still cases/i), '5')
     await user.click(screen.getByLabelText('Drop'))
     await user.click(screen.getByRole('button', { name: /submit order/i }))
 
