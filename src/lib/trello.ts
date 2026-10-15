@@ -1,4 +1,4 @@
-import type { NewOrder } from '@/types/orders'
+import type { NewOrder, OrderBatches } from '@/types/orders'
 import { sparkCans, stillCans } from '@/lib/orders'
 
 // Deliveries run on Portland time, not the server's (Vercel runs in UTC).
@@ -51,8 +51,8 @@ export const nextDeliveryDate = (now: Date): Date => {
 
 export const formatDeliveryDate = (date: Date) =>
   date.toLocaleDateString('en-US', { timeZone: DELIVERY_TIME_ZONE })
-// right now we only can create one label per fill date, but if we wanted to get fancy we could encode the fill date in the label name and then parse it out here to assign multiple labels for different fill dates
-// or we could send this data to our google sales sheet
+
+// Board labels are named after a batch's fill date.
 const getOrCreateLabel = async (boardId: string, name: string, apiKey: string, token: string): Promise<string> => {
   const res = await fetch(`https://api.trello.com/1/boards/${boardId}/labels?key=${apiKey}&token=${token}`)
   if (!res.ok) throw new Error(`Trello API error fetching labels: ${res.status}`)
@@ -71,7 +71,7 @@ const getOrCreateLabel = async (boardId: string, name: string, apiKey: string, t
   return created.id
 }
 
-export async function createTrelloCard(order: NewOrder, fillDate?: string | null) {
+export async function createTrelloCard(order: NewOrder, batches: OrderBatches = {}) {
   const apiKey = process.env.TRELLO_API_KEY
   const token = process.env.TRELLO_TOKEN
   const listId = process.env.TRELLO_LIST_ID
@@ -124,9 +124,16 @@ export async function createTrelloCard(order: NewOrder, fillDate?: string | null
   if (address) description.push(`Address: ${address}`)
   if (order.notes) description.push(`Notes: ${order.notes}`)
 
-  const idLabels = fillDate
-    ? [await getOrCreateLabel(boardId, fillDate, apiKey, token)]
-    : []
+  // One label per batch actually used: a Sparkling-only order gets the Sparkling batch's
+  // fill date, and a mixed order gets both (once, if they share a date).
+  const fillDates = new Set([
+    ...(totalStill > 0 && batches.still?.fillDate ? [batches.still.fillDate] : []),
+    ...(totalSpark > 0 && batches.spark?.fillDate ? [batches.spark.fillDate] : []),
+  ])
+  const idLabels: string[] = []
+  for (const fillDate of fillDates) {
+    idLabels.push(await getOrCreateLabel(boardId, fillDate, apiKey, token))
+  }
 
   const res = await fetch('https://api.trello.com/1/cards', {
     method: 'POST',

@@ -40,3 +40,9 @@ export type Inventory = {
 }
 
 export type NewInventory = Omit<Inventory, 'id' | 'created_at'>
+
+/** The inventory batch each product in an order is drawn from. */
+export type OrderBatches = {
+  still?: Pick<Inventory, 'id' | 'fillDate'>
+  spark?: Pick<Inventory, 'id' | 'fillDate'>
+}

@@ -81,6 +81,46 @@ describe('createTrelloCard', () => {
     expect(card.name).toBe('Dame - Drop 48 Sparkling')
     expect(card.desc).not.toContain('Still')
   })
+
+  describe('fill-date labels', () => {
+    const batches = {
+      still: { id: 1, fillDate: '2026-06-20' },
+      spark: { id: 2, fillDate: '2026-08-03' },
+    }
+
+    it('labels a Sparkling-only order with the Sparkling batch', async () => {
+      await createTrelloCard(order({ isSpark: true, totalSpark: 48 }), batches)
+      expect(postedCard().idLabels).toEqual(['label:2026-08-03'])
+    })
+
+    it('labels a Still-only order with the Still batch', async () => {
+      await createTrelloCard(order({ isStill: true, totalStill: 120 }), batches)
+      expect(postedCard().idLabels).toEqual(['label:2026-06-20'])
+    })
+
+    it('labels a mixed order with both batches', async () => {
+      await createTrelloCard(
+        order({ isStill: true, totalStill: 120, isSpark: true, totalSpark: 48 }),
+        batches
+      )
+      expect(postedCard().idLabels).toEqual(['label:2026-06-20', 'label:2026-08-03'])
+    })
+
+    it('adds a shared fill date once', async () => {
+      await createTrelloCard(
+        order({ isStill: true, totalStill: 120, isSpark: true, totalSpark: 48 }),
+        { still: { id: 1, fillDate: '2026-08-03' }, spark: { id: 2, fillDate: '2026-08-03' } }
+      )
+      expect(postedCard().idLabels).toEqual(['label:2026-08-03'])
+    })
+
+    it('skips a batch with no fill date', async () => {
+      await createTrelloCard(order({ isStill: true, totalStill: 120 }), {
+        still: { id: 1, fillDate: null },
+      })
+      expect(postedCard().idLabels).toEqual([])
+    })
+  })
 })
 
 const originalTz = process.env.TZ

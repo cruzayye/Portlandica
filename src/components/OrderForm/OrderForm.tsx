@@ -20,7 +20,7 @@ import MenuItem from '@mui/material/MenuItem'
 import { createOrder, getLocations, getLocationTypes } from '@/app/actions/orders'
 import { getInventory } from '@/app/actions/inventory'
 import { batchesFor, customBatchesFor, preselectBatchId } from '@/lib/batches'
-import type { NewOrder, Inventory } from '@/types/orders'
+import type { NewOrder, Inventory, OrderBatches } from '@/types/orders'
 import { CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
 
 const defaultState: NewOrder = {
@@ -159,6 +159,18 @@ export default function OrderForm() {
     }
   }
 
+  // The batch picked for each product that is switched on, with its fill date for Trello.
+  const orderBatches = (): OrderBatches => {
+    const pick = (id: number | '') => {
+      const batch = inventory.find((i) => i.id === id)
+      return batch ? { id: batch.id, fillDate: batch.fillDate } : undefined
+    }
+    return {
+      still: form.isStill ? pick(selectedInventoryId) : undefined,
+      spark: form.isSpark ? pick(selectedSparkInventoryId) : undefined,
+    }
+  }
+
   const submitOrder = (force = false) => {
     setError(null)
     setSuccess(false)
@@ -166,14 +178,7 @@ export default function OrderForm() {
     startTransition(async () => {
       try {
         const wasNewBusiness = form.isNewBusiness
-        const fillDate = inventory.find((i) => i.id === selectedInventoryId)?.fillDate
-        const result = await createOrder(
-          form,
-          selectedInventoryId || undefined,
-          selectedSparkInventoryId || undefined,
-          fillDate,
-          force,
-        )
+        const result = await createOrder(form, orderBatches(), force)
         if (result.duplicate) {
           setDuplicateMessage(result.message)
           return

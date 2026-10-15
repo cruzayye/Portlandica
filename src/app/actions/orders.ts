@@ -1,7 +1,7 @@
 'use server'
 
 import { appendOrder, getLocationsFromSheet } from '@/lib/google/sheets'
-import type { NewOrder } from '@/types/orders'
+import type { NewOrder, OrderBatches } from '@/types/orders'
 import { decrementInventory } from '@/app/actions/inventory'
 import { createTrelloCard } from '@/lib/trello'
 
@@ -23,14 +23,12 @@ export async function getLocationTypes() {
 
 export const createOrder = async (
   order: NewOrder,
-  stillInventoryId?: number,
-  sparkInventoryId?: number,
-  fillDate?: string | null,
+  batches: OrderBatches,
   force = false,
 ): Promise<{ duplicate: true; message: string } | { duplicate: false }> => {
   const result = await appendOrder(order, force)
   if (result.duplicate) return result
-  await decrementInventory(order, stillInventoryId, sparkInventoryId)
-  await createTrelloCard(order, fillDate)
+  await decrementInventory(order, batches.still?.id, batches.spark?.id)
+  await createTrelloCard(order, batches)
   return { duplicate: false }
 }

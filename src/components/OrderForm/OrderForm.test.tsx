@@ -147,7 +147,28 @@ describe('OrderForm batch selection', () => {
     await user.click(screen.getByRole('button', { name: /submit order/i }))
 
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
-    const [, stillId] = createOrder.mock.calls[0]
-    expect(stillId).toBe(2)
+    const [, batches] = createOrder.mock.calls[0]
+    expect(batches.still).toEqual({ id: 2, fillDate: '2026-08-03' })
+  })
+
+  it('sends only the Sparkling batch for a Sparkling-only order', async () => {
+    const user = userEvent.setup()
+    getInventory.mockResolvedValue([
+      batch({ id: 1, isStill: true, fillDate: '2026-06-20' }),
+      batch({ id: 3, isStill: false, fillDate: '2026-08-03' }),
+    ])
+
+    render(<OrderForm />)
+    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+    await user.click(screen.getByLabelText(/name/i))
+    await user.click(await screen.findByRole('option', { name: 'Dame' }))
+    await user.click(screen.getByLabelText('Sparkling'))
+    await user.click(screen.getByLabelText('Drop'))
+    await user.click(screen.getByRole('button', { name: /submit order/i }))
+
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    const [, batches] = createOrder.mock.calls[0]
+    expect(batches.spark).toEqual({ id: 3, fillDate: '2026-08-03' })
+    expect(batches.still).toBeUndefined()
   })
 })
