@@ -51,6 +51,7 @@ export default function OrderForm() {
   const [form, setForm] = useState<NewOrder>(defaultState)
   const [manualNumber, setManualNumber] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [warnings, setWarnings] = useState<string[]>([])
   const [error, setError] = useState<string | null>(null)
   const [showAppScriptDialog, setShowAppScriptDialog] = useState(false)
   type Location = { name: string; address: string; businessType: string }
@@ -174,20 +175,28 @@ export default function OrderForm() {
   const submitOrder = (force = false) => {
     setError(null)
     setSuccess(false)
+    setWarnings([])
 
     startTransition(async () => {
       try {
         const wasNewBusiness = form.isNewBusiness
         const result = await createOrder(form, orderBatches(), force)
-        if (result.duplicate) {
+        if (result.status === 'duplicate') {
           setDuplicateMessage(result.message)
           return
         }
+        if (result.status === 'failed') {
+          setError(result.message)
+          return
+        }
+        // The order is in the sheet: start a fresh form even if a later step needs fixing by hand.
         setSuccess(true)
+        setWarnings(result.warnings)
         setForm(defaultState)
         if (wasNewBusiness) setShowAppScriptDialog(true)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Something went wrong')
+      } catch {
+        // The request itself failed, so there's no telling whether the sheet was written.
+        setError("Couldn't confirm the order was saved. Check the Sales sheet before submitting again.")
       }
     })
   }
@@ -530,7 +539,14 @@ export default function OrderForm() {
             rows={3}
           />
 
-          {success && <Alert severity="success">Order submitted successfully!</Alert>}
+          {success && warnings.length === 0 && (
+            <Alert severity="success">Order submitted successfully!</Alert>
+          )}
+          {warnings.map((warning) => (
+            <Alert key={warning} severity="warning">
+              {warning}
+            </Alert>
+          ))}
           {error && <Alert severity="error">{error}</Alert>}
 
           <Button

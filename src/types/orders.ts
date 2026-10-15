@@ -46,3 +46,12 @@ export type OrderBatches = {
   still?: Pick<Inventory, 'id' | 'fillDate'>
   spark?: Pick<Inventory, 'id' | 'fillDate'>
 }
+
+/** What happened to a submitted order. */
+export type CreateOrderResult =
+  // Written to the Sales sheet. Warnings name any later step (inventory, Trello) that failed.
+  | { status: 'saved'; warnings: string[] }
+  // Not written: this customer already has an order today.
+  | { status: 'duplicate'; message: string }
+  // Not written, or the sheet write could not be confirmed.
+  | { status: 'failed'; message: string }

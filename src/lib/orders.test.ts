@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { sparkCans, stillCans } from './orders'
+import type { NewOrder } from '@/types/orders'
+import { orderProblem, sparkCans, stillCans } from './orders'
 
 describe('stillCans / sparkCans', () => {
   it('counts a product that is switched on', () => {
@@ -14,5 +15,60 @@ describe('stillCans / sparkCans', () => {
 
   it('treats a blank quantity as zero', () => {
     expect(stillCans({ isStill: true, totalStill: null })).toBe(0)
+  })
+})
+
+describe('orderProblem', () => {
+  const order = (over: Partial<NewOrder> = {}): NewOrder => ({
+    name: 'Dame',
+    isBusiness: true,
+    isNewBusiness: false,
+    isDTC: false,
+    isStill: true,
+    isSpark: true,
+    totalStill: 120,
+    totalSpark: 48,
+    IsCustomStill: false,
+    isCustomSpark: false,
+    price: 252,
+    isPaid: false,
+    createInvoice: false,
+    notes: '',
+    businessType: null,
+    streetAddress: null,
+    city: null,
+    state: null,
+    zip: null,
+    deliveryType: 'Drop',
+    isDonation: false,
+    ...over,
+  })
+  const batches = { still: { id: 1, fillDate: null }, spark: { id: 2, fillDate: null } }
+
+  it('accepts a complete order', () => {
+    expect(orderProblem(order(), batches)).toBeNull()
+  })
+
+  it.each([
+    ['no customer', order({ name: '  ' }), batches, /customer name/],
+    ['no product', order({ isStill: false, isSpark: false }), batches, /Still or Sparkling/],
+    ['no Still quantity', order({ totalStill: 0 }), batches, /how much Still/],
+    ['no Sparkling quantity', order({ totalSpark: null }), batches, /how much Sparkling/],
+    ['no Still batch', order(), { spark: batches.spark }, /Still batch/],
+    ['no Sparkling batch', order(), { still: batches.still }, /Sparkling batch/],
+    ['no delivery type', order({ deliveryType: null }), batches, /Drop, Ship or Pickup/],
+    ['a $0 sale', order({ price: 0 }), batches, /price, or mark this order as a donation/],
+    ['a sale with no price', order({ price: null }), batches, /price/],
+  ])('rejects an order with %s', (_, badOrder, badBatches, message) => {
+    expect(orderProblem(badOrder, badBatches)).toMatch(message)
+  })
+
+  it('accepts a donation at $0', () => {
+    expect(orderProblem(order({ isDonation: true, price: 0 }), batches)).toBeNull()
+  })
+
+  it('ignores a switched-off product', () => {
+    const stillOnly = order({ isSpark: false, totalSpark: null, price: 180 })
+    expect(orderProblem(stillOnly, { still: batches.still })).toBeNull()
   })
 })

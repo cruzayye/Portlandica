@@ -43,7 +43,7 @@ const fillRequiredFields = async (user: ReturnType<typeof userEvent.setup>) => {
 beforeEach(() => {
   getInventory.mockReset()
   createOrder.mockReset()
-  createOrder.mockResolvedValue({ duplicate: false })
+  createOrder.mockResolvedValue({ status: 'saved', warnings: [] })
 })
 
 describe('OrderForm batch selection', () => {
@@ -76,9 +76,7 @@ describe('OrderForm batch selection', () => {
     await user.click(screen.getByLabelText(/batch number/i))
     await user.click(await screen.findByRole('option', { name: /2026-08-03/ }))
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled(),
-    )
+    await waitFor(() => expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled())
   })
 
   it('does not block submit when only one batch exists', async () => {
@@ -89,15 +87,11 @@ describe('OrderForm batch selection', () => {
     await waitFor(() => expect(getInventory).toHaveBeenCalled())
     await fillRequiredFields(user)
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled(),
-    )
-    expect(
-      screen.queryByText(/select which batch this order pulls from/i),
-    ).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled())
+    expect(screen.queryByText(/select which batch this order pulls from/i)).not.toBeInTheDocument()
   })
 
-  it('auto-selects the customer\'s single custom batch despite other options', async () => {
+  it("auto-selects the customer's single custom batch despite other options", async () => {
     const user = userEvent.setup()
     getInventory.mockResolvedValue([
       batch({ id: 1, name: 'Original', fillDate: '2026-06-20' }),
@@ -109,9 +103,7 @@ describe('OrderForm batch selection', () => {
     await waitFor(() => expect(getInventory).toHaveBeenCalled())
     await fillRequiredFields(user)
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled(),
-    )
+    await waitFor(() => expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled())
   })
 
   it('ignores sparkling ambiguity for a still-only order', async () => {
@@ -126,9 +118,7 @@ describe('OrderForm batch selection', () => {
     await waitFor(() => expect(getInventory).toHaveBeenCalled())
     await fillRequiredFields(user)
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled(),
-    )
+    await waitFor(() => expect(screen.getByRole('button', { name: /submit order/i })).toBeEnabled())
   })
 
   it('submits the chosen batch id to createOrder', async () => {
@@ -170,5 +160,57 @@ describe('OrderForm batch selection', () => {
     const [, batches] = createOrder.mock.calls[0]
     expect(batches.spark).toEqual({ id: 3, fillDate: '2026-08-03' })
     expect(batches.still).toBeUndefined()
+  })
+})
+
+describe('OrderForm submit results', () => {
+  const submitDameOrder = async (user: ReturnType<typeof userEvent.setup>) => {
+    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
+    render(<OrderForm />)
+    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+    await fillRequiredFields(user)
+    await user.click(screen.getByRole('button', { name: /submit order/i }))
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+  }
+
+  it('starts a fresh form and shows the warning when a later step failed', async () => {
+    const user = userEvent.setup()
+    createOrder.mockResolvedValue({
+      status: 'saved',
+      warnings: [
+        'Order saved, but the Trello card failed (Trello API error: 503). Add the card by hand.',
+      ],
+    })
+
+    await submitDameOrder(user)
+
+    expect(await screen.findByText(/Trello card failed.*Add the card by hand/)).toBeInTheDocument()
+    expect(screen.queryByText(/submitted successfully/i)).not.toBeInTheDocument()
+    expect(screen.getByLabelText(/name/i)).toHaveValue('')
+  })
+
+  it('keeps the form and shows the message when the order was not saved', async () => {
+    const user = userEvent.setup()
+    createOrder.mockResolvedValue({
+      status: 'failed',
+      message: 'The order may not have been saved: writing to the Google Sheet failed (quota).',
+    })
+
+    await submitDameOrder(user)
+
+    expect(await screen.findByText(/may not have been saved/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/name/i)).toHaveValue('Dame')
+  })
+
+  it('asks to check the sheet when the server cannot be reached', async () => {
+    const user = userEvent.setup()
+    createOrder.mockRejectedValue(new Error('An error occurred in the Server Components render.'))
+
+    await submitDameOrder(user)
+
+    expect(
+      await screen.findByText(/Check the Sales sheet before submitting again/)
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText(/name/i)).toHaveValue('Dame')
   })
 })
