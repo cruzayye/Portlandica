@@ -1,10 +1,12 @@
 // @vitest-environment node
+/// <reference types="vite/client" />
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 // Every export of a 'use server' file can be called over HTTP, so each one
 // must turn away callers who aren't signed-in partners before touching
-// Supabase, the Google Sheet or Trello. This test calls every exported action,
-// so a new action without the check fails here.
+// Supabase, the Google Sheet or Trello. This test calls every export of every
+// action file in this folder (new files included), so an action without the
+// check fails here.
 
 const mocks = vi.hoisted(() => ({
   getUser: vi.fn(),
@@ -23,13 +25,21 @@ vi.mock('@/lib/google/sheets', () => ({
 }))
 vi.mock('@/lib/trello', () => ({ createTrelloCard: mocks.createTrelloCard }))
 
-import * as inventoryActions from './inventory'
 import * as orderActions from './orders'
 import { NOT_A_PARTNER, SIGNED_OUT } from '@/lib/auth/authFailure'
 
 type Action = (...args: unknown[]) => Promise<unknown>
 
-const actions = Object.entries({ ...inventoryActions, ...orderActions }) as [string, Action][]
+const modules = import.meta.glob<Record<string, unknown>>(['./*.ts', '!./*.test.ts'], {
+  eager: true,
+})
+const actions = Object.entries(modules).flatMap(([file, exports]) =>
+  Object.entries(exports).map(([name, action]) => ({
+    label: `${file.slice(2)} ${name}`,
+    name,
+    action: action as Action,
+  }))
+)
 
 // decrementInventory is only called by createOrder, so it throws instead.
 const THROWS = new Set(['decrementInventory'])
@@ -65,11 +75,13 @@ describe.each([
     message: NOT_A_PARTNER,
   },
 ])('server actions called by $caller', ({ user, message }) => {
-  it('covers every exported action', () => {
-    expect(actions.length).toBeGreaterThan(0)
+  it('finds the action files', () => {
+    expect(actions.map((a) => a.label)).toEqual(
+      expect.arrayContaining(['inventory.ts getInventory', 'orders.ts createOrder'])
+    )
   })
 
-  it.each(actions)('%s is refused before touching any data', async (name, action) => {
+  it.each(actions)('$label is refused before touching any data', async ({ name, action }) => {
     mocks.getUser.mockResolvedValue({ data: { user }, error: null })
 
     if (THROWS.has(name)) {
