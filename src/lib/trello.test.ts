@@ -7,9 +7,7 @@ type TrelloRequest = { url: string; method: string; body?: Record<string, unknow
 
 const order = (over: Partial<NewOrder> = {}): NewOrder => ({
   name: 'Dame',
-  isBusiness: true,
-  isNewBusiness: false,
-  isDTC: false,
+  customerType: 'existing',
   isStill: false,
   isSpark: false,
   totalStill: null,
@@ -101,7 +99,7 @@ describe('createTrelloCard', () => {
   it('uses the typed address for a new business', async () => {
     await createTrelloCard(
       order({
-        isNewBusiness: true,
+        customerType: 'new',
         isStill: true,
         totalStill: 120,
         streetAddress: '1 SW Main St',

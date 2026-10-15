@@ -24,7 +24,14 @@ export type Order = {
   isDonation: boolean | null
 }
 
-export type NewOrder = Omit<Order, 'id' | 'created_at'> & {
+/** Who the order is for. Both kinds of business book as "Business" in the Sales sheet. */
+export type CustomerType = 'existing' | 'new' | 'individual'
+
+export type NewOrder = Omit<
+  Order,
+  'id' | 'created_at' | 'isBusiness' | 'isNewBusiness' | 'isDTC'
+> & {
+  customerType: CustomerType
   /** An existing customer's address from Current Locations Addresses, for the Trello card. */
   address: string | null
 }

@@ -117,9 +117,10 @@ export async function createTrelloCard(order: NewOrder, batches: OrderBatches = 
 
   description.push(`Delivery Date: ${formatDeliveryDate(deliveryDate)}`)
 
-  const address = order.isNewBusiness
-    ? [order.streetAddress, order.city, order.state, order.zip].filter(Boolean).join(', ')
-    : (order.address ?? '')
+  const address =
+    order.customerType === 'existing'
+      ? (order.address ?? '')
+      : [order.streetAddress, order.city, order.state, order.zip].filter(Boolean).join(', ')
 
   if (address) description.push(`Address: ${address}`)
   if (order.notes) description.push(`Notes: ${order.notes}`)

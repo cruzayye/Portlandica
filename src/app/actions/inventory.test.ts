@@ -49,9 +49,7 @@ import { decrementInventory } from './inventory'
 
 const order = (over: Partial<NewOrder> = {}): NewOrder => ({
   name: 'Dame',
-  isBusiness: true,
-  isNewBusiness: false,
-  isDTC: false,
+  customerType: 'existing',
   isStill: false,
   isSpark: false,
   totalStill: null,

@@ -19,9 +19,7 @@ import { createOrder } from './orders'
 
 const order = (over: Partial<NewOrder> = {}): NewOrder => ({
   name: 'Dame',
-  isBusiness: true,
-  isNewBusiness: false,
-  isDTC: false,
+  customerType: 'existing',
   isStill: true,
   isSpark: false,
   totalStill: 120,

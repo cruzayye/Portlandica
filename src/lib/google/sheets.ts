@@ -1,7 +1,7 @@
 import { google } from 'googleapis'
 import type { NewOrder } from '@/types/orders'
 import { createTrelloCard } from '@/lib/trello'
-import { sparkCans, stillCans } from '@/lib/orders'
+import { salesType, sparkCans, stillCans } from '@/lib/orders'
 
 export type SheetLocation = {
   name: string
@@ -199,7 +199,7 @@ export async function appendOrder(order: NewOrder, force = false): Promise<{ dup
   const yyyy = parts.find((p) => p.type === 'year')!.value
   const order_date = `${mm}/${dd}/${yyyy}`
 
-  const type = order.isBusiness ? 'Business' : 'Individual'
+  const type = salesType(order.customerType)
   const customer = order.name ?? ''
 
   const products = [
@@ -297,7 +297,7 @@ export async function appendOrder(order: NewOrder, force = false): Promise<{ dup
     promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID!, salesRows, order.createInvoice ?? false))
   }
 
-  if (order.isNewBusiness && !order.isDTC) {
+  if (order.customerType === 'new') {
     promises.push(
       sheets.spreadsheets.values.append({
         spreadsheetId: process.env.GOOGLE_SHEET_ID!,

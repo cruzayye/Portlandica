@@ -42,9 +42,7 @@ import { appendOrder } from './sheets'
 
 const order = (over: Partial<NewOrder> = {}): NewOrder => ({
   name: 'Dame',
-  isBusiness: true,
-  isNewBusiness: false,
-  isDTC: false,
+  customerType: 'existing',
   isStill: false,
   isSpark: false,
   totalStill: null,
@@ -67,6 +65,7 @@ const order = (over: Partial<NewOrder> = {}): NewOrder => ({
 })
 
 // Sales columns, 0-indexed
+const TYPE = 1
 const PRODUCT = 2
 const UNITS = 4
 const SALES = 5
@@ -171,7 +170,7 @@ describe('appendOrder new business', () => {
     await appendOrder(
       order({
         name: 'Fresh Cafe',
-        isNewBusiness: true,
+        customerType: 'new',
         businessType: 'Cafe',
         streetAddress: '1 SW Main St',
         city: 'Portland',
@@ -192,4 +191,23 @@ describe('appendOrder new business', () => {
     ])
     expect(salesRowsWritten()[0].row[NOTES]).toBe('Call ahead')
   })
+})
+
+describe('appendOrder customer type', () => {
+  it.each([
+    ['existing', 'Business'],
+    ['new', 'Business'],
+    ['individual', 'Individual'],
+  ] as const)('books a %s customer as %s', async (customerType, type) => {
+    await appendOrder(order({ customerType, isStill: true, totalStill: 120, price: 180 }))
+    expect(salesRowsWritten()[0].row[TYPE]).toBe(type)
+  })
+
+  it.each(['existing', 'individual'] as const)(
+    'adds no Current Locations Addresses row for a %s customer',
+    async (customerType) => {
+      await appendOrder(order({ customerType, isStill: true, totalStill: 120, price: 180 }))
+      expect(sheetsApi.appends).toEqual([])
+    }
+  )
 })

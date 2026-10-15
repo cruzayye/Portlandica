@@ -1,4 +1,8 @@
-import type { NewOrder, OrderBatches } from '@/types/orders'
+import type { CustomerType, NewOrder, OrderBatches } from '@/types/orders'
+
+/** The Sales sheet's Type column (B) for each kind of customer. */
+export const salesType = (customerType: CustomerType) =>
+  customerType === 'individual' ? 'Individual' : 'Business'
 
 /**
  * Cans ordered for each product. A product that is switched off counts as

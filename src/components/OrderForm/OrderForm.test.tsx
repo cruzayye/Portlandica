@@ -13,7 +13,7 @@ vi.mock('@/app/actions/inventory', () => ({
 vi.mock('@/app/actions/orders', () => ({
   getLocations: () =>
     Promise.resolve([{ name: 'Dame', address: '123 NE Broadway', businessType: 'Restaurant' }]),
-  getLocationTypes: () => Promise.resolve(['Restaurant']),
+  getLocationTypes: () => Promise.resolve([{ name: 'Restaurant' }]),
   createOrder: (...args: unknown[]) => createOrder(...args),
 }))
 
@@ -232,5 +232,85 @@ describe('OrderForm existing customer', () => {
     const [order] = createOrder.mock.calls[0]
     expect(order.address).toBe('123 NE Broadway')
     expect(order.notes).toBe('Leave at the back door')
+  })
+})
+
+describe('OrderForm customer type', () => {
+  const renderForm = async () => {
+    getInventory.mockResolvedValue([batch({ id: 1, fillDate: '2026-06-20' })])
+    render(<OrderForm />)
+    await waitFor(() => expect(getInventory).toHaveBeenCalled())
+  }
+
+  it('offers one choice, starting at Existing business', async () => {
+    await renderForm()
+
+    expect(screen.getByRole('button', { name: 'Existing business' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    )
+    expect(screen.getByRole('button', { name: 'New business' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
+    expect(screen.getByRole('button', { name: 'Individual (DTC)' })).toBeInTheDocument()
+    // The old independent switches are gone.
+    expect(screen.queryByLabelText(/^business$/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/^dtc$/i)).not.toBeInTheDocument()
+  })
+
+  it('shows the new-business fields only for New business', async () => {
+    const user = userEvent.setup()
+    await renderForm()
+    expect(screen.queryByLabelText(/street address/i)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'New business' }))
+    expect(screen.getByLabelText(/new business name/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/type of business/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/street address/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Individual (DTC)' }))
+    expect(screen.getByLabelText(/customer name/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/type of business/i)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/street address/i)).not.toBeInTheDocument()
+  })
+
+  it('clears the fields a new choice hides', async () => {
+    const user = userEvent.setup()
+    await renderForm()
+
+    await user.click(screen.getByRole('button', { name: 'New business' }))
+    await user.type(screen.getByLabelText(/new business name/i), 'Fresh Cafe')
+    await user.type(screen.getByLabelText(/street address/i), '1 SW Main St')
+    await user.click(screen.getByRole('button', { name: 'Individual (DTC)' }))
+    await user.click(screen.getByRole('button', { name: 'New business' }))
+
+    // The typed name carries over between the two typed-in choices; the address doesn't.
+    expect(screen.getByLabelText(/new business name/i)).toHaveValue('Fresh Cafe')
+    expect(screen.getByLabelText(/street address/i)).toHaveValue('')
+
+    await user.click(screen.getByRole('button', { name: 'Existing business' }))
+    expect(screen.getByLabelText(/name/i)).toHaveValue('')
+  })
+
+  it('drops an existing customer when switching to a typed-in name', async () => {
+    const user = userEvent.setup()
+    await renderForm()
+    await fillRequiredFields(user)
+
+    await user.click(screen.getByRole('button', { name: 'Individual (DTC)' }))
+    expect(screen.getByLabelText(/customer name/i)).toHaveValue('')
+    await user.type(screen.getByLabelText(/customer name/i), 'Pat Doe')
+    await user.click(screen.getByRole('button', { name: /submit order/i }))
+
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    const [order] = createOrder.mock.calls[0]
+    expect(order).toMatchObject({
+      customerType: 'individual',
+      name: 'Pat Doe',
+      address: null,
+      businessType: null,
+      streetAddress: null,
+    })
   })
 })

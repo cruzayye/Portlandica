@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { NewOrder } from '@/types/orders'
-import { orderProblem, sparkCans, stillCans } from './orders'
+import { orderProblem, salesType, sparkCans, stillCans } from './orders'
 
 describe('stillCans / sparkCans', () => {
   it('counts a product that is switched on', () => {
@@ -21,9 +21,7 @@ describe('stillCans / sparkCans', () => {
 describe('orderProblem', () => {
   const order = (over: Partial<NewOrder> = {}): NewOrder => ({
     name: 'Dame',
-    isBusiness: true,
-    isNewBusiness: false,
-    isDTC: false,
+    customerType: 'existing',
     isStill: true,
     isSpark: true,
     totalStill: 120,
@@ -71,5 +69,15 @@ describe('orderProblem', () => {
   it('ignores a switched-off product', () => {
     const stillOnly = order({ isSpark: false, totalSpark: null, price: 180 })
     expect(orderProblem(stillOnly, { still: batches.still })).toBeNull()
+  })
+})
+
+describe('salesType', () => {
+  it.each([
+    ['existing', 'Business'],
+    ['new', 'Business'],
+    ['individual', 'Individual'],
+  ] as const)('books a %s customer as %s', (customerType, type) => {
+    expect(salesType(customerType)).toBe(type)
   })
 })

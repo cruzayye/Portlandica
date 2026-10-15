@@ -13,6 +13,8 @@ import Link from '@mui/material/Link'
 import Paper from '@mui/material/Paper'
 import Switch from '@mui/material/Switch'
 import TextField from '@mui/material/TextField'
+import ToggleButton from '@mui/material/ToggleButton'
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup'
 import Typography from '@mui/material/Typography'
 import Alert from '@mui/material/Alert'
 import Autocomplete from '@mui/material/Autocomplete'
@@ -20,14 +22,12 @@ import MenuItem from '@mui/material/MenuItem'
 import { createOrder, getLocations, getLocationTypes } from '@/app/actions/orders'
 import { getInventory } from '@/app/actions/inventory'
 import { batchesFor, customBatchesFor, preselectBatchId } from '@/lib/batches'
-import type { NewOrder, Inventory, OrderBatches } from '@/types/orders'
+import type { CustomerType, NewOrder, Inventory, OrderBatches } from '@/types/orders'
 import { CUSTOMER_PRICING, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
 
 const defaultState: NewOrder = {
   name: '',
-  isBusiness: true,
-  isNewBusiness: false,
-  isDTC: false,
+  customerType: 'existing',
   isStill: false,
   isSpark: false,
   totalStill: null,
@@ -133,6 +133,21 @@ export default function OrderForm() {
     setShowCustomPricingDialog(false)
   }
 
+  // Each choice shows its own fields. Switching clears what the new choice hides, and the
+  // name too when moving to or from Existing, which is picked from a list instead of typed.
+  const changeCustomerType = (customerType: CustomerType) =>
+    setForm((prev) => ({
+      ...prev,
+      customerType,
+      name: prev.customerType === 'existing' || customerType === 'existing' ? '' : prev.name,
+      address: null,
+      businessType: null,
+      streetAddress: null,
+      city: null,
+      state: null,
+      zip: null,
+    }))
+
   function handleSwitch(field: keyof NewOrder) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((prev) => ({ ...prev, [field]: e.target.checked }))
@@ -180,7 +195,7 @@ export default function OrderForm() {
 
     startTransition(async () => {
       try {
-        const wasNewBusiness = form.isNewBusiness
+        const wasNewBusiness = form.customerType === 'new'
         const result = await createOrder(form, orderBatches(), force)
         if (result.status === 'duplicate') {
           setDuplicateMessage(result.message)
@@ -222,37 +237,30 @@ export default function OrderForm() {
           />
         </Box>
 
-        <Box display="flex" gap={2} flexWrap="wrap">
-          <FormControlLabel
-            control={
-              <Switch checked={form.isBusiness ?? false} onChange={handleSwitch('isBusiness')} />
-            }
-            label="Business"
-          />
-          {(form.isBusiness || form.isDTC) && (
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={form.isNewBusiness ?? false}
-                  onChange={handleSwitch('isNewBusiness')}
-                />
-              }
-              label="New Business"
-            />
-          )}
-          <FormControlLabel
-            control={<Switch checked={form.isDTC ?? false} onChange={handleSwitch('isDTC')} />}
-            label="DTC"
-          />
-        </Box>
+        <ToggleButtonGroup
+          exclusive
+          fullWidth
+          size="small"
+          color="primary"
+          aria-label="Customer type"
+          value={form.customerType}
+          onChange={(_, value: CustomerType | null) => {
+            if (value) changeCustomerType(value)
+          }}
+          sx={{ mb: 3 }}
+        >
+          <ToggleButton value="existing">Existing business</ToggleButton>
+          <ToggleButton value="new">New business</ToggleButton>
+          <ToggleButton value="individual">Individual (DTC)</ToggleButton>
+        </ToggleButtonGroup>
 
         <Box component="form" onSubmit={handleSubmit} display="flex" flexDirection="column" gap={3}>
           {/* Customer */}
-          {form.isNewBusiness || form.isDTC || !form.isBusiness ? (
+          {form.customerType !== 'existing' ? (
             <TextField
-              label="DTC or New Business Name"
+              label={form.customerType === 'new' ? 'New Business Name' : 'Customer Name'}
               value={form.name ?? ''}
-              onChange={(e) => setForm((prev) => ({ ...prev, name: e.target.value, address: null }))}
+              onChange={handleText('name')}
               fullWidth
               required
             />
@@ -275,43 +283,39 @@ export default function OrderForm() {
             />
           )}
 
-          {(form.isNewBusiness || form.isDTC) && (
+          {form.customerType === 'new' && (
             <>
-              {!form.isDTC && (
-                <>
-                  <TextField
-                    select
-                    label="Type of Business"
-                    value={
-                      locationTypes.includes(form.businessType ?? '')
-                        ? (form.businessType ?? '')
-                        : form.businessType
-                          ? 'Other'
-                          : ''
-                    }
-                    onChange={(e) => {
-                      const val = e.target.value
-                      setForm((prev) => ({ ...prev, businessType: val === 'Other' ? '' : val }))
-                    }}
-                    fullWidth
-                  >
-                    {locationTypes.map((type) => (
-                      <MenuItem key={type} value={type}>
-                        {type}
-                      </MenuItem>
-                    ))}
-                    <MenuItem value="Other">Other</MenuItem>
-                  </TextField>
-                  {isCustomBusinessType && (
-                    <TextField
-                      label="Specify Business Type"
-                      value={form.businessType ?? ''}
-                      onChange={handleText('businessType')}
-                      fullWidth
-                      inputRef={customBusinessTypeRef}
-                    />
-                  )}
-                </>
+              <TextField
+                select
+                label="Type of Business"
+                value={
+                  locationTypes.includes(form.businessType ?? '')
+                    ? (form.businessType ?? '')
+                    : form.businessType
+                      ? 'Other'
+                      : ''
+                }
+                onChange={(e) => {
+                  const val = e.target.value
+                  setForm((prev) => ({ ...prev, businessType: val === 'Other' ? '' : val }))
+                }}
+                fullWidth
+              >
+                {locationTypes.map((type) => (
+                  <MenuItem key={type} value={type}>
+                    {type}
+                  </MenuItem>
+                ))}
+                <MenuItem value="Other">Other</MenuItem>
+              </TextField>
+              {isCustomBusinessType && (
+                <TextField
+                  label="Specify Business Type"
+                  value={form.businessType ?? ''}
+                  onChange={handleText('businessType')}
+                  fullWidth
+                  inputRef={customBusinessTypeRef}
+                />
               )}
               <TextField
                 label="Street Address"
