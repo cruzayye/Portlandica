@@ -1,383 +1,184 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
+import { useEffect, useReducer, useState, useTransition } from 'react'
+import Alert from '@mui/material/Alert'
 import Box from '@mui/material/Box'
 import Button from '@mui/material/Button'
-import Dialog from '@mui/material/Dialog'
-import DialogActions from '@mui/material/DialogActions'
-import DialogContent from '@mui/material/DialogContent'
-import DialogTitle from '@mui/material/DialogTitle'
-import FormControlLabel from '@mui/material/FormControlLabel'
-import InputAdornment from '@mui/material/InputAdornment'
-import MenuItem from '@mui/material/MenuItem'
-import Paper from '@mui/material/Paper'
-import Switch from '@mui/material/Switch'
-import TextField from '@mui/material/TextField'
-import Typography from '@mui/material/Typography'
 import CircularProgress from '@mui/material/CircularProgress'
-import Alert from '@mui/material/Alert'
-import { getInventory, updateInventoryCount, deleteInventoryItem, createInventoryItem } from '@/app/actions/inventory'
-import type { Inventory as InventoryType, NewInventory } from '@/types/orders'
+import FormControlLabel from '@mui/material/FormControlLabel'
+import IconButton from '@mui/material/IconButton'
+import Paper from '@mui/material/Paper'
+import Snackbar from '@mui/material/Snackbar'
+import Switch from '@mui/material/Switch'
+import Typography from '@mui/material/Typography'
+import AddIcon from '@mui/icons-material/Add'
+import RefreshIcon from '@mui/icons-material/Refresh'
+import { loadInventory } from '@/app/actions/batches'
+import { isAuthFailure, type AuthFailure } from '@/lib/auth/authFailure'
+import type { Batch } from '@/lib/db/types'
+import AddBatchDialog from './AddBatchDialog'
+import BatchDialog from './BatchDialog'
+import BatchList from './BatchList'
+import StockAlerts from './StockAlerts'
+import { portlandToday } from './dates'
+import { isArchived } from './stock'
+import type { InventoryData, LoadResult } from './types'
+import { formatCans } from './units'
 
-const CANS_PER_CASE = 24
-const CANS_PER_PALLET = 1440
+const LOAD_FAILED = 'Could not load the inventory. Try again.'
 
-const WATER_SOURCES = ['North Powder', 'Opal Springs']
+type State = { data: InventoryData | null; error: string | null }
 
-const defaultNewItem: NewInventory = {
-  name: '',
-  count: 0,
-  isCustom: false,
-  isStill: true,
-  fillDate: null,
-  totalCost: null,
-  invoiceNumber: null,
-  source: null,
+type Action =
+  | { type: 'loaded'; result: LoadResult | AuthFailure }
+  | { type: 'loadFailed' }
+  | { type: 'saved'; batch: Batch }
+
+const reducer = (state: State, action: Action): State => {
+  switch (action.type) {
+    case 'loaded': {
+      const { result } = action
+      if (isAuthFailure(result)) return { ...state, error: result.authError }
+      if (!result.ok) return { ...state, error: result.error }
+      const { batches, customers, ledger } = result
+      return { data: { batches, customers, ledger }, error: null }
+    }
+    case 'loadFailed':
+      return { ...state, error: LOAD_FAILED }
+    case 'saved': {
+      if (!state.data) return state
+      const { batch } = action
+      const { batches } = state.data
+      return {
+        ...state,
+        data: {
+          ...state.data,
+          batches: batches.some((b) => b.id === batch.id)
+            ? batches.map((b) => (b.id === batch.id ? batch : b))
+            : [...batches, batch],
+        },
+      }
+    }
+  }
 }
 
-export const toCases = (count: number) => {
-  const cases = count / CANS_PER_CASE
-  return `${+cases.toFixed(2)} case${cases === 1 ? '' : 's'}`
-}
-
-export const toCost = (cost: number | null) =>
-  cost === null ? null : `$${Number(cost).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-
-export const toPallets = (count: number) => {
-  const pallets = count / CANS_PER_PALLET
-  return `${+pallets.toFixed(2)} pallet${pallets === 1 ? '' : 's'}`
-}
-
+/** The Inventory tab: batches on hand, their history, and every change through the ledger. */
 const Inventory = () => {
-  const [items, setItems] = useState<InventoryType[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<InventoryType | null>(null)
-  const [caseCount, setCaseCount] = useState('')
-  const [saveError, setSaveError] = useState<string | null>(null)
-  const [isPending, startTransition] = useTransition()
-  const [showConfirmDelete, setShowConfirmDelete] = useState(false)
-  const [showAddDialog, setShowAddDialog] = useState(false)
-  const [newItem, setNewItem] = useState<NewInventory>(defaultNewItem)
-  const [addError, setAddError] = useState<string | null>(null)
+  const [{ data, error }, dispatch] = useReducer(reducer, { data: null, error: null })
+  const [refreshing, startRefresh] = useTransition()
+  const [showArchived, setShowArchived] = useState(false)
+  const [openBatchId, setOpenBatchId] = useState<number | null>(null)
+  // The fill date a new batch starts with; set while the Add batch dialog is open.
+  const [addingOn, setAddingOn] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
 
   useEffect(() => {
-    getInventory()
-      .then(setItems)
-      .catch((err) => setError(err instanceof Error ? err.message : 'Failed to load inventory'))
-      .finally(() => setLoading(false))
+    let active = true
+    loadInventory()
+      .then((result) => {
+        if (active) dispatch({ type: 'loaded', result })
+      })
+      .catch(() => {
+        if (active) dispatch({ type: 'loadFailed' })
+      })
+    return () => {
+      active = false
+    }
   }, [])
 
-  const handleOpen = (item: InventoryType) => {
-    setSelected(item)
-    setCaseCount(String(item.count / CANS_PER_CASE))
-    setSaveError(null)
-  }
-
-  const handleClose = () => {
-    setSelected(null)
-    setCaseCount('')
-    setSaveError(null)
-  }
-
-  const handleDelete = () => {
-    if (!selected) return
-    startTransition(async () => {
+  const refresh = () =>
+    startRefresh(async () => {
       try {
-        await deleteInventoryItem(selected.id)
-        setItems((prev) => prev.filter((i) => i.id !== selected.id))
-        handleClose()
-      } catch (err) {
-        setSaveError(err instanceof Error ? err.message : 'Failed to delete item')
+        dispatch({ type: 'loaded', result: await loadInventory() })
+      } catch {
+        dispatch({ type: 'loadFailed' })
       }
     })
-  }
 
-  const handleSave = () => {
-    if (!selected) return
-    const count = Number(caseCount) * CANS_PER_CASE
-    startTransition(async () => {
-      try {
-        await updateInventoryCount(selected.id, count)
-        setItems((prev) => prev.map((i) => (i.id === selected.id ? { ...i, count } : i)))
-        handleClose()
-      } catch (err) {
-        setSaveError(err instanceof Error ? err.message : 'Failed to update count')
-      }
-    })
-  }
-
-  const handleAdd = () => {
-    startTransition(async () => {
-      try {
-        const created = await createInventoryItem({
-          ...newItem,
-          count: newItem.count * CANS_PER_CASE,
-        })
-        setItems((prev) => [...prev, created])
-        setShowAddDialog(false)
-        setNewItem(defaultNewItem)
-        setAddError(null)
-      } catch (err) {
-        setAddError(err instanceof Error ? err.message : 'Failed to create item')
-      }
-    })
-  }
-
-  if (loading) {
-    return (
+  if (!data) {
+    return error ? (
+      <Alert severity="error">{error}</Alert>
+    ) : (
       <Box display="flex" justifyContent="center" pt={6}>
-        <CircularProgress />
+        <CircularProgress aria-label="Loading inventory" />
       </Box>
     )
   }
 
-  if (error) {
-    return <Alert severity="error">{error}</Alert>
-  }
-
-  const canCount = caseCount !== '' ? Number(caseCount) * CANS_PER_CASE : null
-  const newCanCount = newItem.count > 0 ? newItem.count * CANS_PER_CASE : null
+  const archivedCount = data.batches.filter(isArchived).length
+  const openBatch = data.batches.find((batch) => batch.id === openBatchId) ?? null
+  const customerName = (batch: Batch) =>
+    data.customers.find((customer) => customer.id === batch.customer_id)?.name ?? null
 
   return (
     <>
-      <Paper elevation={2} sx={{ p: 3, width: '100%' }}>
-        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-          <Typography variant="h5" fontWeight={600}>
+      <Paper elevation={2} sx={{ p: { xs: 2, sm: 3 }, width: '100%' }}>
+        <Box display="flex" alignItems="center" gap={1} mb={2}>
+          <Typography variant="h5" component="h2" fontWeight={600} sx={{ flex: 1 }}>
             Inventory
           </Typography>
-          <Button variant="outlined" size="small" onClick={() => setShowAddDialog(true)}>
-            Add Item
+          <IconButton aria-label="Refresh" onClick={refresh} disabled={refreshing}>
+            <RefreshIcon />
+          </IconButton>
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={<AddIcon />}
+            onClick={() => setAddingOn(portlandToday())}
+          >
+            Add batch
           </Button>
         </Box>
-        <Box display="flex" flexDirection="column" gap={1}>
-          {items.map((item) => (
-            <Box
-              key={item.id}
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
-              onClick={() => handleOpen(item)}
-              sx={{
-                py: 1,
-                borderBottom: '1px solid',
-                borderColor: 'divider',
-                cursor: 'pointer',
-                '&:hover': { bgcolor: 'action.hover' },
-              }}
-            >
-              <Box sx={{ minWidth: 0, pr: 1 }}>
-                <Typography variant="body1">{item.name}</Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {item.isStill ? 'Still' : 'Spark'}
-                </Typography>
-                {item.isCustom && (
-                  <Typography variant="caption" color="text.secondary">
-                    Custom |
-                  </Typography>
-                )}
-                <Typography variant="caption" color="text.secondary" fontWeight="bold">
-                  {` ${item.fillDate}`}
-                </Typography>
-                {item.source && (
-                  <Typography variant="caption" color="text.secondary">
-                    {` | ${item.source}`}
-                  </Typography>
-                )}
-                {(item.invoiceNumber || item.totalCost !== null) && (
-                  <Typography variant="caption" color="text.secondary" display="block">
-                    {[item.invoiceNumber && `Inv ${item.invoiceNumber}`, toCost(item.totalCost)]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </Typography>
-                )}
-              </Box>
-              <Box display="flex" flexDirection="column" alignItems="flex-end">
-                <Typography variant="body1" fontWeight={500}>
-                  {toPallets(item.count)}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {toCases(item.count)}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  {item.count}
-                </Typography>
-              </Box>
-            </Box>
-          ))}
-          {items.length === 0 && (
-            <Typography color="text.secondary">No inventory items found.</Typography>
-          )}
-        </Box>
+        {error && (
+          <Alert severity="error" sx={{ mb: 2 }}>
+            {error}
+          </Alert>
+        )}
+        <StockAlerts batches={data.batches} ledger={data.ledger} />
+        <BatchList
+          batches={data.batches}
+          customers={data.customers}
+          showArchived={showArchived}
+          onOpen={setOpenBatchId}
+        />
+        {archivedCount > 0 && (
+          <FormControlLabel
+            sx={{ mt: 2 }}
+            control={
+              <Switch checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+            }
+            label={`Show archived (${archivedCount})`}
+          />
+        )}
       </Paper>
 
-      <Dialog open={!!selected} onClose={handleClose} fullWidth maxWidth="xs">
-        <DialogTitle>
-          Update Count — {selected?.name} {selected?.isStill ? 'Still' : 'Spark'}
-        </DialogTitle>
-        <DialogContent>
-          <Box display="flex" flexDirection="column" gap={2} pt={1}>
-            <TextField
-              label="Cases"
-              type="number"
-              value={caseCount}
-              onChange={(e) => setCaseCount(e.target.value)}
-              slotProps={{ input: { inputProps: { min: 0 } } }}
-              fullWidth
-              autoFocus
-            />
-            {canCount !== null && (
-              <Typography variant="body2" color="text.secondary">
-                {canCount} cans · {toPallets(canCount)}
-              </Typography>
-            )}
-            {saveError && <Alert severity="error">{saveError}</Alert>}
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowConfirmDelete(true)} color="error" disabled={isPending}>
-            Delete
-          </Button>
-          <Box sx={{ flex: 1 }} />
-          <Button onClick={handleClose} disabled={isPending}>Cancel</Button>
-          <Button onClick={handleSave} variant="contained" disabled={isPending || caseCount === ''}>
-            {isPending ? 'Saving...' : 'Save'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog open={showConfirmDelete} onClose={() => setShowConfirmDelete(false)}>
-        <DialogTitle>Delete Item?</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Are you sure you want to delete {selected?.name} {selected?.isStill ? 'Still' : 'Spark'}? This cannot be undone.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowConfirmDelete(false)} disabled={isPending}>Cancel</Button>
-          <Button
-            color="error"
-            variant="contained"
-            disabled={isPending}
-            onClick={() => {
-              setShowConfirmDelete(false)
-              handleDelete()
-            }}
-          >
-            {isPending ? 'Deleting...' : 'Delete'}
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog open={showAddDialog} onClose={() => setShowAddDialog(false)} fullWidth maxWidth="xs">
-        <DialogTitle>Add Inventory Item</DialogTitle>
-        <DialogContent>
-          <Box display="flex" flexDirection="column" gap={2} pt={1}>
-            <TextField
-              label="Name"
-              value={newItem.name}
-              onChange={(e) => setNewItem((prev) => ({ ...prev, name: e.target.value }))}
-              fullWidth
-              autoFocus
-              required
-            />
-            <Box display="flex" gap={2}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={newItem.isStill}
-                    onChange={(e) => setNewItem((prev) => ({ ...prev, isStill: e.target.checked }))}
-                  />
-                }
-                label="Still"
-              />
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={newItem.isCustom}
-                    onChange={(e) => setNewItem((prev) => ({ ...prev, isCustom: e.target.checked }))}
-                  />
-                }
-                label="Custom"
-              />
-            </Box>
-            <TextField
-              label="Water Source"
-              select
-              value={newItem.source ?? ''}
-              onChange={(e) =>
-                setNewItem((prev) => ({ ...prev, source: e.target.value || null }))
-              }
-              fullWidth
-              required
-            >
-              {WATER_SOURCES.map((source) => (
-                <MenuItem key={source} value={source}>
-                  {source}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              label="Cases"
-              type="number"
-              value={newItem.count || ''}
-              onChange={(e) => setNewItem((prev) => ({ ...prev, count: Number(e.target.value) }))}
-              slotProps={{ input: { inputProps: { min: 0 } } }}
-              fullWidth
-            />
-            {newCanCount !== null && (
-              <Typography variant="body2" color="text.secondary">
-                {newCanCount} cans · {toPallets(newCanCount)}
-              </Typography>
-            )}
-            <TextField
-              label="Fill Date"
-              type="date"
-              value={newItem.fillDate ?? ''}
-              onChange={(e) => setNewItem((prev) => ({ ...prev, fillDate: e.target.value || null }))}
-              fullWidth
-              slotProps={{ inputLabel: { shrink: true } }}
-            />
-            <TextField
-              label="Total Cost"
-              type="number"
-              value={newItem.totalCost ?? ''}
-              onChange={(e) =>
-                setNewItem((prev) => ({
-                  ...prev,
-                  totalCost: e.target.value === '' ? null : Number(e.target.value),
-                }))
-              }
-              helperText="Cost of cans with fill"
-              fullWidth
-              slotProps={{
-                input: {
-                  inputProps: { min: 0, step: '0.01' },
-                  startAdornment: <InputAdornment position="start">$</InputAdornment>,
-                },
-              }}
-            />
-            <TextField
-              label="Invoice Number"
-              value={newItem.invoiceNumber ?? ''}
-              onChange={(e) =>
-                setNewItem((prev) => ({ ...prev, invoiceNumber: e.target.value || null }))
-              }
-              helperText="Invoice this fill is correlated with"
-              fullWidth
-            />
-            {addError && <Alert severity="error">{addError}</Alert>}
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => { setShowAddDialog(false); setNewItem(defaultNewItem); setAddError(null) }} disabled={isPending}>
-            Cancel
-          </Button>
-          <Button onClick={handleAdd} variant="contained" disabled={isPending || !newItem.name || !newItem.source}>
-            {isPending ? 'Saving...' : 'Add'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {openBatch && (
+        <BatchDialog
+          key={openBatch.id}
+          batch={openBatch}
+          customerName={customerName(openBatch)}
+          onClose={() => setOpenBatchId(null)}
+          onSaved={(batch) => dispatch({ type: 'saved', batch })}
+        />
+      )}
+      {addingOn !== null && (
+        <AddBatchDialog
+          customers={data.customers}
+          fillDate={addingOn}
+          onClose={() => setAddingOn(null)}
+          onAdded={(batch) => {
+            dispatch({ type: 'saved', batch })
+            setAddingOn(null)
+            setNotice(`Added ${batch.name}: ${formatCans(batch.count)}`)
+          }}
+        />
+      )}
+      <Snackbar
+        open={notice !== null}
+        autoHideDuration={4000}
+        onClose={() => setNotice(null)}
+        message={notice}
+      />
     </>
   )
 }
