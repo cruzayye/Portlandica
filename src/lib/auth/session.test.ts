@@ -48,14 +48,27 @@ describe('passwordMatches', () => {
 })
 
 describe('passwordVersion', () => {
-  it('is the first 16 hex characters of SHA-256 of the password', () => {
-    const sha = createHash('sha256').update(TEST_AUTH.password).digest('hex')
-    expect(passwordVersion(TEST_AUTH.password)).toBe(sha.slice(0, 16))
-    expect(passwordVersion(TEST_AUTH.password)).toMatch(/^[0-9a-f]{16}$/)
+  const version = () => passwordVersion(TEST_AUTH.password, TEST_AUTH.sessionSecret)
+
+  it('is the first 16 hex characters of HMAC-SHA256(SESSION_SECRET, password)', () => {
+    const hmac = createHmac('sha256', TEST_AUTH.sessionSecret)
+      .update(TEST_AUTH.password)
+      .digest('hex')
+    expect(version()).toBe(hmac.slice(0, 16))
+    expect(version()).toMatch(/^[0-9a-f]{16}$/)
   })
 
-  it('changes with the password', () => {
-    expect(passwordVersion('another team password')).not.toBe(passwordVersion(TEST_AUTH.password))
+  it("can't be worked out from the password alone", () => {
+    // A plain hash of a guess must not match, or a copied cookie could test guesses offline.
+    const sha = createHash('sha256').update(TEST_AUTH.password).digest('hex')
+    expect(version()).not.toBe(sha.slice(0, 16))
+  })
+
+  it('changes with the password and with the session secret', () => {
+    expect(passwordVersion('another team password', TEST_AUTH.sessionSecret)).not.toBe(version())
+    expect(passwordVersion(TEST_AUTH.password, 'a-brand-new-session-secret-0123456789')).not.toBe(
+      version()
+    )
   })
 })
 
@@ -66,7 +79,7 @@ describe('createSessionToken', () => {
     expect(payload).toEqual({
       iat: now / 1000,
       exp: now / 1000 + 90 * 24 * 60 * 60,
-      pv: passwordVersion(TEST_AUTH.password),
+      pv: passwordVersion(TEST_AUTH.password, TEST_AUTH.sessionSecret),
     })
     expect(SESSION_MAX_AGE_SECONDS).toBe(7_776_000)
   })
@@ -123,7 +136,11 @@ describe('verifySessionToken', () => {
     expect(
       verifySessionToken(
         signedToken(
-          JSON.stringify({ iat: '1', exp: '9999999999', pv: passwordVersion(TEST_AUTH.password) })
+          JSON.stringify({
+            iat: '1',
+            exp: '9999999999',
+            pv: passwordVersion(TEST_AUTH.password, TEST_AUTH.sessionSecret),
+          })
         ),
         TEST_AUTH
       )
