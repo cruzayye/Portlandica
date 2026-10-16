@@ -1,7 +1,6 @@
 import { google, type sheets_v4 } from 'googleapis'
 import type { CustomerType, LineProduct } from '@/lib/db/types'
 import { sheetDate, sheetDateSerial } from '@/lib/delivery'
-import { splitCents } from '@/lib/orders'
 
 // The Sales sheet: the book of record Paul's reports read. Tab names, columns and
 // formulas stay exactly as they are; the order flow only adds rows.
@@ -86,6 +85,8 @@ export type SheetOrderLine = {
   cans: number
   batchId: number
   isCustom: boolean
+  /** What this line is charged, in dollars: its own row's Sales ($). */
+  amount: number
 }
 
 /** An order as the Sales sheet records it. */
@@ -96,9 +97,8 @@ export type SheetOrder = {
   orderDate: string
   type: CustomerType
   customerName: string
+  /** One row each, with its own amount; the amounts add up to what the order is charged. */
   lines: SheetOrderLine[]
-  /** What the customer is charged; split over the rows by cans, to the cent. */
-  totalPrice: number
   isPaid: boolean
   createInvoice: boolean
   isDonation: boolean
@@ -131,20 +131,16 @@ type RowAt = (row: number) => Cell[]
 // form is ever read as a formula.
 const salesRows = (order: SheetOrder): RowAt[] => {
   const date = sheetDateSerial(order.orderDate)
-  const amounts = splitCents(
-    order.totalPrice,
-    order.lines.map((line) => line.cans)
-  )
-  return order.lines.map((line, i) => (r: number) => [
+  return order.lines.map((line) => (r: number) => [
     num(date), // A: Date
     str(order.type === 'individual' ? 'Individual' : 'Business'), // B: Type
     str(PRODUCT_LABELS[line.product]), // C: Product
     str(order.customerName), // D: Customer
     num(line.cans), // E: Units
-    num(amounts[i]), // F: Sales ($)
+    num(line.amount), // F: Sales ($)
     empty, // G: Shipping Cost ($)
     order.isPaid ? num(date) : empty, // H: Payment Date
-    num(order.isPaid ? amounts[i] : 0), // I: Payment Received
+    num(order.isPaid ? line.amount : 0), // I: Payment Received
     formula(`=IF(I${r}-F${r}=0,"Yes","No")`), // J: Paid
     empty, // K: Referral Cost ($)
     empty, // L: Uncollectible?

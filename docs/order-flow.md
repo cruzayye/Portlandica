@@ -55,8 +55,13 @@ only the steps that aren't done.
 
 ## The Sales sheet rows
 
-Same columns, formulas and tab names as before. Two columns now get filled:
+Same columns, formulas and tab names as before, one row per product (still and
+sparkling are separate rows). Two columns now get filled, and one is worked out
+differently:
 
+- **F (Sales ($))**: the row's own line amount (see "Customers and prices"), so in a mixed
+  order the custom-can row and the house-stock row each show what they cost. I (Payment
+  Received) is the same amount when Paid is on, 0 otherwise.
 - **M (Inventory Reference #)**: `SB-<batch id>`, the Supabase batch the row's cans came
   from. Column N looks M up on the sheet's own Inventory tab, which has no `SB-` rows, so
   N stays 0 as it is today.
@@ -74,9 +79,23 @@ Reference # so their cost lookup keeps working.
 - The form offers house stock plus custom batches linked to the customer by
   `customer_id`. A custom batch with no `customer_id` is offered to nobody; link it first.
   A line is custom when its batch is.
-- Price per can: the customer's `price_per_can` when the order uses their custom cans (or
-  always, for a customer whose price isn't tied to custom cans: `custom_cans` false);
-  otherwise $1.50. A typed price still wins and is spread over every can.
+- Each line has its own price per can (`linePrices` in `src/lib/orders.ts`), so an order
+  that mixes a customer's custom cans with house stock is priced line by line. A line
+  from their custom batch is at their `price_per_can`. A house-stock line is at their
+  `price_per_can` only if they aren't a custom-can account (`custom_cans` false; Ben
+  Bridge's $1.35 is for regular cans), otherwise at $1.50. No agreed price means $1.50.
+  Under the Price, the form shows each line, e.g. "Still: 240 cans at $2.00 (Hotel
+  Vintage's price) · Sparkling: 48 cans at $1.50".
+- A typed price still wins. It replaces the total and is spread over the lines in
+  proportion to their automatic prices: every line's price per can is scaled by the same
+  factor, so custom cans stay dearer than house stock. With one price on every line, that
+  is an even spread over every can, as before. The form shows the split, e.g. "Typed
+  price, split in proportion to each line's automatic price: Still $434.78 · Sparkling
+  $65.22 (automatic: $552.00)". The order keeps the typed total exactly.
+- The Sales rows and the Square draft use the same line amounts (`lineAmounts`): each
+  line's total, moved by a cent where a typed total needs it to add up. Square bills per
+  can at each line's price, or one lot per line at its amount when a typed total doesn't
+  come to whole cents a can.
 - A billing email typed with Create Invoice on is saved on the customer; a Square
   customer id is saved after the first draft.
 

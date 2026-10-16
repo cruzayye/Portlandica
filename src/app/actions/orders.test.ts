@@ -214,7 +214,7 @@ describe('createOrder', () => {
     expect(mocks.createTrelloCard.mock.calls[0][1]).toEqual({ findExisting: false })
   })
 
-  it("books an order using a customer's custom cans at their price, for every can", async () => {
+  it("prices a mixed order line by line: custom cans at the customer's price, house stock at $1.50", async () => {
     const hotel = await createCustomer(db(), {
       name: 'Hotel Vintage',
       price_per_can: 2,
@@ -230,16 +230,64 @@ describe('createOrder', () => {
             { product: 'still', cans: 240, batchId: 22 },
             { product: 'sparkling', cans: 48, batchId: 25 },
           ],
-          price: 576,
+          price: 552,
         }),
         { idempotencyKey: newIdempotencyKey() }
       )
     )
     expect(result.order.lines).toMatchObject([
-      { batch_id: 22, is_custom: true, unit_price: 2 },
-      { batch_id: 25, is_custom: false, unit_price: 2 },
+      { batch_id: 22, is_custom: true, unit_price: 2, line_total: 480 },
+      { batch_id: 25, is_custom: false, unit_price: 1.5, line_total: 72 },
     ])
-    expect(result.order.total_price).toBe(576)
+    expect(result.order.total_price).toBe(552)
+    // Each Sales row gets its own line's amount.
+    expect(
+      mocks.writeOrderToSheet.mock.calls[0][0].lines.map((l: { amount: number }) => l.amount)
+    ).toEqual([480, 72])
+  })
+
+  it("charges house stock at the price of a customer who isn't a custom-can account", async () => {
+    const benBridge = await createCustomer(db(), {
+      name: 'Ben Bridge Jeweler (Downtown)',
+      price_per_can: 1.35,
+      custom_cans: false,
+    })
+    const result = saved(
+      await createOrder(
+        input({ customerId: benBridge.id, name: 'Ben Bridge Jeweler (Downtown)', price: 226.8 }),
+        { idempotencyKey: newIdempotencyKey() }
+      )
+    )
+    expect(result.order.lines.map((l) => l.unit_price)).toEqual([1.35, 1.35])
+    expect(result.order.total_price).toBe(226.8)
+  })
+
+  it('spreads a typed price over a mixed order in proportion to its line prices', async () => {
+    const hotel = await createCustomer(db(), {
+      name: 'Hotel Vintage',
+      price_per_can: 2,
+      custom_cans: true,
+    })
+    await linkBatch(22, hotel.id)
+    const result = saved(
+      await createOrder(
+        input({
+          customerId: hotel.id,
+          name: 'Hotel Vintage',
+          lines: [
+            { product: 'still', cans: 240, batchId: 22 },
+            { product: 'sparkling', cans: 48, batchId: 25 },
+          ],
+          price: 500,
+        }),
+        { idempotencyKey: newIdempotencyKey() }
+      )
+    )
+    expect(result.order.total_price).toBe(500)
+    expect(result.order.lines.map((l) => l.unit_price)).toEqual([1.8116, 1.3587])
+    expect(
+      mocks.writeOrderToSheet.mock.calls[0][0].lines.map((l: { amount: number }) => l.amount)
+    ).toEqual([434.78, 65.22])
   })
 
   it('charges the default price when a custom-can customer orders house stock', async () => {

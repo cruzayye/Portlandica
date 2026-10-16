@@ -545,12 +545,102 @@ describe('OrderForm price', () => {
     await user.type(screen.getByLabelText(/total still cases/i), '1')
 
     expect(screen.getByLabelText('Price')).toHaveValue(39.84)
-    expect(screen.getByText("$1.66 a can: Hollywood Theatre's price")).toBeInTheDocument()
+    expect(
+      screen.getByText("Still: 24 cans at $1.66 (Hollywood Theatre's price)")
+    ).toBeInTheDocument()
 
     // House stock instead: the default price.
     await user.click(screen.getByLabelText(/still batch/i))
     await user.click(await screen.findByRole('option', { name: /^Portlandica Still/ }))
     expect(screen.getByLabelText('Price')).toHaveValue(36)
+    expect(screen.getByText('Still: 24 cans at $1.50')).toBeInTheDocument()
+  })
+
+  it('prices a mixed order line by line and shows each line in the total', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(
+      formData({
+        batches: [
+          batch({ id: 1 }),
+          batch({ id: 9, name: 'Hollywood Theatre', isCustom: true, customer_id: HOLLYWOOD }),
+          batch({ id: 25, name: 'North Powder', isStill: false }),
+        ],
+      })
+    )
+    await pickCustomer(user, 'Hollywood Theatre')
+    await user.click(screen.getByLabelText('Still'))
+    await user.type(screen.getByLabelText(/total still cases/i), '1')
+    await user.click(screen.getByLabelText('Sparkling'))
+    await user.type(screen.getByLabelText(/total sparkling cases/i), '2')
+
+    // Their custom still cans at $1.66, house sparkling at $1.50.
+    expect(screen.getByLabelText('Price')).toHaveValue(111.84)
+    expect(
+      screen.getByText(
+        "Still: 24 cans at $1.66 (Hollywood Theatre's price) · Sparkling: 48 cans at $1.50"
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('says how a typed price is split over the lines', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(
+      formData({
+        batches: [
+          batch({ id: 9, name: 'Hollywood Theatre', isCustom: true, customer_id: HOLLYWOOD }),
+          batch({ id: 25, name: 'North Powder', isStill: false }),
+        ],
+      })
+    )
+    await pickCustomer(user, 'Hollywood Theatre')
+    await user.click(screen.getByLabelText('Still'))
+    await user.type(screen.getByLabelText(/total still cases/i), '1')
+    await user.click(screen.getByLabelText('Sparkling'))
+    await user.type(screen.getByLabelText(/total sparkling cases/i), '2')
+    await user.click(screen.getByLabelText('Drop'))
+    await user.clear(screen.getByLabelText('Price'))
+    await user.type(screen.getByLabelText('Price'), '100')
+
+    expect(
+      screen.getByText(
+        "Typed price, split in proportion to each line's automatic price: Still $35.62 · Sparkling $64.38 (automatic: $111.84)"
+      )
+    ).toBeInTheDocument()
+    await user.click(submitButton())
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(sent()).toMatchObject({
+      price: 100,
+      lines: [
+        { product: 'still', cans: 24, batchId: 9 },
+        { product: 'sparkling', cans: 48, batchId: 25 },
+      ],
+    })
+  })
+
+  it("charges house stock at the price of a customer who isn't a custom-can account", async () => {
+    const user = userEvent.setup({ delay: null })
+    const data = formData()
+    await renderForm({
+      ...data,
+      customers: [
+        ...data.customers,
+        {
+          id: 3,
+          name: 'Ben Bridge Jeweler (Downtown)',
+          business_type: 'Retail',
+          price_per_can: 1.35,
+          custom_cans: false,
+          email: null,
+          address: '',
+        },
+      ],
+    })
+    await fillRequiredFields(user, 'Ben Bridge Jeweler (Downtown)')
+
+    expect(screen.getByLabelText('Price')).toHaveValue(162)
+    expect(
+      screen.getByText("Still: 120 cans at $1.35 (Ben Bridge Jeweler (Downtown)'s price)")
+    ).toBeInTheDocument()
   })
 
   it('keeps a typed price until the quantity changes', async () => {
@@ -562,6 +652,7 @@ describe('OrderForm price', () => {
     await user.type(screen.getByLabelText('Price'), '150')
     await user.click(screen.getByLabelText(/notes/i))
     expect(screen.getByLabelText('Price')).toHaveValue(150)
+    expect(screen.getByText('Typed price (automatic: $180.00)')).toBeInTheDocument()
 
     await user.type(screen.getByLabelText(/total still cases/i), '0')
     expect(screen.getByLabelText('Price')).toHaveValue(1800)

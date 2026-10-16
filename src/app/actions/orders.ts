@@ -41,13 +41,12 @@ import { pacificDate } from '@/lib/delivery'
 import { runOrderSteps, squareReady } from '@/lib/orderSteps'
 import {
   PRODUCT_NAMES,
+  autoTotal,
   dbCustomerType,
-  orderPricePerCan,
+  linePrices,
   orderProblem,
-  priceForCans,
   sameOrder,
   shortfalls,
-  usesCustomCans,
 } from '@/lib/orders'
 
 const reason = (err: unknown) => (err instanceof Error ? err.message : String(err))
@@ -189,8 +188,10 @@ const resolveCustomer = async (
   return { customer, isNew: true }
 }
 
-// The automatic price books at the customer's price per can. Any other price (typed in,
-// or a total the form worked out before a price changed) is spread over every can.
+// The automatic price books each line at its own price per can (linePrices): custom cans
+// at the customer's price, house stock at $1.50 unless the customer's price isn't tied to
+// custom cans. Any other price (typed in, or a total the form worked out before a price
+// changed) replaces the total and is spread over the lines in proportion to those prices.
 const priceOrder = (input: OrderInput, customer: Customer | null, batches: Batch[]) => {
   const lines = input.lines.map((line) => ({
     product: line.product,
@@ -199,13 +200,16 @@ const priceOrder = (input: OrderInput, customer: Customer | null, batches: Batch
   }))
   if (input.isDonation) return { lines: priceLines(lines, { isDonation: true }), totalPrice: 0 }
 
-  const pricePerCan = orderPricePerCan(customer, usesCustomCans(input.lines, batches))
-  const cans = lines.reduce((sum, line) => sum + line.cans, 0)
-  const autoCents = Math.round((priceForCans(cans, pricePerCan) ?? 0) * 100)
+  const pricePerCan = linePrices(input.lines, batches, customer)
+  const cans = lines.map((line) => line.cans)
+  const autoCents = Math.round((autoTotal(cans, pricePerCan) ?? 0) * 100)
   const typedCents = Math.round((input.price ?? 0) * 100)
   return autoCents === typedCents
     ? { lines: priceLines(lines, { pricePerCan }), totalPrice: null }
-    : { lines: priceLines(lines, { totalPrice: typedCents / 100 }), totalPrice: typedCents / 100 }
+    : {
+        lines: priceLines(lines, { pricePerCan, totalPrice: typedCents / 100 }),
+        totalPrice: typedCents / 100,
+      }
 }
 
 const deliveryAddress = (input: OrderInput, customer: Customer | null) =>

@@ -91,26 +91,53 @@ export const lineTotal = (line: Pick<NewOrderLine, 'cans' | 'unit_price'>) => li
 export const linesTotal = (lines: Pick<NewOrderLine, 'cans' | 'unit_price'>[]) =>
   lines.reduce((sum, line) => sum + lineCents(line), 0) / 100
 
+export type PriceOptions = {
+  /** Dollars per can: one price for every line, or one per line, in line order. */
+  pricePerCan?: number | number[]
+  /** A total typed in by hand. It replaces the sum of the lines. */
+  totalPrice?: number | null
+  isDonation?: boolean
+}
+
 /**
- * Price an order's lines. Donations are free. A manual total is spread evenly over every
- * can, as the Sales sheet splits it today (pass the same total_price to createSalesOrder
- * so the order keeps the exact amount). Otherwise each can costs pricePerCan.
+ * The price per can of each line, for lines of these many cans. Donations are free.
+ * Otherwise each line costs its pricePerCan. A manual total replaces the automatic one
+ * and is spread over the lines in proportion to what each costs at those prices: every
+ * line's price is scaled by the same factor, so a line priced higher (a customer's custom
+ * cans) stays higher. When every line has the same price, that is the same as spreading
+ * the total evenly over every can.
+ */
+export const unitPrices = (
+  cans: number[],
+  { pricePerCan = DEFAULT_PRICE_PER_CAN, totalPrice = null, isDonation = false }: PriceOptions = {}
+): number[] => {
+  if (Array.isArray(pricePerCan) && pricePerCan.length !== cans.length) {
+    throw new Error('Give one price per line')
+  }
+  const prices = cans.map((_, i) => (Array.isArray(pricePerCan) ? pricePerCan[i] : pricePerCan))
+  if (isDonation) return cans.map(() => 0)
+  const totalCans = cans.reduce((sum, n) => sum + n, 0)
+  if (totalPrice === null || totalCans <= 0) return prices
+  const automatic = cans.reduce((sum, n, i) => sum + n * prices[i], 0)
+  if (automatic <= 0 || prices.every((price) => price === prices[0])) {
+    return cans.map(() => toUnitPrice(totalPrice / totalCans))
+  }
+  return prices.map((price) => toUnitPrice((price * totalPrice) / automatic))
+}
+
+/**
+ * Price an order's lines (see unitPrices). Pass the same total_price to createSalesOrder
+ * when a total was typed, so the order keeps the exact amount.
  */
 export const priceLines = (
   lines: Omit<NewOrderLine, 'unit_price'>[],
-  {
-    pricePerCan = DEFAULT_PRICE_PER_CAN,
-    totalPrice = null,
-    isDonation = false,
-  }: { pricePerCan?: number; totalPrice?: number | null; isDonation?: boolean } = {}
+  options: PriceOptions = {}
 ): NewOrderLine[] => {
-  const totalCans = lines.reduce((sum, line) => sum + line.cans, 0)
-  const unitPrice = isDonation
-    ? 0
-    : totalPrice !== null && totalCans > 0
-      ? toUnitPrice(totalPrice / totalCans)
-      : pricePerCan
-  return lines.map((line) => ({ ...line, unit_price: unitPrice }))
+  const prices = unitPrices(
+    lines.map((line) => line.cans),
+    options
+  )
+  return lines.map((line, i) => ({ ...line, unit_price: prices[i] }))
 }
 
 // The Sales sheet is the book of record Paul's reports read, so it goes first.

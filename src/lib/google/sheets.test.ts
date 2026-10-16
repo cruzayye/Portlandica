@@ -80,10 +80,9 @@ const order = (over: Partial<SheetOrder> = {}): SheetOrder => ({
   type: 'business',
   customerName: 'Hollywood Theatre',
   lines: [
-    { product: 'still', cans: 240, batchId: 35, isCustom: true },
-    { product: 'sparkling', cans: 360, batchId: 15, isCustom: true },
+    { product: 'still', cans: 240, batchId: 35, isCustom: true, amount: 398.4 },
+    { product: 'sparkling', cans: 360, batchId: 15, isCustom: true, amount: 597.6 },
   ],
-  totalPrice: 996,
   isPaid: false,
   createInvoice: false,
   isDonation: false,
@@ -165,19 +164,23 @@ describe('writeOrderToSheet: Sales', () => {
     expect([sparkling[7], sparkling[8]]).toEqual([ORDER_DATE, 597.6])
   })
 
-  it('splits a typed total by cans so the rows add up to it exactly', async () => {
+  it("gives each row its own line's amount", async () => {
+    // A mixed order: custom still at the customer's price, house sparkling at $1.50.
     await writeOrderToSheet(
       order({
-        totalPrice: 500,
+        isPaid: true,
         lines: [
-          { product: 'still', cans: 200, batchId: 45, isCustom: false },
-          { product: 'sparkling', cans: 100, batchId: 25, isCustom: false },
+          { product: 'still', cans: 240, batchId: 22, isCustom: true, amount: 480 },
+          { product: 'sparkling', cans: 48, batchId: 25, isCustom: false, amount: 72 },
         ],
       })
     )
     const rows = fake().rows('Sales').slice(3, 5)
-    expect(rows.map((row) => row[5])).toEqual([333.33, 166.67])
-    expect(rows.map((row) => row[21] ?? '')).toEqual(['', ''])
+    expect(rows.map((row) => [row[4], row[5], row[8]])).toEqual([
+      [240, 480, 480],
+      [48, 72, 72],
+    ])
+    expect(rows.map((row) => row[21] ?? '')).toEqual(['Yes', ''])
   })
 
   it('books individuals as Individual', async () => {
@@ -324,7 +327,7 @@ describe('writeOrderToSheet: Sales', () => {
 describe('writeOrderToSheet: donations', () => {
   it('writes Donations rows and leaves Sales alone', async () => {
     const written = await writeOrderToSheet(
-      order({ isDonation: true, totalPrice: 0, customerName: 'Rose Festival', notes: 'Booth' })
+      order({ isDonation: true, customerName: 'Rose Festival', notes: 'Booth' })
     )
     expect(written.ref).toBe('Donations!A3:K4')
     expect(fake().rows('Sales')).toEqual(salesTab())

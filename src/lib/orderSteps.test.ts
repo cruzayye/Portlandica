@@ -13,6 +13,7 @@ import {
 import { fakeSupabase } from '@/lib/db/testing/fakeSupabase'
 import { SERVICE, createMigratedDb } from '@/lib/db/testing/testDb'
 import type { Db } from '@/lib/db/types'
+import type { InvoiceLine } from '@/lib/square'
 
 const steps = vi.hoisted(() => ({
   writeOrderToSheet: vi.fn(),
@@ -123,10 +124,9 @@ describe('runOrderSteps', () => {
       type: 'business',
       customerName: 'Lovejoy Bakers',
       lines: [
-        { product: 'still', cans: 120, batchId: 45, isCustom: false },
-        { product: 'sparkling', cans: 48, batchId: 25, isCustom: false },
+        { product: 'still', cans: 120, batchId: 45, isCustom: false, amount: 180 },
+        { product: 'sparkling', cans: 48, batchId: 25, isCustom: false, amount: 72 },
       ],
-      totalPrice: 252,
       isPaid: false,
       createInvoice: false,
       isDonation: false,
@@ -254,6 +254,60 @@ describe('runOrderSteps', () => {
     expect(data).toEqual({ square_customer_id: 'sq-cust-1' })
   })
 
+  it('books a mixed order line by line on the sheet and the invoice', async () => {
+    vi.stubEnv('SQUARE_ACCESS_TOKEN', 'sandbox-token')
+    // Que Dice's custom still cans at their price, house sparkling at $1.50.
+    const order = await placeOrder({
+      customer_name: 'Que Dice',
+      create_invoice: true,
+      lines: priceLines(
+        [
+          { product: 'still', cans: 240, batch_id: 13 },
+          { product: 'sparkling', cans: 48, batch_id: 25 },
+        ],
+        { pricePerCan: [2, 1.5] }
+      ),
+    })
+    expect(order.total_price).toBe(552)
+    await runOrderSteps(db, order.id)
+
+    expect(steps.writeOrderToSheet.mock.calls[0][0].lines).toEqual([
+      { product: 'still', cans: 240, batchId: 13, isCustom: true, amount: 480 },
+      { product: 'sparkling', cans: 48, batchId: 25, isCustom: false, amount: 72 },
+    ])
+    expect(steps.createDraftInvoice.mock.calls[0][0].lines).toEqual([
+      { name: 'Still Cans (Custom)', cans: 240, unitPrice: 2 },
+      { name: 'Sparkling Cans', cans: 48, unitPrice: 1.5 },
+    ])
+  })
+
+  it('splits a typed total over a mixed order the same way on the sheet and the invoice', async () => {
+    vi.stubEnv('SQUARE_ACCESS_TOKEN', 'sandbox-token')
+    const lines = priceLines(
+      [
+        { product: 'still', cans: 240, batch_id: 13 },
+        { product: 'sparkling', cans: 48, batch_id: 25 },
+      ],
+      { pricePerCan: [2, 1.5], totalPrice: 500 }
+    )
+    const order = await placeOrder({
+      customer_name: 'Que Dice',
+      create_invoice: true,
+      lines,
+      total_price: 500,
+    })
+    await runOrderSteps(db, order.id)
+
+    const sheetAmounts = steps.writeOrderToSheet.mock.calls[0][0].lines.map(
+      (line: { amount: number }) => line.amount
+    )
+    expect(sheetAmounts).toEqual([434.78, 65.22])
+    const invoice = steps.createDraftInvoice.mock.calls[0][0].lines as InvoiceLine[]
+    expect(
+      invoice.map((line) => Math.round(line.unitPrice * (line.caseSize ?? 1) * 100) / 100)
+    ).toEqual(sheetAmounts)
+  })
+
   it('records a Square failure so it can be retried', async () => {
     vi.stubEnv('SQUARE_ACCESS_TOKEN', 'sandbox-token')
     steps.createDraftInvoice.mockRejectedValueOnce(
@@ -340,7 +394,7 @@ describe('invoiceLines', () => {
     ).toEqual([{ name: 'Still Cans (Custom)', cans: 240, unitPrice: 1.66 }])
   })
 
-  it('bills a typed total as one lot per product, to the exact total', () => {
+  it('bills a typed total as one lot per line, to the exact total', () => {
     const lines = invoiceLines({
       total_price: 500,
       lines: [
@@ -354,6 +408,42 @@ describe('invoiceLines', () => {
     ])
     const total = lines.reduce((sum, l) => sum + Math.round(l.unitPrice * l.caseSize! * 100), 0)
     expect(total).toBe(50000)
+  })
+
+  it('bills each line of a mixed order at its own price', () => {
+    expect(
+      invoiceLines({
+        total_price: 552,
+        lines: [
+          line({ is_custom: true, unit_price: 2, line_total: 480 }),
+          line({ id: 2, product: 'sparkling', cans: 48, unit_price: 1.5, line_total: 72 }),
+        ],
+      })
+    ).toEqual([
+      { name: 'Still Cans (Custom)', cans: 240, unitPrice: 2 },
+      { name: 'Sparkling Cans', cans: 48, unitPrice: 1.5 },
+    ])
+  })
+
+  it("bills a typed total over lines priced differently by each line's amount", () => {
+    const lines = invoiceLines({
+      total_price: 500,
+      lines: [
+        line({ is_custom: true, unit_price: 1.8116, line_total: 434.78 }),
+        line({ id: 2, product: 'sparkling', cans: 48, unit_price: 1.3587, line_total: 65.22 }),
+      ],
+    })
+    expect(
+      lines.map(({ name, cans, caseSize, unitPrice }) => ({
+        name,
+        cans,
+        caseSize,
+        amount: Math.round(unitPrice * caseSize! * 100) / 100,
+      }))
+    ).toEqual([
+      { name: 'Still Cans (Custom) (240)', cans: 240, caseSize: 240, amount: 434.78 },
+      { name: 'Sparkling Cans (48)', cans: 48, caseSize: 48, amount: 65.22 },
+    ])
   })
 })
 

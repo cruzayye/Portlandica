@@ -13,7 +13,7 @@ import {
 } from '@/lib/square'
 import { createTrelloCard, type TrelloOrder } from '@/lib/trello'
 import { batchTitle } from '@/lib/batches'
-import { shortfallMessage, splitCents } from '@/lib/orders'
+import { lineAmounts, shortfallMessage } from '@/lib/orders'
 
 // Runs an order's unfinished steps in order: Sales sheet, inventory, Trello, Square. Each
 // step's outcome is recorded on the order, so a failed step can be retried later on its
@@ -69,9 +69,11 @@ const PRODUCT_NAMES = { still: 'Still Cans', sparkling: 'Sparkling Cans', dog_wa
 const isWholeCents = (dollars: number) => Math.abs(dollars * 100 - Math.round(dollars * 100)) < 1e-6
 
 /**
- * Invoice lines for an order. Billed per can when every price is whole cents and the
- * lines add up to the order's total; otherwise (a typed total that doesn't divide evenly)
- * each product is billed as one lot, so the invoice comes to exactly the order's total.
+ * Invoice lines for an order, one per order line at its own price, matching the Sales
+ * rows. Billed per can when every price is whole cents and the lines add up to the
+ * order's total; otherwise (a typed total that doesn't divide evenly) each line is billed
+ * as one lot of its amount (lineAmounts), so the invoice comes to exactly the order's
+ * total.
  */
 export const invoiceLines = (
   order: Pick<SalesOrderWithLines, 'total_price' | 'lines'>
@@ -90,10 +92,7 @@ export const invoiceLines = (
       unitPrice: Number(line.unit_price),
     }))
   }
-  const amounts = splitCents(
-    Number(order.total_price),
-    order.lines.map((line) => line.cans)
-  )
+  const amounts = lineAmounts(order)
   return order.lines.map((line, i) => ({
     name: `${name(line)} (${line.cans})`,
     cans: line.cans,
@@ -102,33 +101,36 @@ export const invoiceLines = (
   }))
 }
 
-const sheetOrderFor = (order: SalesOrderWithLines, customer: Customer | null): SheetOrder => ({
-  key: order.idempotency_key,
-  orderDate: order.order_date,
-  type: order.type,
-  customerName: order.customer_name,
-  lines: order.lines.map((line) => ({
-    product: line.product,
-    cans: line.cans,
-    batchId: line.batch_id,
-    isCustom: line.is_custom,
-  })),
-  totalPrice: Number(order.total_price),
-  isPaid: order.is_paid,
-  createInvoice: order.create_invoice,
-  isDonation: order.is_donation,
-  notes: order.notes,
-  newLocation:
-    order.new_customer && customer
-      ? {
-          name: customer.name,
-          address: formatAddress(customer),
-          latitude: customer.latitude,
-          longitude: customer.longitude,
-          businessType: customer.business_type ?? '',
-        }
-      : null,
-})
+const sheetOrderFor = (order: SalesOrderWithLines, customer: Customer | null): SheetOrder => {
+  const amounts = lineAmounts(order)
+  return {
+    key: order.idempotency_key,
+    orderDate: order.order_date,
+    type: order.type,
+    customerName: order.customer_name,
+    lines: order.lines.map((line, i) => ({
+      product: line.product,
+      cans: line.cans,
+      batchId: line.batch_id,
+      isCustom: line.is_custom,
+      amount: amounts[i],
+    })),
+    isPaid: order.is_paid,
+    createInvoice: order.create_invoice,
+    isDonation: order.is_donation,
+    notes: order.notes,
+    newLocation:
+      order.new_customer && customer
+        ? {
+            name: customer.name,
+            address: formatAddress(customer),
+            latitude: customer.latitude,
+            longitude: customer.longitude,
+            businessType: customer.business_type ?? '',
+          }
+        : null,
+  }
+}
 
 const trelloOrderFor = (order: SalesOrderWithLines, batches: Map<number, Batch>): TrelloOrder => ({
   orderId: order.id,

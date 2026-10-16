@@ -20,6 +20,7 @@ import {
   pendingSteps,
   priceLines,
   recordOrderStep,
+  unitPrices,
   voidSalesOrder,
   type NewSalesOrder,
 } from './orders'
@@ -42,6 +43,30 @@ describe('pricing', () => {
     const priced = priceLines(lines, { totalPrice: 100 })
     expect(priced.map((l) => l.unit_price)).toEqual([1.3889, 1.3889])
     expect(priced.map(lineTotal)).toEqual([66.67, 33.33])
+  })
+
+  it('charges each line its own price', () => {
+    const priced = priceLines(lines, { pricePerCan: [2, 1.5] })
+    expect(priced.map((l) => l.unit_price)).toEqual([2, 1.5])
+    expect(linesTotal(priced)).toBe(132)
+    expect(() => priceLines(lines, { pricePerCan: [2] })).toThrow('one price per line')
+  })
+
+  it('spreads a manual total over lines priced differently in proportion to their prices', () => {
+    // 48 custom cans at $2.00 and 24 house cans at $1.50 ($132), typed as $120.
+    const priced = priceLines(lines, { pricePerCan: [2, 1.5], totalPrice: 120 })
+    expect(priced.map((l) => l.unit_price)).toEqual([1.8182, 1.3636])
+    expect(priced.map(lineTotal)).toEqual([87.27, 32.73])
+    expect(linesTotal(priced)).toBe(120)
+    // The same price on every line: the same as spreading over every can.
+    expect(priceLines(lines, { pricePerCan: [1.5, 1.5], totalPrice: 100 })).toEqual(
+      priceLines(lines, { totalPrice: 100 })
+    )
+  })
+
+  it('works out unit prices from cans alone', () => {
+    expect(unitPrices([240, 48], { pricePerCan: [2, 1.5] })).toEqual([2, 1.5])
+    expect(unitPrices([240, 48], { pricePerCan: [2, 1.5], isDonation: true })).toEqual([0, 0])
   })
 
   it('makes donations free whatever the price', () => {

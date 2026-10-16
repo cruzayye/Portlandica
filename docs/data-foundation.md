@@ -80,8 +80,8 @@ products table would be more than two products need.
 ### sales_order_lines
 
 `product` (`still`, `sparkling`, `dog_water`), `cans`, `batch_id`, `is_custom`,
-`unit_price` (dollars, four decimals so a hand-typed total can be spread over every
-can) and `line_total` (generated, rounded to cents). `is_custom` is copied from the batch
+`unit_price` (dollars, four decimals so a hand-typed total can be spread over the
+lines) and `line_total` (generated, rounded to cents). `is_custom` is copied from the batch
 by a trigger, and the same trigger refuses a batch that holds a different product (a
 still line from the sparkling or dog-water batch) or is archived.
 
@@ -341,10 +341,14 @@ more alongside.
   `error.shortfall`, and retry with `{ allowNegative: true }` if the partner confirms.
   Production builds strip thrown error messages from server actions, so return result
   objects to the client rather than throwing.
-- **Prices:** `priceLines(lines, { pricePerCan: pricePerCan(customer), totalPrice,
-isDonation })`; pass the same `total_price` to `createSalesOrder` when the partner typed
-  a total. Square needs whole-cent unit prices, so a typed total that doesn't divide
-  evenly is billed as one lot (see `docs/integrations.md` on `feat/integrations`).
+- **Prices:** each line has its own price per can, `linePrices(lines, batches, customer)`
+  in `src/lib/orders.ts`: custom cans at the customer's `price_per_can`, house stock at it
+  only when `custom_cans` is false, otherwise $1.50. Then
+  `priceLines(lines, { pricePerCan, totalPrice, isDonation })`; pass the same
+  `total_price` to `createSalesOrder` when the partner typed a total (it is spread over
+  the lines in proportion to their prices). Square needs whole-cent unit prices, so a
+  typed total that doesn't divide evenly is billed as one lot per line (see
+  `docs/integrations.md`).
 - **Square:** use the order's `id` as the never-reused order id, `paymentTermsDays(customer)`
   for terms, `customer.email` when known, and store ids with
   `recordOrderStep(db, id, 'square', 'done', { externalId })` and

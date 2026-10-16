@@ -8,6 +8,7 @@ import type {
 } from '@/types/orders'
 import { CANS_PER_CASE, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
 import { customerKey } from '@/lib/db/customers'
+import { lineTotal, unitPrices } from '@/lib/db/orders'
 import { isIsoDate } from '@/lib/delivery'
 import { batchTitle } from '@/lib/batches'
 
@@ -64,24 +65,37 @@ export const orderProblem = (order: OrderInput): string | null => {
   return null
 }
 
+type PricedCustomer = Pick<Customer, 'price_per_can' | 'custom_cans'> | null | undefined
+
 /**
- * Price per can for an order. A customer's agreed price applies when the order uses
- * their custom cans (what the old "Custom order?" prompt asked), or to every order when
- * their price isn't tied to custom cans. Everyone else pays the default.
+ * Price per can for one order line. A line from the customer's custom batch is billed at
+ * their agreed price. A house-stock line is too, but only for a customer who isn't a
+ * custom-can account (custom_cans false: Ben Bridge's $1.35 is for regular cans); a
+ * custom-can customer pays the default for house stock. No agreed price: the default.
  */
-export const orderPricePerCan = (
-  customer: Pick<Customer, 'price_per_can' | 'custom_cans'> | null | undefined,
-  usesCustomCans: boolean
-) =>
-  customer?.price_per_can != null && (usesCustomCans || !customer.custom_cans)
+export const linePricePerCan = (customer: PricedCustomer, isCustomLine: boolean) =>
+  customer?.price_per_can != null && (isCustomLine || !customer.custom_cans)
     ? Number(customer.price_per_can)
     : DEFAULT_PRICE_PER_CAN
 
-/** Whether any line draws from a custom batch. */
-export const usesCustomCans = (
+/** Each line's automatic price per can, in line order. A line is custom when its batch is. */
+export const linePrices = (
   lines: Pick<OrderLineInput, 'batchId'>[],
-  batches: Pick<Batch, 'id' | 'isCustom'>[]
-) => lines.some((line) => batches.find((batch) => batch.id === line.batchId)?.isCustom ?? false)
+  batches: Pick<Batch, 'id' | 'isCustom'>[],
+  customer: PricedCustomer
+) =>
+  lines.map((line) =>
+    linePricePerCan(customer, batches.find((batch) => batch.id === line.batchId)?.isCustom ?? false)
+  )
+
+/**
+ * The automatic price of lines with these many cans at these prices per can: each line
+ * priced to the cent on its own, as the database totals them. Null when there are no cans.
+ */
+export const autoTotal = (cans: number[], prices: number[]): number | null =>
+  cans.some((n) => n > 0)
+    ? cans.reduce((sum, n, i) => sum + Math.round((priceForCans(n, prices[i]) ?? 0) * 100), 0) / 100
+    : null
 
 /**
  * Split a dollar total over parts in proportion to their weights, to the cent, so the
@@ -97,6 +111,39 @@ export const splitCents = (total: number, weights: number[]): number[] => {
       i === weights.length - 1 ? totalCents - given : Math.round((totalCents * weight) / sum)
     given += cents
     return cents / 100
+  })
+}
+
+/**
+ * What each line of an order is charged, in dollars and in line order: its line total,
+ * adjusted by a cent where needed so the lines add up to the order's total exactly (a
+ * typed total, spread over the lines by priceLines, can be a cent off once rounded). The
+ * Sales rows and the Square invoice lines both use these.
+ */
+export const lineAmounts = (order: {
+  total_price: number
+  lines: Pick<SalesOrderLine, 'cans' | 'line_total'>[]
+}) => {
+  const cents = order.lines.map((line) => Math.round(Number(line.line_total) * 100))
+  return splitCents(
+    Number(order.total_price),
+    cents.some((c) => c > 0) ? cents : order.lines.map((line) => line.cans)
+  )
+}
+
+/**
+ * How a typed total is booked over lines of these many cans at these automatic prices per
+ * can (spread in proportion by unitPrices): each line's dollar amount, as its Sales row and
+ * Square line will show it.
+ */
+export const typedLineAmounts = (cans: number[], prices: number[], total: number) => {
+  const units = unitPrices(cans, { pricePerCan: prices, totalPrice: total })
+  return lineAmounts({
+    total_price: total,
+    lines: cans.map((n, i) => ({
+      cans: n,
+      line_total: lineTotal({ cans: n, unit_price: units[i] }),
+    })),
   })
 }
 

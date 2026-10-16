@@ -1,16 +1,19 @@
 import { describe, it, expect } from 'vitest'
 import type { OrderInput } from '@/types/orders'
 import {
+  autoTotal,
   dbCustomerType,
   describeSheetRef,
-  orderPricePerCan,
+  lineAmounts,
+  linePricePerCan,
+  linePrices,
   orderProblem,
   priceForCans,
   sameOrder,
   shortfalls,
   splitCents,
   toCans,
-  usesCustomCans,
+  typedLineAmounts,
 } from './orders'
 
 const order = (over: Partial<OrderInput> = {}): OrderInput => ({
@@ -117,33 +120,92 @@ describe('dbCustomerType', () => {
   })
 })
 
-describe('orderPricePerCan', () => {
+describe('line prices', () => {
   const hotelVintage = { price_per_can: 2, custom_cans: true }
+  const benBridge = { price_per_can: 1.35, custom_cans: false }
+  const batches = [
+    { id: 45, isCustom: false },
+    { id: 22, isCustom: true },
+  ]
 
-  it("charges a custom-can customer's price when the order uses their custom cans", () => {
-    expect(orderPricePerCan(hotelVintage, true)).toBe(2)
+  it("charges a custom line at the customer's price", () => {
+    expect(linePricePerCan(hotelVintage, true)).toBe(2)
   })
 
-  it('charges the default when they order house stock only', () => {
-    expect(orderPricePerCan(hotelVintage, false)).toBe(1.5)
+  it('charges a custom-can customer the default for house stock', () => {
+    expect(linePricePerCan(hotelVintage, false)).toBe(1.5)
   })
 
-  it('charges a price not tied to custom cans on every order', () => {
-    expect(orderPricePerCan({ price_per_can: 1.4, custom_cans: false }, false)).toBe(1.4)
+  it("charges house stock at the price of a customer who isn't a custom-can account", () => {
+    expect(linePricePerCan(benBridge, false)).toBe(1.35)
   })
 
-  it('charges the default to everyone else', () => {
-    expect(orderPricePerCan({ price_per_can: null, custom_cans: true }, true)).toBe(1.5)
-    expect(orderPricePerCan(null, false)).toBe(1.5)
+  it('charges the default when there is no agreed price', () => {
+    expect(linePricePerCan({ price_per_can: null, custom_cans: true }, true)).toBe(1.5)
+    expect(linePricePerCan(null, false)).toBe(1.5)
   })
 
-  it('reads whether an order uses custom cans from its batches', () => {
-    const batches = [
-      { id: 45, isCustom: false },
-      { id: 22, isCustom: true },
-    ]
-    expect(usesCustomCans([{ batchId: 45 }], batches)).toBe(false)
-    expect(usesCustomCans([{ batchId: 45 }, { batchId: 22 }], batches)).toBe(true)
+  it('prices each line of a mixed order on its own, by its batch', () => {
+    const mixed = [{ batchId: 22 }, { batchId: 45 }]
+    expect(linePrices(mixed, batches, hotelVintage)).toEqual([2, 1.5])
+    expect(linePrices(mixed, batches, benBridge)).toEqual([1.35, 1.35])
+    expect(linePrices(mixed, batches, null)).toEqual([1.5, 1.5])
+    // No batch picked yet counts as house stock.
+    expect(linePrices([{ batchId: null }], batches, hotelVintage)).toEqual([1.5])
+  })
+
+  it('totals the lines, each to the cent', () => {
+    expect(autoTotal([240, 48], [2, 1.5])).toBe(552)
+    expect(autoTotal([24, 24], [1.66, 1.5])).toBe(75.84)
+    expect(autoTotal([0], [2])).toBeNull()
+    expect(autoTotal([], [])).toBeNull()
+  })
+})
+
+describe('lineAmounts', () => {
+  it("gives each line its own total when they add up to the order's", () => {
+    expect(
+      lineAmounts({
+        total_price: 552,
+        lines: [
+          { cans: 240, line_total: 480 },
+          { cans: 48, line_total: 72 },
+        ],
+      })
+    ).toEqual([480, 72])
+  })
+
+  it('moves the rounding of a typed total so the lines add up to it exactly', () => {
+    expect(
+      lineAmounts({
+        total_price: 500,
+        lines: [
+          { cans: 200, line_total: 333.34 },
+          { cans: 100, line_total: 166.67 },
+        ],
+      })
+    ).toEqual([333.33, 166.67])
+  })
+
+  it('splits by cans when the lines have no amounts', () => {
+    expect(
+      lineAmounts({
+        total_price: 0.03,
+        lines: [
+          { cans: 2, line_total: 0 },
+          { cans: 1, line_total: 0 },
+        ],
+      })
+    ).toEqual([0.02, 0.01])
+  })
+
+  it('books a typed total over the lines in proportion to their automatic prices', () => {
+    // Hotel Vintage: 240 custom cans at $2.00 and 48 house cans at $1.50 ($552), typed as $500.
+    const amounts = typedLineAmounts([240, 48], [2, 1.5], 500)
+    expect(amounts).toEqual([434.78, 65.22])
+    expect(amounts[0] + amounts[1]).toBe(500)
+    // One price for every can: an even spread over the cans.
+    expect(typedLineAmounts([120, 48], [1.5, 1.5], 250)).toEqual([178.57, 71.43])
   })
 })
 

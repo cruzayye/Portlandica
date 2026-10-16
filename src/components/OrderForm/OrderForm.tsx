@@ -28,13 +28,14 @@ import type { SalesOrderWithLines } from '@/lib/db/types'
 import { defaultDeliveryDate } from '@/lib/delivery'
 import { CANS_PER_CASE, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
 import {
-  orderPricePerCan,
+  PRODUCT_NAMES,
+  autoTotal,
+  linePrices,
   orderProblem,
-  priceForCans,
   shortfallMessage,
   shortfalls,
   toCans,
-  usesCustomCans,
+  typedLineAmounts,
 } from '@/lib/orders'
 import type {
   BatchOption,
@@ -183,10 +184,13 @@ export default function OrderForm() {
   ]
   const totalCans = lines.reduce((sum, line) => sum + (line.cans ?? 0), 0)
 
-  // The customer's agreed price applies when the order uses their custom cans, as the old
-  // "Custom order?" prompt asked; it now follows from the batches picked.
-  const pricePerCan = orderPricePerCan(customer, usesCustomCans(lines, batches))
-  const autoPrice = priceForCans(totalCans, pricePerCan)
+  // Each line has its own price per can: a customer's custom cans at their agreed price,
+  // house stock at $1.50 unless their price isn't tied to custom cans. It follows from the
+  // batches picked, so there's no "Custom order?" prompt.
+  const pricedLines = lines.filter((line) => (line.cans ?? 0) > 0)
+  const lineCans = pricedLines.map((line) => line.cans ?? 0)
+  const pricePerCan = linePrices(pricedLines, batches, customer)
+  const autoPrice = autoTotal(lineCans, pricePerCan)
   // A donation is always $0. Otherwise a typed-in price holds until the automatic price
   // changes (cans, customer or batch); then the automatic price takes over again.
   const price = fields.isDonation
@@ -194,6 +198,12 @@ export default function OrderForm() {
     : typedPrice && typedPrice.autoPrice === autoPrice
       ? typedPrice.value
       : autoPrice
+  const typedOver =
+    !fields.isDonation &&
+    autoPrice !== null &&
+    price !== null &&
+    price > 0 &&
+    Math.round(price * 100) !== Math.round(autoPrice * 100)
   // A sale with cans but no price is either a donation or a mistake.
   const needsPrice = !fields.isDonation && totalCans > 0 && !((price ?? 0) > 0)
   const createInvoice = fields.createInvoice && !fields.isDonation
@@ -411,6 +421,26 @@ export default function OrderForm() {
         </TextField>
       </Box>
     )
+  }
+
+  // Under the Price: what each line costs, or how a typed price is split over the lines.
+  const priceNote = () => {
+    if (autoPrice === null) return undefined
+    if (typedOver) {
+      if (pricedLines.length === 1) return `Typed price (automatic: ${money(autoPrice)})`
+      const amounts = typedLineAmounts(lineCans, pricePerCan, price!)
+      const split = pricedLines
+        .map((line, i) => `${PRODUCT_NAMES[line.product]} ${money(amounts[i])}`)
+        .join(' · ')
+      return `Typed price, split in proportion to each line's automatic price: ${split} (automatic: ${money(autoPrice)})`
+    }
+    return pricedLines
+      .map((line, i) => {
+        const whose =
+          customer && pricePerCan[i] !== DEFAULT_PRICE_PER_CAN ? ` (${customer.name}'s price)` : ''
+        return `${PRODUCT_NAMES[line.product]}: ${lineCans[i].toLocaleString('en-US')} cans at ${money(pricePerCan[i])}${whose}`
+      })
+      .join(' · ')
   }
 
   const deliverySwitch = (type: FormDeliveryType) => (
@@ -642,13 +672,7 @@ export default function OrderForm() {
             fullWidth
             disabled={fields.isDonation}
             error={needsPrice}
-            helperText={
-              fields.isDonation
-                ? 'Donations go on the Donations tab at $0'
-                : pricePerCan !== DEFAULT_PRICE_PER_CAN && customer
-                  ? `${money(pricePerCan)} a can: ${customer.name}'s price`
-                  : undefined
-            }
+            helperText={fields.isDonation ? 'Donations go on the Donations tab at $0' : priceNote()}
             slotProps={{
               htmlInput: { min: 0, step: 0.01 },
               input: { startAdornment: <Typography mr={0.5}>$</Typography> },
