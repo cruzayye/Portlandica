@@ -162,7 +162,7 @@ select count(*) from customers;  -- about 237
 select id, name from inventory
 where "isCustom" and archived_at is null and customer_id is null;  -- no rows
 select name, price_per_can, payment_terms_days from customers
-where price_per_can is not null or payment_terms_days is not null;  -- the six agreed prices, Sysco on 65
+where price_per_can is not null or payment_terms_days is not null;  -- the eight agreed prices, Sysco on 65
 ```
 
 **Undo:** `update inventory set customer_id = null where customer_id is not null;` then

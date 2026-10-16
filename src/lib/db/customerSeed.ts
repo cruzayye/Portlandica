@@ -17,6 +17,8 @@ export const CUSTOMER_PRICING: Record<string, number> = {
   'Que Dice': 2.0,
   'Hotel Vintage': 2.0,
   'Woodlark Hotel Portland': 2.0,
+  'Ben Bridge Jeweler (Downtown)': 1.35,
+  'Ben Bridge Jeweler (Washington Square)': 1.35,
 }
 
 /** Payment terms that differ from the 30-day default. Sysco Net 65 confirmed 2026-10-12. */
