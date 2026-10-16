@@ -272,7 +272,7 @@ describe('addBatch', () => {
     expect(consoleError).toHaveBeenCalledTimes(1)
   })
 
-  it('explains a missing customer and an account the database does not know', async () => {
+  it('explains a missing customer and a server key the database refuses', async () => {
     mocks.recordFill.mockRejectedValueOnce(raise('customer_not_found'))
     expect(await addBatch(fill({ kind: 'custom', customerId: 9 }))).toEqual({
       ok: false,
@@ -282,7 +282,7 @@ describe('addBatch', () => {
     mocks.recordFill.mockRejectedValueOnce(raise('not_partner', 'Only partners', '42501'))
     expect(await addBatch(fill())).toEqual({
       ok: false,
-      error: expect.stringContaining('partner list in Supabase'),
+      error: expect.stringContaining('SUPABASE_SECRET_KEY'),
     })
   })
 })

@@ -45,7 +45,7 @@ const BATCH_GONE = 'This batch no longer exists. Refresh the list.'
 
 const DB_MESSAGES: Partial<Record<DbErrorCode, string>> = {
   not_partner:
-    "The database doesn't recognize this account as a partner. Its email also has to be on the partner list in Supabase.",
+    'The database refused the app. Check that SUPABASE_SECRET_KEY in Vercel is the secret key (see SETUP.md).',
   batch_not_found: BATCH_GONE,
   batch_archived: 'This batch is archived. Unarchive it first.',
   customer_not_found: 'That customer no longer exists. Refresh and pick again.',

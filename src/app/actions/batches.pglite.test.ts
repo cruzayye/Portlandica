@@ -4,13 +4,13 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 
 // The Inventory tab's actions against the real migrations: PGlite with the Supabase
 // stand-in and the REST stand-in the db module tests use, so the ledger functions, RLS and
-// argument names are all exercised. Sign-in itself is covered by auth.test.ts.
-
-type Partner = { role: 'authenticated'; sub: string; email: string }
+// argument names are all exercised. The server client runs as the service role, as the
+// app's does with the secret key, and nobody is on the partner list, as in production.
+// Sign-in itself is covered by auth.test.ts.
 
 const session = vi.hoisted(() => ({
   pg: null as unknown as PGlite,
-  auth: null as unknown as Partner,
+  auth: null as unknown as TestAuth,
 }))
 
 vi.mock('@/lib/supabase/server', () => ({
@@ -28,7 +28,7 @@ import type { NewBatchInput } from '@/components/Inventory/types'
 import { createCustomer } from '@/lib/db/customers'
 import { applyOrderInventory, createSalesOrder, voidSalesOrder } from '@/lib/db/orders'
 import { fakeSupabase } from '@/lib/db/testing/fakeSupabase'
-import { JOHNNY, PAUL, STRANGER, createMigratedDb } from '@/lib/db/testing/testDb'
+import { ANON, SERVICE, createMigratedDb, type TestAuth } from '@/lib/db/testing/testDb'
 import {
   addBatch,
   archiveInventoryBatch,
@@ -62,21 +62,21 @@ describe('Inventory actions on the ledger', () => {
   let base: PGlite
 
   beforeAll(async () => {
-    base = await createMigratedDb()
+    base = await createMigratedDb({ partners: false })
   }, 60_000)
   afterAll(async () => {
     await base.close()
   })
   beforeEach(async () => {
     session.pg = (await base.clone()) as PGlite
-    session.auth = PAUL
+    session.auth = SERVICE
   })
   afterEach(async () => {
     await session.pg.close()
   })
 
   it('records house, custom and dog-water fills and lists them', async () => {
-    const rose = await createCustomer(fakeSupabase(session.pg, PAUL), {
+    const rose = await createCustomer(fakeSupabase(session.pg, SERVICE), {
       name: 'Rose City Taps',
       custom_cans: true,
     })
@@ -199,17 +199,19 @@ describe('Inventory actions on the ledger', () => {
   })
 
   it('shows orders on the history, and who made each change', async () => {
-    const johnny = fakeSupabase(session.pg, JOHNNY)
-    const hotel = await createCustomer(johnny, { name: 'Hotel Vintage', custom_cans: true })
-    const { order } = await createSalesOrder(johnny, {
+    const app = fakeSupabase(session.pg, SERVICE)
+    const hotel = await createCustomer(app, { name: 'Hotel Vintage', custom_cans: true })
+    const { order } = await createSalesOrder(app, {
       idempotency_key: 'order-hotel-vintage-1002',
       delivery_type: 'drop',
       customer_id: hotel.id,
       order_date: '2026-10-02',
       lines: [{ product: 'still', cans: 1440, batch_id: 22, unit_price: 2 }],
     })
-    await applyOrderInventory(johnny, order.id)
-    await voidSalesOrder(fakeSupabase(session.pg, PAUL), order.id, 'Came off house stock')
+    await applyOrderInventory(app, order.id)
+    await voidSalesOrder(app, order.id, 'Came off house stock')
+    // Counted in the SQL Editor: a direct database session, not the app.
+    await session.pg.query(`select public.adjust_batch(22, 2616, 'Counted in the SQL Editor')`)
 
     const summary = {
       id: order.id,
@@ -220,6 +222,7 @@ describe('Inventory actions on the ledger', () => {
     expect(
       expectOk(await getBatchHistory(22)).entries.map((e) => [e.reason, e.change, e.by, e.order])
     ).toEqual([
+      ['adjustment', -24, 'system', null],
       ['void', 1440, 'team', summary],
       ['order', -1440, 'team', summary],
       ['opening', 2640, 'system', null],
@@ -242,12 +245,13 @@ describe('Inventory actions on the ledger', () => {
     })
   })
 
-  it('explains when the database does not treat the account as a partner', async () => {
-    session.auth = STRANGER
+  it('says to check the key when the database refuses the server', async () => {
+    // What happens if SUPABASE_SECRET_KEY holds the publishable key instead.
+    session.auth = ANON
 
     expect(await addBatch(houseFill)).toEqual({
       ok: false,
-      error: expect.stringContaining('partner list in Supabase'),
+      error: expect.stringContaining('SUPABASE_SECRET_KEY'),
     })
   })
 })

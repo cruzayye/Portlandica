@@ -11,7 +11,7 @@ import {
   type NewSalesOrder,
 } from '@/lib/db/orders'
 import { fakeSupabase } from '@/lib/db/testing/fakeSupabase'
-import { PAUL, createMigratedDb } from '@/lib/db/testing/testDb'
+import { SERVICE, createMigratedDb } from '@/lib/db/testing/testDb'
 import type { Db } from '@/lib/db/types'
 
 const steps = vi.hoisted(() => ({
@@ -41,14 +41,16 @@ let pg: PGlite
 let db: Db
 
 beforeAll(async () => {
-  base = await createMigratedDb()
+  // As in production: nobody is on the partner list.
+  base = await createMigratedDb({ partners: false })
 }, 60_000)
 afterAll(async () => {
   await base.close()
 })
 beforeEach(async () => {
   pg = (await base.clone()) as PGlite
-  db = fakeSupabase(pg, PAUL)
+  // The app's server client: the secret key, so the service role.
+  db = fakeSupabase(pg, SERVICE)
   steps.writeOrderToSheet
     .mockReset()
     .mockResolvedValue({ ref: 'Sales!A3126:V3127', locationAdded: false })

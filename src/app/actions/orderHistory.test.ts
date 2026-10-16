@@ -12,7 +12,7 @@ import {
   type NewSalesOrder,
 } from '@/lib/db/orders'
 import { fakeSupabase } from '@/lib/db/testing/fakeSupabase'
-import { PAUL, createMigratedDb } from '@/lib/db/testing/testDb'
+import { SERVICE, createMigratedDb } from '@/lib/db/testing/testDb'
 
 const mocks = vi.hoisted(() => ({
   pg: null as PGlite | null,
@@ -26,8 +26,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/supabase/server', async () => {
   const { fakeSupabase } = await import('@/lib/db/testing/fakeSupabase')
-  const { PAUL } = await import('@/lib/db/testing/testDb')
-  return { createClient: async () => fakeSupabase(mocks.pg!, PAUL) }
+  const { SERVICE } = await import('@/lib/db/testing/testDb')
+  // The app's server uses the secret key: the service role.
+  return { createClient: async () => fakeSupabase(mocks.pg!, SERVICE) }
 })
 // Sign-in is covered by src/app/actions/auth.test.ts; act as a signed-in device here.
 vi.mock('@/lib/auth/requireUser', () => ({
@@ -47,10 +48,11 @@ vi.mock('@/lib/square', () => ({ createDraftInvoice: mocks.createDraftInvoice })
 import { listOrders, retryOrder, voidOrder } from './orderHistory'
 
 let base: PGlite
-const db = () => fakeSupabase(mocks.pg!, PAUL)
+const db = () => fakeSupabase(mocks.pg!, SERVICE)
 
 beforeAll(async () => {
-  base = await createMigratedDb()
+  // As in production: nobody is on the partner list.
+  base = await createMigratedDb({ partners: false })
 }, 60_000)
 afterAll(async () => {
   await base.close()
