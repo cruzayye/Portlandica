@@ -1,30 +1,26 @@
-import { isAuthRetryableFetchError, type User } from '@supabase/supabase-js'
-import { createClient } from '@/lib/supabase/server'
-import { getAllowlist, isAllowedEmail } from './allowlist'
-import { AUTH_UNAVAILABLE, NOT_A_PARTNER, SIGNED_OUT, type AuthFailure } from './authFailure'
+import { cookies } from 'next/headers'
+import { getAuthConfig } from './config'
+import { SESSION_COOKIE, verifySessionToken } from './session'
+import { SIGNED_OUT, SIGN_IN_NOT_SET_UP, type AuthFailure } from './authFailure'
 
 export type { AuthFailure } from './authFailure'
 
 /**
- * Call this first in every server action. Server actions can be called
- * directly over HTTP, so each one checks the caller itself; the redirect in
- * src/proxy.ts only covers page loads.
+ * Call this first in every server action:
  *
- * getUser() asks Supabase Auth to validate the session on every call, so a
- * deleted user stops working straight away.
+ *   const { failure } = await requireUser()
+ *   if (failure) return failure
+ *
+ * Server actions can be called directly over HTTP, so each one checks the team session
+ * cookie itself; the redirect in src/proxy.ts only covers page loads. The check needs no
+ * network call: the cookie is valid when it is signed with SESSION_SECRET, hasn't expired
+ * and was made with the current TEAM_PASSWORD.
  */
-export const requireUser = async (): Promise<
-  { user: User; failure: null } | { user: null; failure: AuthFailure }
-> => {
-  const supabase = await createClient()
-  const { data, error } = await supabase.auth.getUser()
+export const requireUser = async (): Promise<{ failure: AuthFailure | null }> => {
+  const auth = getAuthConfig()
+  if (!auth.ok) return { failure: { authError: SIGN_IN_NOT_SET_UP } }
 
-  if (!data.user) {
-    const authError = isAuthRetryableFetchError(error) ? AUTH_UNAVAILABLE : SIGNED_OUT
-    return { user: null, failure: { authError } }
-  }
-  if (!isAllowedEmail(data.user.email, getAllowlist())) {
-    return { user: null, failure: { authError: NOT_A_PARTNER } }
-  }
-  return { user: data.user, failure: null }
+  const token = (await cookies()).get(SESSION_COOKIE)?.value
+  if (!verifySessionToken(token, auth.config)) return { failure: { authError: SIGNED_OUT } }
+  return { failure: null }
 }

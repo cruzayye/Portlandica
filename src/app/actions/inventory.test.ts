@@ -44,9 +44,9 @@ const db = vi.hoisted(() => {
 })
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => db.client }))
-// Sign-in is covered by src/app/actions/auth.test.ts; act as a signed-in partner here.
+// Sign-in is covered by src/app/actions/auth.test.ts; act as a signed-in device here.
 vi.mock('@/lib/auth/requireUser', () => ({
-  requireUser: async () => ({ user: { id: 'user-1', email: 'partner@example.com' }, failure: null }),
+  requireUser: async () => ({ failure: null }),
 }))
 
 import { decrementInventory } from './inventory'

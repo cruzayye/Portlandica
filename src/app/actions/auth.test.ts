@@ -2,23 +2,27 @@
 /// <reference types="vite/client" />
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// Every export of a 'use server' file can be called over HTTP, so each one
-// must turn away callers who aren't signed-in partners before touching
-// Supabase, the Google Sheet or Trello. This test calls every export of every
-// action file in this folder (new files included), so an action without the
-// check fails here.
+// Every export of a 'use server' file can be called over HTTP, so each one must turn away
+// callers without a valid team session before touching Supabase, the Google Sheet or
+// Trello. This test calls every export of every action file in this folder (new files
+// included) with each kind of cookie that must be refused, so an action without the
+// two-line requireUser() check fails here.
 
 const mocks = vi.hoisted(() => ({
-  getUser: vi.fn(),
-  from: vi.fn(),
+  cookies: new Map<string, string>(),
+  createClient: vi.fn(),
   appendOrder: vi.fn(),
   getLocationsFromSheet: vi.fn(),
   createTrelloCard: vi.fn(),
 }))
 
-vi.mock('@/lib/supabase/server', () => ({
-  createClient: async () => ({ auth: { getUser: mocks.getUser }, from: mocks.from }),
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    get: (name: string) =>
+      mocks.cookies.has(name) ? { name, value: mocks.cookies.get(name) } : undefined,
+  }),
 }))
+vi.mock('@/lib/supabase/server', () => ({ createClient: mocks.createClient }))
 vi.mock('@/lib/google/sheets', () => ({
   appendOrder: mocks.appendOrder,
   getLocationsFromSheet: mocks.getLocationsFromSheet,
@@ -26,7 +30,9 @@ vi.mock('@/lib/google/sheets', () => ({
 vi.mock('@/lib/trello', () => ({ createTrelloCard: mocks.createTrelloCard }))
 
 import * as orderActions from './orders'
-import { NOT_A_PARTNER, SIGNED_OUT } from '@/lib/auth/authFailure'
+import { SIGNED_OUT, SIGN_IN_NOT_SET_UP } from '@/lib/auth/authFailure'
+import { SESSION_COOKIE } from '@/lib/auth/session'
+import { rejectedTokens, stubTestAuthEnv, validToken } from '@/lib/auth/testing/sessions'
 
 type Action = (...args: unknown[]) => Promise<unknown>
 
@@ -48,33 +54,46 @@ const THROWS = new Set(['decrementInventory'])
 const callWithDummyArgs = (action: Action) => action({}, 1, 2, null, false)
 
 const expectNothingTouched = () => {
-  expect(mocks.from).not.toHaveBeenCalled()
+  expect(mocks.createClient).not.toHaveBeenCalled()
   expect(mocks.appendOrder).not.toHaveBeenCalled()
   expect(mocks.getLocationsFromSheet).not.toHaveBeenCalled()
   expect(mocks.createTrelloCard).not.toHaveBeenCalled()
 }
 
 beforeEach(() => {
-  vi.stubEnv('ALLOWED_EMAILS', 'partner@example.com')
+  mocks.cookies.clear()
+  stubTestAuthEnv()
   vi.clearAllMocks()
+  vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
 afterEach(() => {
   vi.unstubAllEnvs()
+  vi.restoreAllMocks()
 })
 
-describe.each([
-  {
-    caller: 'a signed-out caller',
-    user: null,
+const refusedCallers = [
+  { caller: 'a signed-out caller', cookie: null, env: {}, message: SIGNED_OUT },
+  ...Object.entries(rejectedTokens()).map(([kind, cookie]) => ({
+    caller: `a caller whose cookie is ${kind}`,
+    cookie,
+    env: {},
     message: SIGNED_OUT,
-  },
+  })),
   {
-    caller: 'a signed-in non-partner',
-    user: { id: 'user-2', email: 'stranger@example.com' },
-    message: NOT_A_PARTNER,
+    caller: 'any caller while TEAM_PASSWORD is not set',
+    cookie: validToken(),
+    env: { TEAM_PASSWORD: '' },
+    message: SIGN_IN_NOT_SET_UP,
   },
-])('server actions called by $caller', ({ user, message }) => {
+]
+
+describe.each(refusedCallers)('server actions called by $caller', ({ cookie, env, message }) => {
+  beforeEach(() => {
+    if (cookie !== null) mocks.cookies.set(SESSION_COOKIE, cookie)
+    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
+  })
+
   it('finds the action files', () => {
     expect(actions.map((a) => a.label)).toEqual(
       expect.arrayContaining(['inventory.ts getInventory', 'orders.ts createOrder'])
@@ -82,8 +101,6 @@ describe.each([
   })
 
   it.each(actions)('$label is refused before touching any data', async ({ name, action }) => {
-    mocks.getUser.mockResolvedValue({ data: { user }, error: null })
-
     if (THROWS.has(name)) {
       await expect(callWithDummyArgs(action)).rejects.toThrow(message)
     } else {
@@ -93,12 +110,9 @@ describe.each([
   })
 })
 
-describe('server actions called by a partner', () => {
+describe('server actions called by a signed-in device', () => {
   it('get the real result', async () => {
-    mocks.getUser.mockResolvedValue({
-      data: { user: { id: 'user-1', email: 'partner@example.com' } },
-      error: null,
-    })
+    mocks.cookies.set(SESSION_COOKIE, validToken())
     mocks.getLocationsFromSheet.mockResolvedValue([
       { name: 'Dame', address: '123 NE Broadway', businessType: 'Restaurant' },
       { name: 'Dame', address: '123 NE Broadway', businessType: 'Restaurant' },

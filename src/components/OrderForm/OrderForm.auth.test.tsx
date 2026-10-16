@@ -5,7 +5,7 @@ import type { Inventory } from '@/types/orders'
 import { SIGNED_OUT } from '@/lib/auth/authFailure'
 
 // Kept apart from OrderForm.test.tsx: these cover what the form does when a
-// server action refuses the caller (signed out, or not on the partner list).
+// server action refuses the caller (no valid team session).
 
 const getInventory = vi.fn()
 const createOrder = vi.fn()

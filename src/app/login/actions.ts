@@ -1,74 +1,43 @@
 'use server'
 
-// Sign-in actions. These live outside src/app/actions on purpose: they must
-// work for people who are not signed in yet, so they don't call requireUser().
+// Sign-in and sign-out. These live outside src/app/actions on purpose: signIn has to work
+// before anyone is signed in, so it doesn't call requireUser().
 
-import { headers } from 'next/headers'
+import { cookies } from 'next/headers'
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
-import { getAllowlist, isAllowedEmail } from '@/lib/auth/allowlist'
+import { SIGN_IN_NOT_SET_UP, WRONG_PASSWORD } from '@/lib/auth/authFailure'
+import { getAuthConfig } from '@/lib/auth/config'
+import {
+  SESSION_COOKIE,
+  WRONG_PASSWORD_DELAY_MS,
+  createSessionToken,
+  passwordMatches,
+  sessionCookieOptions,
+} from '@/lib/auth/session'
 
-export type LoginState =
-  | { status: 'idle' }
-  | { status: 'sent'; email: string }
-  | { status: 'error'; message: string }
+export type SignInState = { status: 'idle' } | { status: 'error'; message: string }
 
-// Where Supabase sends people back to after they click the email link or
-// finish Google sign-in. It has to be listed under Redirect URLs in Supabase
-// (see SETUP.md). Server Actions reject cross-origin requests, so the Origin
-// header is this site's own address.
-const callbackUrl = async () => {
-  const requestHeaders = await headers()
-  const origin =
-    requestHeaders.get('origin') ??
-    `${requestHeaders.get('x-forwarded-proto') ?? 'https'}://${requestHeaders.get('host')}`
-  return `${origin}/auth/callback`
-}
+const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
 
-export const sendMagicLink = async (_prev: LoginState, formData: FormData): Promise<LoginState> => {
-  const email = String(formData.get('email') ?? '')
-    .trim()
-    .toLowerCase()
-  if (!email.includes('@')) return { status: 'error', message: 'Enter your email address.' }
+export const signIn = async (_previous: SignInState, formData: FormData): Promise<SignInState> => {
+  const auth = getAuthConfig()
+  if (!auth.ok) return { status: 'error', message: SIGN_IN_NOT_SET_UP }
 
-  // Only partners are sent a link. Everyone gets the same reply, so this
-  // form can't be used to find out who is on the list.
-  if (!isAllowedEmail(email, getAllowlist())) return { status: 'sent', email }
-
-  const supabase = await createClient()
-  const { error } = await supabase.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: await callbackUrl() },
-  })
-  if (error) {
-    console.error('Magic link failed:', error.message)
-    return { status: 'error', message: `Could not send the sign-in email: ${error.message}` }
+  const input = formData.get('password')
+  if (typeof input !== 'string' || !passwordMatches(input, auth.config.password)) {
+    // Every wrong guess waits, which slows down anyone trying passwords one after another.
+    await pause(WRONG_PASSWORD_DELAY_MS)
+    return { status: 'error', message: WRONG_PASSWORD }
   }
-  return { status: 'sent', email }
+
+  const cookieStore = await cookies()
+  cookieStore.set(SESSION_COOKIE, createSessionToken(auth.config), sessionCookieOptions())
+  redirect('/')
 }
 
-export const signInWithGoogle = async () => {
-  if (process.env.ENABLE_GOOGLE_LOGIN !== 'true') redirect('/login')
-
-  const supabase = await createClient()
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider: 'google',
-    options: {
-      redirectTo: await callbackUrl(),
-      // Let partners with several Google accounts pick the right one.
-      queryParams: { prompt: 'select_account' },
-    },
-  })
-  if (error || !data.url) {
-    console.error('Google sign-in failed:', error?.message)
-    redirect('/login?error=google')
-  }
-  redirect(data.url)
-}
-
+/** Signs this device out. Other devices stay signed in. */
 export const signOut = async () => {
-  const supabase = await createClient()
-  // 'local' signs out this browser only, not the partner's other devices.
-  await supabase.auth.signOut({ scope: 'local' })
+  const cookieStore = await cookies()
+  cookieStore.set(SESSION_COOKIE, '', { ...sessionCookieOptions(), maxAge: 0 })
   redirect('/login')
 }

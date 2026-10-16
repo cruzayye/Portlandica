@@ -14,9 +14,9 @@ vi.mock('@/lib/google/sheets', () => ({
 }))
 vi.mock('@/app/actions/inventory', () => ({ decrementInventory: steps.decrementInventory }))
 vi.mock('@/lib/trello', () => ({ createTrelloCard: steps.createTrelloCard }))
-// Sign-in is covered by src/app/actions/auth.test.ts; act as a signed-in partner here.
+// Sign-in is covered by src/app/actions/auth.test.ts; act as a signed-in device here.
 vi.mock('@/lib/auth/requireUser', () => ({
-  requireUser: async () => ({ user: { id: 'user-1', email: 'partner@example.com' }, failure: null }),
+  requireUser: async () => ({ failure: null }),
 }))
 
 import { createOrder } from './orders'
