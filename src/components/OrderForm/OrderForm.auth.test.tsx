@@ -39,7 +39,6 @@ const data: OrderFormData = {
       isCustom: false,
       isStill: true,
       customer_id: null,
-      product: 'water',
       fillDate: '2026-09-26',
       source: null,
     },

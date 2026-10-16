@@ -83,14 +83,13 @@ export const getOrderFormData = async (): Promise<OrderFormData | AuthFailure> =
       customers: customerOptions(customers, locations),
       businessTypes: businessTypes(customers, locations),
       batches: batches.map(
-        ({ id, name, count, isStill, isCustom, customer_id, product, fillDate, source }) => ({
+        ({ id, name, count, isStill, isCustom, customer_id, fillDate, source }) => ({
           id,
           name,
           count,
           isStill,
           isCustom,
           customer_id,
-          product,
           fillDate,
           source,
         })

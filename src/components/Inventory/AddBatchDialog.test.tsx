@@ -109,17 +109,32 @@ describe('Add batch', () => {
     )
   })
 
-  it('records dog water', async () => {
-    addBatch.mockResolvedValue({ ok: true, batch: batch({ id: 103, product: 'dog_water' }) })
+  it('offers still and sparkling only, so dog water is a house still batch by name', async () => {
+    addBatch.mockResolvedValue({
+      ok: true,
+      batch: batch({ id: 103, name: 'Portlandica Dog water' }),
+    })
     const { user, dialog, cases, pickSource, submit } = setup()
 
-    await user.click(within(dialog).getByRole('button', { name: 'Dog water' }))
+    const product = within(dialog).getByRole('group', { name: 'Product' })
+    expect(
+      within(product)
+        .getAllByRole('button')
+        .map((button) => button.textContent)
+    ).toEqual(['Still', 'Sparkling'])
+    await user.clear(within(dialog).getByLabelText(/batch name/i))
+    await user.type(within(dialog).getByLabelText(/batch name/i), 'Portlandica Dog water')
     await user.type(cases(), '10')
     await pickSource('North Powder')
     await submit()
 
     expect(addBatch).toHaveBeenCalledWith(
-      expect.objectContaining({ product: 'dog_water', cans: 240 })
+      expect.objectContaining({
+        kind: 'house',
+        product: 'still',
+        name: 'Portlandica Dog water',
+        cans: 240,
+      })
     )
   })
 

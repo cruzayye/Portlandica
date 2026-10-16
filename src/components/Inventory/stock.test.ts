@@ -11,16 +11,15 @@ import {
 import { batch } from './testing/fixtures'
 
 describe('productOf and fillColumns', () => {
-  it('tells still, sparkling and dog water apart', () => {
+  it('tells still and sparkling apart, with dog water as still stock', () => {
     expect(productOf(batch({ id: 1 }))).toBe('still')
     expect(productOf(batch({ id: 2, isStill: false }))).toBe('sparkling')
-    expect(productOf(batch({ id: 3, product: 'dog_water' }))).toBe('dog_water')
+    expect(productOf(batch({ id: 3, name: 'Portlandica Dog water' }))).toBe('still')
   })
 
-  it('records dog water as still water in dog-water cans', () => {
-    expect(fillColumns('still')).toEqual({ is_still: true, product: 'water' })
-    expect(fillColumns('sparkling')).toEqual({ is_still: false, product: 'water' })
-    expect(fillColumns('dog_water')).toEqual({ is_still: true, product: 'dog_water' })
+  it('records a fill as still or sparkling', () => {
+    expect(fillColumns('still')).toEqual({ is_still: true })
+    expect(fillColumns('sparkling')).toEqual({ is_still: false })
   })
 })
 
@@ -29,7 +28,7 @@ describe('groupBatches', () => {
     batch({ id: 1, name: 'Portlandica', count: 12000 }),
     batch({ id: 2, name: 'Dame', isCustom: true, customer_id: 5, count: 2760 }),
     batch({ id: 3, name: 'Portlandica - north powder', isStill: false, count: 4760 }),
-    batch({ id: 4, name: 'Portlandica Dog water', product: 'dog_water', count: 2376 }),
+    batch({ id: 4, name: 'Portlandica Dog water', count: 2376 }),
     batch({ id: 5, name: 'Que Dice', isCustom: true, count: 1200 }),
     batch({ id: 6, name: 'Old', archived_at: '2026-10-01T00:00:00Z', count: 0 }),
     batch({ id: 7, name: 'Portlandica', count: -24, fillDate: '2026-06-01' }),
@@ -39,10 +38,10 @@ describe('groupBatches', () => {
     expect(
       groupBatches(batches).map((g) => [g.product, g.kind, g.batches.map((b) => b.id), g.cans])
     ).toEqual([
-      ['still', 'house', [7, 1], 11976],
+      // The dog water batch is house still stock like any other.
+      ['still', 'house', [7, 1, 4], 14352],
       ['still', 'custom', [2, 5], 3960],
       ['sparkling', 'house', [3], 4760],
-      ['dog_water', 'house', [4], 2376],
     ])
   })
 
@@ -72,11 +71,20 @@ describe('lowStock', () => {
       lowStock([
         batch({ id: 1, count: 1000 }),
         batch({ id: 2, count: 5000, isCustom: true }),
-        batch({ id: 3, count: 5000, product: 'dog_water' }),
         batch({ id: 4, count: 5000, archived_at: '2026-10-01T00:00:00Z' }),
         batch({ id: 5, isStill: false, count: 2500 }),
       ])
     ).toEqual([{ product: 'still', cans: 1000 }])
+  })
+
+  it('counts the dog water batch as house still stock', () => {
+    expect(
+      lowStock([
+        batch({ id: 1, count: 1000 }),
+        batch({ id: 3, name: 'Portlandica Dog water', count: 1200 }),
+        batch({ id: 5, isStill: false, count: 2500 }),
+      ])
+    ).toEqual([])
   })
 
   it('adds up every house batch, below-zero ones included', () => {

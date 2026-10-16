@@ -7,12 +7,11 @@ import type { StockKind, StockProduct } from './types'
  */
 export const LOW_STOCK_THRESHOLD_CANS = 2_000
 
-export const PRODUCTS: StockProduct[] = ['still', 'sparkling', 'dog_water']
+export const PRODUCTS: StockProduct[] = ['still', 'sparkling']
 
 export const PRODUCT_LABELS: Record<StockProduct, string> = {
   still: 'Still',
   sparkling: 'Sparkling',
-  dog_water: 'Dog water',
 }
 
 export const KIND_LABELS: Record<StockKind, string> = {
@@ -20,15 +19,12 @@ export const KIND_LABELS: Record<StockKind, string> = {
   custom: 'Custom cans',
 }
 
-/** What a batch holds. Dog water is still water in dog-water cans. */
-export const productOf = (batch: Pick<Batch, 'isStill' | 'product'>): StockProduct =>
-  batch.product === 'dog_water' ? 'dog_water' : batch.isStill ? 'still' : 'sparkling'
+/** What a batch holds: still or sparkling ("Portlandica Dog water" is house still stock). */
+export const productOf = (batch: Pick<Batch, 'isStill'>): StockProduct =>
+  batch.isStill ? 'still' : 'sparkling'
 
 /** The batch columns record_fill takes for a product. */
-export const fillColumns = (product: StockProduct) =>
-  product === 'dog_water'
-    ? { is_still: true, product: 'dog_water' as const }
-    : { is_still: product === 'still', product: 'water' as const }
+export const fillColumns = (product: StockProduct) => ({ is_still: product === 'still' })
 
 export const kindOf = (batch: Pick<Batch, 'isCustom'>): StockKind =>
   batch.isCustom ? 'custom' : 'house'
@@ -52,8 +48,8 @@ export type BatchGroup = {
 }
 
 /**
- * Batches still in use, by product (still, sparkling, dog water) and then house stock
- * before custom cans. Groups with no batches are left out.
+ * Batches still in use, by product (still, then sparkling) and then house stock before
+ * custom cans. Groups with no batches are left out.
  */
 export const groupBatches = (batches: Batch[]): BatchGroup[] =>
   PRODUCTS.flatMap((product) =>

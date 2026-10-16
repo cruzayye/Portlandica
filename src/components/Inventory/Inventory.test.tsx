@@ -46,7 +46,7 @@ const stock = [
     fillDate: '2026-08-03',
     source: 'North Powder',
   }),
-  batch({ id: 33, name: 'Portlandica Dog water', product: 'dog_water', count: 2376 }),
+  batch({ id: 33, name: 'Portlandica Dog water', count: 2376 }),
   batch({
     id: 13,
     name: 'Que Dice',
@@ -80,22 +80,21 @@ describe('Inventory tab', () => {
     await screen.findByRole('region', { name: 'Still · House stock' })
     expect(
       screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'))
-    ).toEqual([
-      'Still · House stock',
-      'Still · Custom cans',
-      'Sparkling · House stock',
-      'Dog water · House stock',
-    ])
+    ).toEqual(['Still · House stock', 'Still · Custom cans', 'Sparkling · House stock'])
+    // The dog water batch is house still stock: 12,000 + 2,376 cans.
     expect(
-      within(section('Still · House stock')).getByText('12,000 cans', { selector: 'h3 + *' })
+      within(section('Still · House stock')).getByText('14,376 cans', { selector: 'h3 + *' })
     ).toBeInTheDocument()
+    expect(
+      within(section('Still · House stock')).getByRole('button', { name: /Portlandica Dog water/ })
+    ).toHaveTextContent('2,376 cans')
   })
 
   it('shows cans, cases and pallets, and who custom cans are for', async () => {
     render(<Inventory />)
 
     const house = await screen.findByRole('region', { name: 'Still · House stock' })
-    const row = within(house).getByRole('button', { name: /Portlandica/ })
+    const row = within(house).getByRole('button', { name: /Portlandica(?! Dog)/ })
     expect(row).toHaveTextContent('12,000 cans')
     expect(row).toHaveTextContent('500 cases')
     expect(row).toHaveTextContent('8.33 pallets')
@@ -256,7 +255,9 @@ describe('Inventory tab', () => {
     expect(await screen.findByText('Added Portlandica: 1,440 cans')).toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: 'Add batch' })).not.toBeInTheDocument()
     expect(
-      within(section('Still · House stock')).getAllByRole('button', { name: /Portlandica/ })
+      within(section('Still · House stock')).getAllByRole('button', {
+        name: /Portlandica(?! Dog)/,
+      })
     ).toHaveLength(2)
   })
 })

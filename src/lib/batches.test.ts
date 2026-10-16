@@ -15,7 +15,6 @@ const batch = (over: Partial<BatchOption> & { id: number }): BatchOption => ({
   isCustom: false,
   isStill: true,
   customer_id: null,
-  product: 'water',
   fillDate: '2026-01-01',
   source: null,
   ...over,
@@ -31,22 +30,23 @@ const inventory = [
   batch({ id: 4, name: 'Dame', isCustom: true, customer_id: DAME }),
   // Custom cans not linked to anyone yet.
   batch({ id: 5, name: 'Dame', isCustom: true, customer_id: null }),
-  batch({ id: 6, name: 'Portlandica Dog water', product: 'dog_water' }),
+  // Just a batch name: house still stock like any other.
+  batch({ id: 6, name: 'Portlandica Dog water' }),
 ]
 
 describe('batchesForCustomer', () => {
-  it('separates still from sparkling and leaves out dog water', () => {
-    expect(batchesForCustomer(inventory, 'still', null).map((b) => b.id)).toEqual([1])
+  it('separates still from sparkling, offering dog water as house still stock', () => {
+    expect(batchesForCustomer(inventory, 'still', null).map((b) => b.id)).toEqual([1, 6])
     expect(batchesForCustomer(inventory, 'sparkling', null).map((b) => b.id)).toEqual([2])
   })
 
   it("offers a customer's own custom cans, matched by customer id", () => {
-    expect(batchesForCustomer(inventory, 'still', DAME).map((b) => b.id)).toEqual([1, 4])
-    expect(batchesForCustomer(inventory, 'still', HOLLYWOOD).map((b) => b.id)).toEqual([1, 3])
+    expect(batchesForCustomer(inventory, 'still', DAME).map((b) => b.id)).toEqual([1, 4, 6])
+    expect(batchesForCustomer(inventory, 'still', HOLLYWOOD).map((b) => b.id)).toEqual([1, 3, 6])
   })
 
   it("never offers another customer's custom cans or unlinked ones, whatever the name", () => {
-    expect(batchesForCustomer(inventory, 'still', 999).map((b) => b.id)).toEqual([1])
+    expect(batchesForCustomer(inventory, 'still', 999).map((b) => b.id)).toEqual([1, 6])
   })
 })
 

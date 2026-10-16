@@ -64,7 +64,7 @@ export const SQUARE_NOT_SET_UP_FOR_VOID =
 export const squareOrderRef = (order: Pick<SalesOrder, 'id' | 'idempotency_key'>) =>
   `${order.id}-${order.idempotency_key.slice(0, 8)}`
 
-const PRODUCT_NAMES = { still: 'Still Cans', sparkling: 'Sparkling Cans', dog_water: 'Dog Water Cans' }
+const PRODUCT_NAMES = { still: 'Still Cans', sparkling: 'Sparkling Cans' }
 
 const isWholeCents = (dollars: number) => Math.abs(dollars * 100 - Math.round(dollars * 100)) < 1e-6
 

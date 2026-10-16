@@ -28,7 +28,6 @@ const batch = (over: Partial<BatchOption> & { id: number }): BatchOption => ({
   isCustom: false,
   isStill: true,
   customer_id: null,
-  product: 'water',
   fillDate: '2026-09-26',
   source: null,
   ...over,
@@ -187,7 +186,7 @@ describe('OrderForm batch selection', () => {
     expect(sent().lines).toEqual([{ product: 'still', cans: 120, batchId: 9 }])
   })
 
-  it("never offers someone else's custom cans, unlinked ones or dog water", async () => {
+  it("never offers someone else's custom cans or unlinked ones", async () => {
     const user = userEvent.setup({ delay: null })
     await renderForm(
       formData({
@@ -195,7 +194,6 @@ describe('OrderForm batch selection', () => {
           batch({ id: 1 }),
           batch({ id: 7, name: 'Dame', isCustom: true, customer_id: null }),
           batch({ id: 8, name: 'Hollywood Theatre', isCustom: true, customer_id: HOLLYWOOD }),
-          batch({ id: 33, name: 'Portlandica Dog water', product: 'dog_water' }),
         ],
       })
     )
@@ -207,6 +205,30 @@ describe('OrderForm batch selection', () => {
     expect(options.map((o) => o.textContent)).toEqual([
       'Portlandica Still · 2026-09-26 · 12,000 left',
     ])
+  })
+
+  it('offers the dog water batch with house still stock and sells it at the house price', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(
+      formData({
+        batches: [
+          batch({ id: 45 }),
+          batch({ id: 33, name: 'Portlandica Dog water', count: 2376, fillDate: '2026-08-25' }),
+        ],
+      })
+    )
+    await fillRequiredFields(user)
+    await user.click(screen.getByLabelText(/still batch/i))
+    expect((await screen.findAllByRole('option')).map((o) => o.textContent)).toEqual([
+      'Portlandica Still · 2026-09-26 · 12,000 left',
+      'Portlandica Dog water Still · 2026-08-25 · 2,376 left',
+    ])
+    await user.click(screen.getByRole('option', { name: /Dog water/ }))
+    expect(screen.getByLabelText('Price')).toHaveValue(180)
+
+    await user.click(submitButton())
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(sent().lines).toEqual([{ product: 'still', cans: 120, batchId: 33 }])
   })
 
   it('says when a custom-can customer has no custom batch linked yet', async () => {

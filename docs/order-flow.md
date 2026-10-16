@@ -80,7 +80,9 @@ Reference # so their cost lookup keeps working.
   never changed. The tab stays the list of locations.
 - The form offers house stock plus custom batches linked to the customer by
   `customer_id`. A custom batch with no `customer_id` is offered to nobody; link it first.
-  A line is custom when its batch is.
+  A line is custom when its batch is. Still or sparkling comes from the batch's
+  `"isStill"`; "Portlandica Dog water" is house still stock, offered and sold like any
+  other.
 - Each line has its own price per can (`linePrices` in `src/lib/orders.ts`), so an order
   that mixes a customer's custom cans with house stock is priced line by line. A line
   from their custom batch is at their `price_per_can`. A house-stock line is at their

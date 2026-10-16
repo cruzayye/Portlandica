@@ -20,10 +20,10 @@ ledger actions in `src/app/actions/batches.ts`.
 
 ## What partners see
 
-- **The list**, grouped Still / Sparkling / Dog water, house stock before custom cans.
-  Each batch shows cans, cases and pallets, its fill date and source. Custom batches show
-  the customer they are linked to, or "No customer linked". Counts below zero are flagged
-  in red.
+- **The list**, grouped Still / Sparkling, house stock before custom cans. "Portlandica
+  Dog water" is a batch name, listed with house still stock. Each batch shows cans, cases
+  and pallets, its fill date and source. Custom batches show the customer they are
+  linked to, or "No customer linked". Counts below zero are flagged in red.
 - **A banner** at the top when house still or house sparkling stock is under 2,000 cans,
   when any batch is below zero, or when `inventory_ledger_check` reports a mismatch. The
   2,000 is `LOW_STOCK_THRESHOLD_CANS` in `src/components/Inventory/stock.ts`.
@@ -31,8 +31,8 @@ ledger actions in `src/app/actions/batches.ts`.
   order (customer, date, voided), who, the note, and the count it left.
 - **Archived batches** are hidden behind "Show archived". Nothing can be deleted.
 - **Add batch**: house stock (named, "Portlandica" by default) or custom cans for a
-  customer picked from the customers table; still, sparkling or dog water; cases, water
-  source, fill date (today in Portland), and optionally cost, invoice number and a note.
+  customer picked from the customers table; still or sparkling; cases, water source,
+  fill date (today in Portland), and optionally cost, invoice number and a note.
 
 On phones the dialogs fill the screen (checked at 375 px wide).
 

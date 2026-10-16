@@ -75,7 +75,7 @@ describe('Inventory actions on the ledger', () => {
     await session.pg.close()
   })
 
-  it('records house, custom and dog-water fills and lists them', async () => {
+  it('records house and custom fills, dog water as house still stock, and lists them', async () => {
     const rose = await createCustomer(fakeSupabase(session.pg, SERVICE), {
       name: 'Rose City Taps',
       custom_cans: true,
@@ -91,16 +91,13 @@ describe('Inventory actions on the ledger', () => {
         product: 'sparkling',
       })
     ).batch
-    const dog = expectOk(
-      await addBatch({ ...houseFill, product: 'dog_water', name: 'Portlandica Dog water' })
-    ).batch
+    const dog = expectOk(await addBatch({ ...houseFill, name: 'Portlandica Dog water' })).batch
 
     expect(house).toMatchObject({
       name: 'Portlandica',
       count: 1440,
       isStill: true,
       isCustom: false,
-      product: 'water',
       fillDate: '2026-10-15',
       source: 'North Powder',
       invoiceNumber: 'INV-77',
@@ -111,7 +108,8 @@ describe('Inventory actions on the ledger', () => {
       customer_id: rose.id,
       isStill: false,
     })
-    expect(dog).toMatchObject({ product: 'dog_water', isStill: true, isCustom: false })
+    expect(dog).toMatchObject({ name: 'Portlandica Dog water', isStill: true, isCustom: false })
+    expect(dog).not.toHaveProperty('product')
 
     const loaded = expectOk(await loadInventory())
     expect(loaded.ledger).toEqual({ mismatches: [] })

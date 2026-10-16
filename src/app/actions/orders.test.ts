@@ -165,9 +165,20 @@ describe('getOrderFormData', () => {
       warnings: [],
     })
     expect(await findCustomerByName(db(), 'Crisp Salads')).toMatchObject({ city: 'Portland' })
-    // Batches come with what's left in them; the archived one is left out.
+    // Batches come with what's left in them; the archived one is left out. Dog water is
+    // house still stock.
     const batches = (data as { batches: { id: number; count: number }[] }).batches
-    expect(batches.find((b) => b.id === 45)).toMatchObject({ count: 12000, product: 'water' })
+    expect(batches.find((b) => b.id === 45)).toEqual({
+      id: 45,
+      name: 'Portlandica',
+      count: 12000,
+      isStill: true,
+      isCustom: false,
+      customer_id: null,
+      fillDate: '2026-09-26',
+      source: 'Opal Springs',
+    })
+    expect(batches.find((b) => b.id === 33)).toMatchObject({ isStill: true, isCustom: false })
   })
 
   it('still offers the saved customers when the locations tab cannot be read', async () => {

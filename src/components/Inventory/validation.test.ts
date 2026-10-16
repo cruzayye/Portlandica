@@ -36,7 +36,7 @@ describe('fillProblem', () => {
     expect(fillProblem(fill())).toBeNull()
     expect(fillProblem(fill({ kind: 'custom', name: null, customerId: 5 }))).toBeNull()
     expect(
-      fillProblem(fill({ product: 'dog_water', totalCost: 1200.5, invoiceNumber: 'A1' }))
+      fillProblem(fill({ product: 'sparkling', totalCost: 1200.5, invoiceNumber: 'A1' }))
     ).toBeNull()
   })
 

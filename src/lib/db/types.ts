@@ -38,19 +38,15 @@ export type CustomerInput = Omit<Customer, 'id' | 'name_key' | 'created_at' | 'u
 export type NewCustomer = Pick<CustomerInput, 'name'> & Partial<CustomerInput>
 export type CustomerPatch = Partial<CustomerInput>
 
-/** What is in the cans. Still vs sparkling stays in the batch's isStill. */
-export type BatchProduct = 'water' | 'dog_water'
-
 /** An inventory row with the columns the data-foundation migrations add. */
 export type Batch = Inventory & {
   initialCount: number | null
   customer_id: number | null
   archived_at: string | null
-  product: BatchProduct
 }
 
-/** What a customer buys on an order line. */
-export type LineProduct = 'still' | 'sparkling' | 'dog_water'
+/** What a customer buys on an order line: still or sparkling, as the batch's isStill says. */
+export type LineProduct = 'still' | 'sparkling'
 
 export type DeliveryType = 'drop' | 'ship' | 'pickup'
 

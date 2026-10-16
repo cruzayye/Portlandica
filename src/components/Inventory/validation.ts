@@ -41,7 +41,7 @@ export const fillProblem = (input: NewBatchInput): string | null => {
   if (input.kind !== 'house' && input.kind !== 'custom') {
     return 'Choose house stock or custom cans.'
   }
-  if (!PRODUCTS.includes(input.product)) return 'Choose still, sparkling or dog water.'
+  if (!PRODUCTS.includes(input.product)) return 'Choose still or sparkling.'
   if (input.kind === 'custom' && !isId(input.customerId)) {
     return 'Pick the customer these cans were filled for.'
   }

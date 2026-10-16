@@ -14,8 +14,8 @@ order in which to apply everything is in `ROLLOUT.md`.
 - **inventory_movements**: an append-only ledger. For every batch, the movements add up
   to `inventory.count`; the `inventory_ledger_check` view shows any batch where they
   don't.
-- **inventory** gains `customer_id`, `archived_at` and `product`. No existing column is
-  renamed, dropped or changed.
+- **inventory** gains `customer_id` and `archived_at`. No existing column is renamed,
+  dropped or changed.
 - Eight SQL functions make every change that touches stock or orders, each in one
   transaction.
 
@@ -51,14 +51,10 @@ missing.
 | ------------- | ------------------------------------------------------------------------------------ |
 | `customer_id` | The customer a custom batch was filled for. Only allowed on custom batches.          |
 | `archived_at` | Set by `archive_batch`. Archived batches drop out of pickers but keep their history. |
-| `product`     | `water` (default) or `dog_water`. Still vs sparkling stays in `"isStill"`.           |
 
-Why a `product` column for dog water: "Portlandica Dog water" is still water in dog-water
-cans, so with only `isStill` and `isCustom` the order form offers it for every still-water
-order. A product column says what is in the can, keeps the existing flags meaning what
-they mean today, and lets order lines say what was sold (`still`, `sparkling`,
-`dog_water`). The migration marks the existing dog-water batch by its name. A separate
-products table would be more than two products need.
+Still vs sparkling stays in `"isStill"`, and that is the only product classification.
+"Portlandica Dog water" is just a batch name: house still stock, offered for still orders
+and sold like any other.
 
 ### sales_orders
 
@@ -79,11 +75,11 @@ products table would be more than two products need.
 
 ### sales_order_lines
 
-`product` (`still`, `sparkling`, `dog_water`), `cans`, `batch_id`, `is_custom`,
-`unit_price` (dollars, four decimals so a hand-typed total can be spread over the
-lines) and `line_total` (generated, rounded to cents). `is_custom` is copied from the batch
-by a trigger, and the same trigger refuses a batch that holds a different product (a
-still line from the sparkling or dog-water batch) or is archived.
+`product` (`still` or `sparkling`), `cans`, `batch_id`, `is_custom`, `unit_price`
+(dollars, four decimals so a hand-typed total can be spread over the lines) and
+`line_total` (generated, rounded to cents). `is_custom` is copied from the batch by a
+trigger, and the same trigger refuses a batch of the other kind (a still line from a
+sparkling batch, going by its `"isStill"`) or an archived one.
 
 ### inventory_movements
 
@@ -143,7 +139,7 @@ trusted; the app's server calls them as the service role. Errors carry a hint su
   list is empty.
 - **Signed-in non-partners**: nothing on the new tables or functions.
 - **The publishable key on its own**: nothing on the new tables or functions. Reading
-  `inventory` works as before and now includes the three new columns.
+  `inventory` works as before and now includes the two new columns.
 
 ## Choices worth knowing
 
@@ -168,7 +164,7 @@ trusted; the app's server calls them as the service role. Errors carry a hint su
 
 ## What changes for the app that's live today
 
-The migrations are safe to apply before the UI is wired. Four visible effects:
+The migrations are safe to apply before the UI is wired. Three visible effects:
 
 - Count edits in the Inventory tab and the current order form's decrements appear in the
   ledger as adjustments. Counts themselves don't change.
@@ -176,11 +172,9 @@ The migrations are safe to apply before the UI is wired. Four visible effects:
   deleted"). Until the new UI lands, retire a batch in the SQL Editor with
   `select public.archive_batch(<id>, 'why');`. The old UI will still list it, at 0 cans.
 - Batch names are trimmed when saved, so "Hotel Vintage " can't happen again.
-- The old order form still offers the dog-water batch for still orders; the new pickers
-  don't.
 
-Paul's monthly-close script keeps working: it reads the same columns, now with three
-more alongside.
+Paul's monthly-close script keeps working: it reads the same columns, now with two more
+alongside.
 
 ## Steps for Johnny, in order
 
@@ -271,7 +265,6 @@ more alongside.
 
    ```sql
    select * from inventory_ledger_check where difference <> 0;  -- expect no rows
-   select id, name, product from inventory where product = 'dog_water';  -- the dog water batch
    select reason, count(*), sum(delta) from inventory_movements group by reason;  -- one opening row per batch with cans
    ```
 

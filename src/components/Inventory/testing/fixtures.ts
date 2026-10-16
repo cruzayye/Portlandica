@@ -16,7 +16,6 @@ export const batch = (over: Partial<Batch> & { id: number }): Batch => ({
   initialCount: null,
   customer_id: null,
   archived_at: null,
-  product: 'water',
   ...over,
 })
 

@@ -189,8 +189,9 @@ Sales sheet and Trello):
   (Payment Date) even if it was paid, and its formulas; the Total row's `SUM` reaches it.
 - The Trello card is due at 9 AM on the delivery date picked and ends with `Order #<id>`.
 - The Order History tab lists the order.
-- The Inventory tab groups batches by product, shows the order's cans leaving its batch
-  in that batch's history (by "Team"), and a count change asks for a note.
+- The Inventory tab groups batches into still and sparkling (Portlandica Dog water with
+  house still stock), shows the order's cans leaving its batch in that batch's history
+  (by "Team"), and a count change asks for a note.
 - `select * from inventory_ledger_check where difference <> 0;` returns no rows.
 - After the first new business: its row on Current Locations Addresses gets a latitude
   and longitude within a few seconds (Census geocoder). Still run App Scripts in the

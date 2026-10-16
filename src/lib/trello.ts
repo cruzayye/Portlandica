@@ -19,11 +19,7 @@ export type TrelloOrder = {
 type TrelloConfig = { apiKey: string; token: string; listId: string; boardId: string }
 
 const DELIVERY_LABELS: Record<DeliveryType, string> = { drop: 'Drop', ship: 'Ship', pickup: 'Pickup' }
-const PRODUCT_LABELS: Record<LineProduct, string> = {
-  still: 'Still',
-  sparkling: 'Sparkling',
-  dog_water: 'Dog Water',
-}
+const PRODUCT_LABELS: Record<LineProduct, string> = { still: 'Still', sparkling: 'Sparkling' }
 
 const trelloConfig = (): TrelloConfig => {
   const apiKey = process.env.TRELLO_API_KEY

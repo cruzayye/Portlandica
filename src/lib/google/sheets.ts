@@ -117,7 +117,6 @@ export type SheetWrite = {
 const PRODUCT_LABELS: Record<LineProduct, string> = {
   still: 'Still Cans',
   sparkling: 'Sparkling Cans',
-  dog_water: 'Dog Water Cans',
 }
 
 const empty: Cell = {}
@@ -162,7 +161,7 @@ const salesRows = (order: SheetOrder): RowAt[] => {
 // Donations keep their inventory references to the sheet's own Inventory tab, so the
 // COGS lookup in G keeps working.
 const RETAIL_PRICE_PER_UNIT = 2.0
-const DONATION_INV_REFS: Record<LineProduct, string> = { still: 'A7', sparkling: 'A8', dog_water: 'A7' }
+const DONATION_INV_REFS: Record<LineProduct, string> = { still: 'A7', sparkling: 'A8' }
 
 const donationRows = (order: SheetOrder): RowAt[] => {
   const date = sheetDateSerial(order.orderDate)

@@ -185,7 +185,6 @@ describe('addBatch', () => {
     expect(mocks.recordFill).toHaveBeenCalledWith(client, {
       count: 1440,
       is_still: true,
-      product: 'water',
       fill_date: '2026-10-15',
       name: 'Portlandica',
       customer_id: null,
@@ -215,21 +214,27 @@ describe('addBatch', () => {
         name: null,
         customer_id: 5,
         is_still: false,
-        product: 'water',
         note: 'October run',
       })
     )
   })
 
-  it('records dog water as still water in dog-water cans', async () => {
+  it('records a dog water fill as house still stock, with no product of its own', async () => {
     mocks.recordFill.mockResolvedValue(batch({ id: 103 }))
 
-    await addBatch(fill({ product: 'dog_water' }))
+    await addBatch(fill({ name: 'Portlandica Dog water' }))
 
-    expect(mocks.recordFill).toHaveBeenCalledWith(
-      client,
-      expect.objectContaining({ is_still: true, product: 'dog_water' })
-    )
+    const [, recorded] = mocks.recordFill.mock.calls[0]
+    expect(recorded).toMatchObject({ name: 'Portlandica Dog water', is_still: true })
+    expect(recorded).not.toHaveProperty('product')
+  })
+
+  it('refuses a product other than still or sparkling', async () => {
+    expect(await addBatch(fill({ product: 'dog_water' as never }))).toEqual({
+      ok: false,
+      error: 'Choose still or sparkling.',
+    })
+    expect(mocks.recordFill).not.toHaveBeenCalled()
   })
 
   it('refuses an incomplete fill without touching the database', async () => {

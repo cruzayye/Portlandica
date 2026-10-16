@@ -111,15 +111,7 @@ export type CustomerOption = Pick<
 /** A batch the order form can draw from. */
 export type BatchOption = Pick<
   Batch,
-  | 'id'
-  | 'name'
-  | 'count'
-  | 'isStill'
-  | 'isCustom'
-  | 'customer_id'
-  | 'product'
-  | 'fillDate'
-  | 'source'
+  'id' | 'name' | 'count' | 'isStill' | 'isCustom' | 'customer_id' | 'fillDate' | 'source'
 >
 
 export type OrderFormData = {

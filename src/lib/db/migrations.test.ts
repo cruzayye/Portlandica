@@ -135,21 +135,26 @@ describe('migrations on the live schema', () => {
     expect(await ledgerMismatches()).toBe(0)
   })
 
-  it('marks the dog water batch and leaves house stock as water', async () => {
-    const rows = await pg.query<{ id: number; product: string }>(
-      'select id, product from public.inventory order by id'
+  it('adds two columns to inventory and no product: dog water stays house still stock', async () => {
+    const columns = await pg.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_schema = 'public' and table_name = 'inventory'
+         and column_name in ('customer_id', 'archived_at', 'product') order by 1`
     )
-    expect(rows.rows.filter((r) => r.product === 'dog_water').map((r) => r.id)).toEqual([33])
+    expect(columns.rows.map((r) => r.column_name)).toEqual(['archived_at', 'customer_id'])
+    expect(
+      await one(SERVICE, 'select name, "isStill", "isCustom" from public.inventory where id = 33')
+    ).toEqual({ name: 'Portlandica Dog water', isStill: true, isCustom: false })
   })
 
   it('keeps the existing inventory columns readable with the public key', async () => {
     const row = await one(
       ANON,
       `select id, created_at, name, count, "isCustom", "isStill", "fillDate", "totalCost",
-              "invoiceNumber", source, "initialCount", customer_id, archived_at, product
+              "invoiceNumber", source, "initialCount", customer_id, archived_at
        from public.inventory where id = 45`
     )
-    expect(row).toMatchObject({ name: 'Portlandica', isStill: true, product: 'water' })
+    expect(row).toMatchObject({ name: 'Portlandica', isStill: true, customer_id: null })
   })
 
   it('can be rolled back to the schema it started from', async () => {
@@ -585,12 +590,21 @@ describe('record_fill', () => {
     ).rejects.toMatchObject({ hint: 'invalid_input' })
   })
 
-  it('records dog water as its own product', async () => {
-    const batch = await one<{ product: string }>(
+  it('records a dog water fill as house still stock, with no product argument', async () => {
+    const batch = await one<{ b: Record<string, unknown> }>(
       PAUL,
-      `select (public.record_fill(p_count => 240, p_is_still => true, p_fill_date => null, p_name => 'Dog water', p_product => 'dog_water')).product`
+      `select to_jsonb(public.record_fill(p_count => 240, p_is_still => true, p_fill_date => null,
+         p_name => 'Portlandica Dog water')) as b`
     )
-    expect(batch.product).toBe('dog_water')
+    expect(batch.b).toMatchObject({ name: 'Portlandica Dog water', isStill: true, isCustom: false })
+    expect(batch.b).not.toHaveProperty('product')
+    await expect(
+      query(
+        PAUL,
+        `select public.record_fill(p_count => 240, p_is_still => true, p_fill_date => null,
+           p_name => 'Dog water', p_product => 'dog_water')`
+      )
+    ).rejects.toMatchObject({ code: '42883' })
   })
 })
 
@@ -730,17 +744,31 @@ describe('create_sales_order', () => {
     })
   })
 
-  it('refuses lines whose batch holds a different product', async () => {
+  it('refuses lines whose batch holds the other kind of water', async () => {
     await expect(
       createOrder(PAUL, 'k-3', [{ product: 'still', cans: 24, batch_id: 25, unit_price: 1.5 }])
     ).rejects.toMatchObject({ hint: 'product_batch_mismatch' })
     await expect(
-      createOrder(PAUL, 'k-4', [{ product: 'still', cans: 24, batch_id: 33, unit_price: 1.5 }])
+      createOrder(PAUL, 'k-4', [{ product: 'sparkling', cans: 24, batch_id: 45, unit_price: 1.5 }])
     ).rejects.toMatchObject({ hint: 'product_batch_mismatch' })
+    expect(await count('select 1 from public.sales_orders')).toBe(0)
+  })
+
+  it('sells the dog water batch as still, and has no dog water product', async () => {
     const dog = await createOrder(PAUL, 'k-5', [
-      { product: 'dog_water', cans: 24, batch_id: 33, unit_price: 1.5 },
+      { product: 'still', cans: 24, batch_id: 33, unit_price: 1.5 },
     ])
     expect(dog.created).toBe(true)
+    expect(dog.lines).toMatchObject([{ product: 'still', batch_id: 33, is_custom: false }])
+    await expect(
+      createOrder(PAUL, 'k-5b', [{ product: 'dog_water', cans: 24, batch_id: 33, unit_price: 1.5 }])
+    ).rejects.toMatchObject({ hint: 'product_batch_mismatch' })
+    const check = await pg.query<{ def: string }>(
+      `select pg_get_constraintdef(oid) as def from pg_constraint
+       where conname = 'sales_order_lines_product_valid'`
+    )
+    expect(check.rows[0].def).toMatch(/'still'.*'sparkling'/)
+    expect(check.rows[0].def).not.toMatch(/dog/)
     expect(await count('select 1 from public.sales_orders')).toBe(1)
   })
 

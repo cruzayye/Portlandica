@@ -2,7 +2,7 @@
 --
 -- Only for use right after applying them, before real customers or orders are entered:
 -- it deletes the new tables and everything in them. Inventory rows and counts stay as
--- they are; only the three added columns go. Run it in the SQL Editor as one script.
+-- they are; only the two added columns go. Run it in the SQL Editor as one script.
 -- If the migrations went in with `supabase db push`, afterwards also run:
 --   npx supabase migration repair --status reverted 20261017000100 20261017000200 \
 --     20261017000300 20261017000400 20261017000500 20261017000600
@@ -15,7 +15,7 @@ drop function public.void_order(bigint, text);
 drop function public.record_order_step(bigint, text, text, text, text);
 drop function private.orders_snapshot(bigint, boolean);
 
-drop function public.record_fill(integer, boolean, date, text, bigint, text, text, numeric, text, text);
+drop function public.record_fill(integer, boolean, date, text, bigint, text, numeric, text, text);
 drop function public.adjust_batch(bigint, integer, text, integer);
 drop function public.archive_batch(bigint, text);
 drop function public.unarchive_batch(bigint, text);
@@ -36,8 +36,7 @@ drop trigger inventory_trim_name on public.inventory;
 drop function private.inventory_trim_name();
 alter table public.inventory
   drop column customer_id,
-  drop column archived_at,
-  drop column product;
+  drop column archived_at;
 
 drop table public.customers;
 drop function private.touch_updated_at();
