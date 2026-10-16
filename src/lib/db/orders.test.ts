@@ -137,14 +137,14 @@ describe('order queries', () => {
 
   it('creates an order once per submission and books its inventory once', async () => {
     const db = fakeSupabase(pg, PAUL)
-    const input = queDiceOrder({ notes: 'Back door', po_number: ' 28487630 ' })
+    const input = queDiceOrder({ notes: 'Back door', po_number: ' 40012345 ' })
     const first = await createSalesOrder(db, input)
     expect(first.created).toBe(true)
     expect(first.order).toMatchObject({
       total_cans: 240,
       total_price: 480,
       notes: 'Back door',
-      po_number: '28487630',
+      po_number: '40012345',
     })
     expect(first.lines).toMatchObject([
       { product: 'still', cans: 240, is_custom: true, line_total: 480 },
