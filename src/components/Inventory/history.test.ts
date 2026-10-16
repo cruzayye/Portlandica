@@ -3,9 +3,7 @@ import type { InventoryMovement } from '@/lib/db/types'
 import { formatDay, formatMoment, formatPortlandDay, portlandToday } from './dates'
 import { changedBy, historyEntries, orderLabel, reasonLabel } from './history'
 
-const PAUL = 'paul-id'
-const JOHNNY = 'johnny-id'
-
+// With the team password the app's changes have no created_by; made_in_app marks them.
 const movement = (over: Partial<InventoryMovement> & { id: number }): InventoryMovement => ({
   batch_id: 22,
   delta: 0,
@@ -14,6 +12,7 @@ const movement = (over: Partial<InventoryMovement> & { id: number }): InventoryM
   order_line_id: null,
   note: null,
   created_by: null,
+  made_in_app: false,
   created_at: '2026-10-01T00:00:00Z',
   ...over,
 })
@@ -26,7 +25,7 @@ describe('historyEntries', () => {
       reason: 'order',
       order_id: 12,
       order_line_id: 30,
-      created_by: JOHNNY,
+      made_in_app: true,
     }),
     movement({
       id: 1,
@@ -40,10 +39,11 @@ describe('historyEntries', () => {
       reason: 'void',
       order_id: 12,
       order_line_id: 30,
-      created_by: PAUL,
+      made_in_app: true,
       note: 'Came off house stock',
     }),
-    movement({ id: 5, delta: -2640, reason: 'archive', created_by: PAUL, note: 'Customer closed' }),
+    // Archived in the SQL Editor.
+    movement({ id: 5, delta: -2640, reason: 'archive', note: 'Customer closed' }),
   ]
   const orders = [
     {
@@ -63,9 +63,9 @@ describe('historyEntries', () => {
     ])
   })
 
-  it('says the team made each change, whoever signed in', () => {
+  it('says the team made the changes made in the app, and the system the rest', () => {
     expect(historyEntries(movements, orders).map((e) => e.by)).toEqual([
-      'team',
+      'system',
       'team',
       'team',
       'system',
@@ -90,9 +90,9 @@ describe('historyEntries', () => {
     })
   })
 
-  it('treats a missing author as the system', () => {
-    expect(changedBy(null)).toBe('system')
-    expect(changedBy(PAUL)).toBe('team')
+  it('goes by whether the change came through the app', () => {
+    expect(changedBy({ made_in_app: true })).toBe('team')
+    expect(changedBy({ made_in_app: false })).toBe('system')
   })
 })
 

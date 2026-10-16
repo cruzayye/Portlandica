@@ -3,9 +3,14 @@ import type { InventoryMovement } from '@/lib/db/types'
 import type { ChangedBy, HistoryEntry, HistoryOrder } from './types'
 import { formatDay } from './dates'
 
-// With the team password there is no one person to name, only the team.
-export const changedBy = (createdBy: string | null): ChangedBy =>
-  createdBy === null ? 'system' : 'team'
+/**
+ * The team for a change made in the app, the system for the rest (the opening balances,
+ * the SQL Editor, the Supabase dashboard). With the team password there is no one person
+ * to name, and the app's changes carry no user id, so the ledger's made_in_app says which
+ * is which.
+ */
+export const changedBy = (movement: Pick<InventoryMovement, 'made_in_app'>): ChangedBy =>
+  movement.made_in_app ? 'team' : 'system'
 
 export const CHANGED_BY_LABELS: Record<ChangedBy, string> = {
   team: 'Team',
@@ -42,7 +47,7 @@ export const historyEntries = (
                 orderDate: order?.order_date ?? null,
                 voided: Boolean(order?.voided_at),
               },
-        by: changedBy(movement.created_by),
+        by: changedBy(movement),
         note: movement.note,
       }
     })

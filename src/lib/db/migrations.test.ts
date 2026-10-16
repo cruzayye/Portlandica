@@ -164,7 +164,11 @@ describe('migrations on the live schema', () => {
 
     // Newest first: the order-flow rollback puts back the functions the data-foundation
     // rollback drops by their original signatures.
-    for (const file of ['20261017000700_order_flow.sql', '20261017_data_foundation.sql']) {
+    for (const file of [
+      '20261017000900_ledger_made_in_app.sql',
+      '20261017000700_order_flow.sql',
+      '20261017_data_foundation.sql',
+    ]) {
       await pg.exec(readFileSync(path.join(process.cwd(), 'supabase/rollback', file), 'utf8'))
     }
     expect(await fingerprint(pg)).toEqual(await fingerprint(before))
@@ -460,6 +464,67 @@ describe('the app with the team password (service role, no partners)', () => {
       hint: 'not_partner',
     })
   })
+})
+
+describe('made_in_app', () => {
+  const latest = async (batchId: number) =>
+    (
+      await pg.query<{ reason: string; made_in_app: boolean; created_by: string | null }>(
+        `select reason, made_in_app, created_by from public.inventory_movements
+         where batch_id = $1 order by id desc limit 1`,
+        [batchId]
+      )
+    ).rows[0]
+
+  it('leaves the opening balances to the system', async () => {
+    expect(
+      await count(
+        `select 1 from public.inventory_movements where reason = 'opening' and made_in_app`
+      )
+    ).toBe(0)
+    expect(await count(`select 1 from public.inventory_movements where reason = 'opening'`)).toBe(6)
+  })
+
+  it('marks what the app does through the Data API with the secret key', async () => {
+    await query(SERVICE, `select public.adjust_batch(45, 11976, 'Recount')`)
+    expect(await latest(45)).toEqual({ reason: 'adjustment', made_in_app: true, created_by: null })
+
+    // A direct count edit through the API, as the Inventory tab made before the ledger.
+    await query(SERVICE, 'update public.inventory set count = count - 24 where id = 13')
+    expect(await latest(13)).toEqual({ reason: 'adjustment', made_in_app: true, created_by: null })
+  })
+
+  it('also marks a signed-in partner, and keeps their user id', async () => {
+    await query(PAUL, `select public.adjust_batch(45, 11976, 'Recount')`)
+    expect(await latest(45)).toEqual({
+      reason: 'adjustment',
+      made_in_app: true,
+      created_by: PAUL.sub,
+    })
+  })
+
+  it('leaves changes made in the SQL Editor or the dashboard to the system', async () => {
+    // A direct session: no request claims, like the SQL Editor.
+    await query(SERVICE, `select public.adjust_batch(45, 11976, 'Recount')`)
+    await pg.query(`select public.adjust_batch(13, 1176, 'Counted in the SQL Editor')`)
+    expect(await latest(13)).toEqual({ reason: 'adjustment', made_in_app: false, created_by: null })
+    await pg.query('update public.inventory set count = count - 24 where id = 25')
+    expect(await latest(25)).toEqual({ reason: 'adjustment', made_in_app: false, created_by: null })
+  })
+
+  it('can be undone on its own', async () => {
+    const before = await createDb(
+      migrationFiles().filter((file) => !file.endsWith('_ledger_made_in_app.sql'))
+    )
+    await pg.exec(
+      readFileSync(
+        path.join(process.cwd(), 'supabase/rollback/20261017000900_ledger_made_in_app.sql'),
+        'utf8'
+      )
+    )
+    expect(await fingerprint(pg)).toEqual(await fingerprint(before))
+    await before.close()
+  }, 60_000)
 })
 
 describe('record_fill', () => {

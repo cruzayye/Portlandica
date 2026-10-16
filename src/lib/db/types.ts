@@ -125,6 +125,8 @@ export type InventoryMovement = {
   order_line_id: number | null
   note: string | null
   created_by: string | null
+  /** Came through the app (a Data API request), not the SQL Editor, dashboard or a migration. */
+  made_in_app: boolean
   created_at: string
 }
 

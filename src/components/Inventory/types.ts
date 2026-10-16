@@ -56,7 +56,7 @@ export type CountChange = {
   note: string
 }
 
-/** Who made a change: the team, or no one signed in (setup, SQL). */
+/** Who made a change: the team, in the app, or the system (setup, the SQL Editor, the dashboard). */
 export type ChangedBy = 'team' | 'system'
 
 export type HistoryOrder = {

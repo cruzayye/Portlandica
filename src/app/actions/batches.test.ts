@@ -100,6 +100,7 @@ const movement = (over: Partial<InventoryMovement> & { id: number }): InventoryM
   order_line_id: null,
   note: null,
   created_by: null,
+  made_in_app: false,
   created_at: '2026-10-01T00:00:00Z',
   ...over,
 })
@@ -428,9 +429,9 @@ describe('getBatchHistory', () => {
       reason: 'order',
       order_id: 12,
       order_line_id: 30,
-      created_by: 'user-2',
+      made_in_app: true,
     }),
-    movement({ id: 3, delta: -24, reason: 'adjustment', created_by: 'user-1', note: 'Recount' }),
+    movement({ id: 3, delta: -24, reason: 'adjustment', made_in_app: true, note: 'Recount' }),
   ]
 
   it('returns the history newest first, with orders and who made each change', async () => {
