@@ -9,4 +9,6 @@ export const CUSTOMER_PRICING: Record<string, number> = {
   'Que Dice': 2.00,
   'Hotel Vintage': 2.00,
   'Woodlark Hotel Portland': 2.00,
+  'Ben Bridge Jeweler (Downtown)': 1.35,
+  'Ben Bridge Jeweler (Washington Square)': 1.35,
 }
