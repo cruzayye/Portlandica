@@ -503,13 +503,13 @@ describe('createOrder', () => {
     })
     const result = saved(
       await createOrder(
-        { ...(await lovejoy()), createInvoice: true, poNumber: '28487630' },
+        { ...(await lovejoy()), createInvoice: true, poNumber: '40012345' },
         { idempotencyKey: newIdempotencyKey() }
       )
     )
     expect(result.order).toMatchObject({ square_status: 'done', square_invoice_id: 'inv-9' })
     expect(mocks.createDraftInvoice.mock.calls[0][0]).toMatchObject({
-      poNumber: '28487630',
+      poNumber: '40012345',
       customer: { name: 'Lovejoy Bakers', paymentTermsDays: 30 },
     })
   })

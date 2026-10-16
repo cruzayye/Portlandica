@@ -76,12 +76,12 @@ describe('cardFor', () => {
     const lines = cardFor(
       order({
         address: '2310 NE Broadway, Portland, OR 97232',
-        poNumber: '28487630',
+        poNumber: '40012345',
         notes: 'Leave at the back door',
       })
     ).desc.split('\n')
     expect(lines).toContain('Address: 2310 NE Broadway, Portland, OR 97232')
-    expect(lines).toContain('PO: 28487630')
+    expect(lines).toContain('PO: 40012345')
     expect(lines).toContain('Notes: Leave at the back door')
     expect(lines.at(-1)).toBe('Order #42')
   })

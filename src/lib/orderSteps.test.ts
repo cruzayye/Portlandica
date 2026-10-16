@@ -219,7 +219,7 @@ describe('runOrderSteps', () => {
       customer_id: sysco.id,
       customer_name: null,
       create_invoice: true,
-      po_number: '28487630',
+      po_number: '40012345',
       customer_email: 'orders@sysco.example',
     })
     const run = await runOrderSteps(db, order.id)
@@ -238,7 +238,7 @@ describe('runOrderSteps', () => {
         { name: 'Still Cans', cans: 120, unitPrice: 1.5 },
         { name: 'Sparkling Cans', cans: 48, unitPrice: 1.5 },
       ],
-      poNumber: '28487630',
+      poNumber: '40012345',
     })
     const { data } = await db
       .from('customers')

@@ -607,13 +607,13 @@ describe('OrderForm invoice details', () => {
     await user.click(screen.getByLabelText('Create Invoice'))
     expect(screen.getByText(/Square isn't set up in this app yet/)).toBeInTheDocument()
     expect(screen.getByLabelText(/billing email/i)).toHaveValue('ap@hollywood.example')
-    await user.type(screen.getByLabelText(/po number/i), '28487630')
+    await user.type(screen.getByLabelText(/po number/i), '40012345')
     await user.click(submitButton())
 
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
     expect(sent()).toMatchObject({
       createInvoice: true,
-      poNumber: '28487630',
+      poNumber: '40012345',
       email: 'ap@hollywood.example',
     })
   })
