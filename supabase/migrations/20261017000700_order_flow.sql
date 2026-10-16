@@ -2,7 +2,8 @@
 -- the order alone (the Order History tab's retry), and where the sheet step wrote.
 --
 -- Additive: four new sales_orders columns, a new create_sales_order with three more
--- optional arguments, and a record_order_step that also takes the sheet step's location.
+-- optional arguments, and a record_order_step that also takes the sheet step's location
+-- and records a voided order's deleted Square draft.
 -- Undo with supabase/rollback/20261017000700_order_flow.sql.
 
 alter table public.sales_orders
@@ -148,7 +149,9 @@ comment on function public.create_sales_order is
 
 -- Same as before, except the sheet step now takes an external id too: where its rows
 -- went (sales_orders.sheet_ref). Unlike a Trello card or Square invoice id, that is a
--- location, so a later call may replace it.
+-- location, so a later call may replace it. And a done step stays done except in one
+-- case: voiding an order deletes its Square invoice while it is still a draft, and the
+-- Square step is then recorded as skipped. square_invoice_id keeps the deleted draft's id.
 create or replace function public.record_order_step(
   p_order_id bigint,
   p_step text,
@@ -204,7 +207,8 @@ begin
     when 'square' then v_order.square_invoice_id
   end;
 
-  if v_current_status = 'done' and p_status <> 'done' then
+  if v_current_status = 'done' and p_status <> 'done'
+     and not (p_step = 'square' and p_status = 'skipped' and v_order.voided_at is not null) then
     raise exception 'The % step of order % is already done', p_step, p_order_id
       using errcode = 'P0001', hint = 'step_already_done';
   end if;
@@ -238,7 +242,7 @@ end
 $$;
 
 comment on function public.record_order_step is
-  'Record the outcome of a downstream order step (sheet, trello, square; or an inventory failure). The sheet step''s external id is where its rows went.';
+  'Record the outcome of a downstream order step (sheet, trello, square; or an inventory failure). The sheet step''s external id is where its rows went. A void order''s Square step goes from done to skipped once its draft is deleted.';
 
 revoke execute on function public.create_sales_order(text, text, jsonb, bigint, text, text, date, text, numeric, boolean, boolean, boolean, date, text, text, text, boolean)
   from public, anon;

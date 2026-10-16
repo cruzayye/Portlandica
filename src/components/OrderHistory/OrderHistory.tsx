@@ -27,12 +27,21 @@ const money = (dollars: number) =>
 
 const DELIVERY = { drop: 'Drop', ship: 'Ship', pickup: 'Pickup' } as const
 
-// What a void leaves for a person: the app doesn't edit Sales rows or Square invoices.
+// A void deletes the order's Square draft and records its Square step as skipped.
+const draftDeleted = (order: SalesOrderWithLines) =>
+  Boolean(order.square_invoice_id) && order.square_status === 'skipped'
+
+// What a void leaves for a person: the app doesn't edit Sales rows, or a Square invoice
+// that was already sent (or that it couldn't delete).
 const reminders = (order: SalesOrderWithLines) => [
   ...(order.sheet_ref
     ? [`${describeSheetRef(order.sheet_ref)} still show this order: fix them by hand.`]
     : []),
-  ...(order.square_invoice_id ? ['Delete its draft invoice in Square by hand.'] : []),
+  ...(order.square_invoice_id && !draftDeleted(order)
+    ? [
+        "Its Square invoice wasn't deleted: delete it in Square if it's still a draft, or cancel or refund it by hand.",
+      ]
+    : []),
 ]
 
 /** Recent orders with how each step went, a retry for unfinished steps, and Void. */
@@ -173,6 +182,11 @@ export default function OrderHistory() {
               <Typography variant="body2" color="text.secondary">
                 Void: {order.void_reason}
               </Typography>
+              {draftDeleted(order) && (
+                <Typography variant="body2" color="text.secondary">
+                  Its draft invoice was deleted in Square.
+                </Typography>
+              )}
               {(handFixes[order.id] ?? reminders(order)).map((fix) => (
                 <Alert key={fix} severity="warning">
                   {fix}
@@ -203,8 +217,9 @@ export default function OrderHistory() {
         <DialogTitle>Void order #{voiding?.id}?</DialogTitle>
         <DialogContent>
           <Typography gutterBottom>
-            Its cans go back to their batches and its Trello card is archived. Sales sheet rows and
-            Square invoices are not changed; you&apos;ll be told what to fix by hand.
+            Its cans go back to their batches, its Trello card is archived and its Square invoice is
+            deleted if it is still a draft. Sales sheet rows, and an invoice already sent from
+            Square, are not changed; you&apos;ll be told what to fix by hand.
           </Typography>
           <TextField
             label="Why?"

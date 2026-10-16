@@ -5,7 +5,12 @@ import { formatAddress, getCustomer, paymentTermsDays, updateCustomer } from '@/
 import { listBatches } from '@/lib/db/inventory'
 import { applyOrderInventory, getSalesOrder, pendingSteps, recordOrderStep } from '@/lib/db/orders'
 import { untagOrderRows, writeOrderToSheet, type SheetOrder } from '@/lib/google/sheets'
-import { createDraftInvoice, type InvoiceLine } from '@/lib/square'
+import {
+  createDraftInvoice,
+  deleteDraftInvoice,
+  type DraftDeletion,
+  type InvoiceLine,
+} from '@/lib/square'
 import { createTrelloCard, type TrelloOrder } from '@/lib/trello'
 import { batchTitle } from '@/lib/batches'
 import { shortfallMessage, splitCents } from '@/lib/orders'
@@ -47,6 +52,9 @@ export const squareReady = () => Boolean(process.env.SQUARE_ACCESS_TOKEN)
 
 export const SQUARE_NOT_SET_UP =
   "Square isn't set up here (no SQUARE_ACCESS_TOKEN), so no invoice draft was made. Make the invoice in Square by hand."
+
+export const SQUARE_NOT_SET_UP_FOR_VOID =
+  "Square isn't set up here (no SQUARE_ACCESS_TOKEN), so the app couldn't delete this order's invoice. In the Square Dashboard (Invoices), delete it if it's still a draft, or cancel or refund it if it was sent."
 
 /**
  * The order's reference in Square, at most 40 characters. The id keeps it readable, and
@@ -273,4 +281,64 @@ export const runOrderSteps = async (
   }
 
   return { order, warnings, shortfalls }
+}
+
+// Square's invoice statuses past DRAFT, as people say them.
+const INVOICE_STATUS_WORDS: Record<string, string> = {
+  UNPAID: 'sent and unpaid',
+  SCHEDULED: 'scheduled to be sent',
+  PARTIALLY_PAID: 'partly paid',
+  PAID: 'paid',
+  PARTIALLY_REFUNDED: 'partly refunded',
+  REFUNDED: 'refunded',
+  CANCELED: 'canceled',
+  FAILED: 'canceled by Square',
+  PAYMENT_PENDING: 'waiting on a payment',
+}
+
+/**
+ * After a void: delete the order's Square invoice if it is still a draft, and record that
+ * on the order (its Square step becomes skipped; the invoice id stays). An invoice that
+ * was already sent, scheduled, paid and so on is left alone. Returns what a person still
+ * has to do in Square, if anything. Never throws.
+ */
+export const deleteVoidedOrderDraft = async (
+  db: Db,
+  order: Pick<SalesOrder, 'id' | 'square_status' | 'square_invoice_id'>
+): Promise<string[]> => {
+  const invoiceId = order.square_invoice_id
+  if (!invoiceId || order.square_status !== 'done') return []
+  if (!squareReady()) return [SQUARE_NOT_SET_UP_FOR_VOID]
+
+  let deletion: DraftDeletion
+  try {
+    deletion = await deleteDraftInvoice(invoiceId)
+  } catch (err) {
+    console.error(`Order ${order.id}: deleting the Square draft failed`, err)
+    return [
+      `Couldn't delete this order's draft invoice in Square (${cleanError(reason(err))}). Delete it in the Square Dashboard (Invoices) by hand, or cancel or refund it if it was sent.`,
+    ]
+  }
+
+  if (deletion.outcome === 'not_draft') {
+    const status = INVOICE_STATUS_WORDS[deletion.status] ?? deletion.status.toLowerCase()
+    return [
+      `This order's Square invoice is already ${status}, so the app left it alone. Cancel or refund it in Square by hand.`,
+    ]
+  }
+  if (deletion.outcome === 'not_found') {
+    return [
+      `Square has no invoice ${invoiceId}, so nothing was deleted. If it wasn't deleted in Square already, find it in the Square Dashboard (Invoices) and delete, cancel or refund it by hand.`,
+    ]
+  }
+
+  try {
+    await recordOrderStep(db, order.id, 'square', 'skipped')
+  } catch (err) {
+    console.error(`Order ${order.id}: recording the deleted Square draft failed`, err)
+    return [
+      `The draft invoice is deleted in Square, but that couldn't be saved on the order (${reason(err)}).`,
+    ]
+  }
+  return []
 }

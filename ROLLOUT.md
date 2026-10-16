@@ -220,8 +220,10 @@ account, the real Sales sheet or the delivery board:
 shows `"status": "DRAFT"`, the title `PO TEST-1`, Sysco's 65-day due date and the line.
 Retrying from Order History leaves the done steps alone.
 
-**Undo:** Order History → Void the test order (its cans go back and its card is
-archived). Delete the sheet copy and the test board. Nothing in production to undo.
+**Undo:** Order History → Void the test order (its cans go back, its card is archived and
+its draft invoice is deleted; Order History says "Its draft invoice was deleted in
+Square." and the same curl now answers `NOT_FOUND`). Delete the sheet copy and the test
+board. Nothing in production to undo.
 
 ## 9. Square in production (after Paul's OK)
 
@@ -234,4 +236,5 @@ shows Square as done; the draft is in the Square Dashboard → Invoices with the
 customer, lines, PO and due date. Send it from Square. The app never sends invoices.
 
 **Undo:** remove `SQUARE_ACCESS_TOKEN` from Vercel and redeploy. The invoice step is then
-skipped with a note on each order. Delete any wrong draft in the Square Dashboard.
+skipped with a note on each order. Voiding an order deletes its draft while Square is set
+up; otherwise delete any wrong draft in the Square Dashboard.

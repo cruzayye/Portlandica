@@ -13,6 +13,8 @@ import {
 } from '@/lib/db/orders'
 import { fakeSupabase } from '@/lib/db/testing/fakeSupabase'
 import { SERVICE, createMigratedDb } from '@/lib/db/testing/testDb'
+import { SQUARE_NOT_SET_UP_FOR_VOID, runOrderSteps } from '@/lib/orderSteps'
+import { createFakeSquare, type FakeSquare } from '@/lib/testing/fakeSquare'
 
 const mocks = vi.hoisted(() => ({
   pg: null as PGlite | null,
@@ -21,7 +23,6 @@ const mocks = vi.hoisted(() => ({
   findOrderRows: vi.fn(),
   createTrelloCard: vi.fn(),
   archiveTrelloCard: vi.fn(),
-  createDraftInvoice: vi.fn(),
 }))
 
 vi.mock('@/lib/supabase/server', async () => {
@@ -43,11 +44,12 @@ vi.mock('@/lib/trello', () => ({
   createTrelloCard: mocks.createTrelloCard,
   archiveTrelloCard: mocks.archiveTrelloCard,
 }))
-vi.mock('@/lib/square', () => ({ createDraftInvoice: mocks.createDraftInvoice }))
+// Square is the real module, talking to the in-memory fake Square.
 
 import { listOrders, retryOrder, voidOrder } from './orderHistory'
 
 let base: PGlite
+let square: FakeSquare
 const db = () => fakeSupabase(mocks.pg!, SERVICE)
 
 beforeAll(async () => {
@@ -66,9 +68,15 @@ beforeEach(async () => {
   mocks.findOrderRows.mockReset().mockResolvedValue(null)
   mocks.createTrelloCard.mockReset().mockResolvedValue('card-1')
   mocks.archiveTrelloCard.mockReset().mockResolvedValue(undefined)
-  mocks.createDraftInvoice.mockReset()
+  square = createFakeSquare()
+  vi.stubGlobal('fetch', square.fetch)
+  vi.stubEnv('SQUARE_ACCESS_TOKEN', 'sandbox-token')
+  vi.stubEnv('SQUARE_LOCATION_ID', 'LOCATION_1')
+  vi.stubEnv('SQUARE_ENVIRONMENT', 'sandbox')
 })
 afterEach(async () => {
+  vi.unstubAllEnvs()
+  vi.unstubAllGlobals()
   await mocks.pg!.close()
 })
 
@@ -97,6 +105,18 @@ const finishedOrder = async (over: Partial<NewSalesOrder> = {}) => {
   await recordOrderStep(db(), order.id, 'trello', 'done', { externalId: 'card-1' })
   return order
 }
+
+// An order with Create Invoice on, run through every step: its draft is in (fake) Square.
+const invoicedOrder = async () => {
+  const { order } = await runOrderSteps(db(), (await placeOrder({ create_invoice: true })).id)
+  expect(order).toMatchObject({ square_status: 'done', square_invoice_id: 'INVOICE_3' })
+  return order
+}
+
+const SALES_ROWS_FIX =
+  "Sales rows 3126–3127 still show this order. Fix them by hand (the app doesn't edit Sales rows)."
+
+const handFixes = (result: unknown) => (result as { handFixes: string[] }).handFixes
 
 describe('listOrders', () => {
   it('lists recent orders, newest first, with their lines and batches', async () => {
@@ -178,17 +198,94 @@ describe('voidOrder', () => {
     expect(mocks.archiveTrelloCard).toHaveBeenCalledWith('card-1')
   })
 
-  it('lists the Square draft and a card it could not archive', async () => {
-    const order = await finishedOrder({ create_invoice: true })
-    await recordOrderStep(db(), order.id, 'square', 'done', { externalId: 'inv-1' })
+  it('lists a card it could not archive', async () => {
+    const order = await finishedOrder()
     mocks.archiveTrelloCard.mockRejectedValue(new Error('Trello API error archiving the card: 401'))
 
     const result = await voidOrder(order.id, 'Customer cancelled')
     expect(result).toMatchObject({ status: 'voided' })
-    expect((result as { handFixes: string[] }).handFixes).toEqual([
+    expect(handFixes(result)).toEqual([
       "Archive this order's Trello card by hand (Trello API error archiving the card: 401).",
-      expect.stringMatching(/^Sales rows 3126–3127/),
-      expect.stringMatching(/^Delete the draft invoice for this order in the Square Dashboard/),
+      SALES_ROWS_FIX,
+    ])
+  })
+
+  it('deletes a draft Square invoice and records that on the order', async () => {
+    const order = await invoicedOrder()
+
+    const result = await voidOrder(order.id, 'Customer cancelled')
+    expect(handFixes(result)).toEqual([SALES_ROWS_FIX])
+    expect(square.invoices).toEqual([])
+    expect(square.orders.map((o) => o.state)).toEqual(['CANCELED'])
+    expect(square.callsTo('DELETE', '/v2/invoices/INVOICE_3')[0].url.search).toBe('?version=0')
+    // The Square step now reads skipped, and still says which invoice it was.
+    expect(result).toMatchObject({
+      status: 'voided',
+      order: { square_status: 'skipped', square_invoice_id: 'INVOICE_3' },
+    })
+    expect(await getSalesOrder(db(), order.id)).toMatchObject({ square_status: 'skipped' })
+  })
+
+  it('deletes the current version of a draft someone edited in Square', async () => {
+    const order = await invoicedOrder()
+    square.editInvoice('INVOICE_3')
+
+    expect(handFixes(await voidOrder(order.id, 'Entered twice'))).toEqual([SALES_ROWS_FIX])
+    expect(square.callsTo('DELETE', '/v2/invoices/INVOICE_3')[0].url.search).toBe('?version=1')
+    expect(square.invoices).toEqual([])
+  })
+
+  it.each([
+    ['UNPAID', 'sent and unpaid'],
+    ['SCHEDULED', 'scheduled to be sent'],
+    ['PAID', 'paid'],
+  ])('leaves a %s invoice alone and says to cancel or refund it', async (status, words) => {
+    const order = await invoicedOrder()
+    square.setInvoiceStatus('INVOICE_3', status)
+
+    const result = await voidOrder(order.id, 'Customer cancelled')
+    expect(handFixes(result)).toEqual([
+      SALES_ROWS_FIX,
+      `This order's Square invoice is already ${words}, so the app left it alone. Cancel or refund it in Square by hand.`,
+    ])
+    expect(square.invoices.map((i) => i.status)).toEqual([status])
+    expect(square.callsTo('DELETE', '/v2/invoices/INVOICE_3')).toEqual([])
+    expect(result).toMatchObject({ order: { square_status: 'done' } })
+  })
+
+  it("says Square isn't set up, and touches nothing there", async () => {
+    const order = await invoicedOrder()
+    vi.stubEnv('SQUARE_ACCESS_TOKEN', '')
+    const calls = square.calls.length
+
+    const result = await voidOrder(order.id, 'Customer cancelled')
+    expect(handFixes(result)).toEqual([SALES_ROWS_FIX, SQUARE_NOT_SET_UP_FOR_VOID])
+    expect(square.calls).toHaveLength(calls)
+    expect(result).toMatchObject({ order: { square_status: 'done' } })
+  })
+
+  it('asks for a hand fix when Square refuses to delete the draft', async () => {
+    const order = await invoicedOrder()
+    square.fail('DELETE', '/v2/invoices/INVOICE_3', 403)
+
+    const result = await voidOrder(order.id, 'Customer cancelled')
+    expect(handFixes(result)).toEqual([
+      SALES_ROWS_FIX,
+      expect.stringMatching(
+        /^Couldn't delete this order's draft invoice in Square \(Square DELETE .+ \(403\): FORBIDDEN.*\)\. Delete it in the Square Dashboard/
+      ),
+    ])
+    expect(square.invoices.map((i) => i.status)).toEqual(['DRAFT'])
+    expect(result).toMatchObject({ order: { square_status: 'done' } })
+  })
+
+  it('says when Square no longer has the invoice', async () => {
+    const order = await invoicedOrder()
+    square.invoices.length = 0
+
+    expect(handFixes(await voidOrder(order.id, 'Customer cancelled'))).toEqual([
+      SALES_ROWS_FIX,
+      expect.stringMatching(/^Square has no invoice INVOICE_3, so nothing was deleted\./),
     ])
   })
 

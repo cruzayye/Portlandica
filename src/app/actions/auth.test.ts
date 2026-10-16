@@ -43,7 +43,10 @@ vi.mock('@/lib/trello', () => ({
   createTrelloCard: mocks.trello,
   archiveTrelloCard: mocks.trello,
 }))
-vi.mock('@/lib/square', () => ({ createDraftInvoice: mocks.square }))
+vi.mock('@/lib/square', () => ({
+  createDraftInvoice: mocks.square,
+  deleteDraftInvoice: mocks.square,
+}))
 vi.mock('next/server', () => ({ after: vi.fn() }))
 
 import * as orderActions from './orders'

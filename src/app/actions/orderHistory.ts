@@ -12,7 +12,7 @@ import {
 } from '@/lib/db/orders'
 import { findOrderRows, untagOrderRows } from '@/lib/google/sheets'
 import { archiveTrelloCard } from '@/lib/trello'
-import { runOrderSteps } from '@/lib/orderSteps'
+import { deleteVoidedOrderDraft, runOrderSteps } from '@/lib/orderSteps'
 import { describeSheetRef } from '@/lib/orders'
 
 const reason = (err: unknown) => (err instanceof Error ? err.message : String(err))
@@ -68,8 +68,9 @@ export const retryOrder = async (
 }
 
 /**
- * Void an order: its cans go back to their batches and its Trello card is archived.
- * The Sales sheet and Square are not changed; the result lists what to fix there by hand.
+ * Void an order: its cans go back to their batches, its Trello card is archived and its
+ * Square invoice is deleted if it is still a draft. Sales rows, and an invoice that was
+ * already sent, are not changed; the result lists what to fix there by hand.
  */
 export const voidOrder = async (
   orderId: number,
@@ -122,11 +123,7 @@ export const voidOrder = async (
       }
     }
 
-    if (voided.square_invoice_id) {
-      handFixes.push(
-        'Delete the draft invoice for this order in the Square Dashboard (Invoices). The app never changes Square invoices once made.'
-      )
-    }
+    handFixes.push(...(await deleteVoidedOrderDraft(db, voided)))
 
     const order = await getSalesOrder(db, orderId)
     return { status: 'voided', order: order ?? { ...voided, lines: [] }, handFixes }

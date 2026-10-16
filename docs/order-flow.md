@@ -50,7 +50,8 @@ only the steps that aren't done.
   card with that line, so a card made by an attempt that didn't get recorded isn't made
   twice.
 - **Square.** The Square order's reference is `<order id>-<first 8 characters of the key>`,
-  and the module reuses an existing draft for the same reference.
+  and the module reuses an existing draft for the same reference. A void deletes the
+  draft only after reading it again from Square, and only while it is still a draft.
 
 ## The Sales sheet rows
 
@@ -82,8 +83,21 @@ Reference # so their cost lookup keeps working.
 ## Voiding
 
 Order History → Void asks why, then `void_order` puts the cans back and the Trello card
-is archived. The app doesn't edit Sales rows or Square invoices: the result lists the
-Sales rows to fix by hand and any Square draft to delete.
+is archived. If the order has a Square invoice:
+
+- **Still a draft:** the app deletes it (`deleteDraftInvoice` in `src/lib/square.ts`
+  reads the invoice for its current version and deletes that version; Square then
+  cancels the draft's Square order). The deletion is recorded on the order: its Square
+  step becomes `skipped`, and `square_invoice_id` keeps the deleted draft's id. Order
+  History shows "Its draft invoice was deleted in Square."
+- **Already sent, scheduled, paid or anything else:** left alone. The result says what
+  it is and to cancel or refund it in Square by hand.
+- **No `SQUARE_ACCESS_TOKEN`:** nothing is checked; the result says Square isn't set up
+  here and to delete, cancel or refund the invoice in the Square Dashboard by hand.
+- **Square refuses the delete, or has no invoice with that id:** nothing is recorded and
+  the result says what to check in the Square Dashboard.
+
+The app doesn't edit Sales rows: the result lists the rows to fix by hand.
 
 ## Code
 
@@ -94,14 +108,18 @@ Sales rows to fix by hand and any Square draft to delete.
 - `src/lib/google/sheets.ts`, `src/lib/trello.ts`, `src/lib/square.ts`, `src/lib/geocode.ts`.
 - `supabase/migrations/20261017000700_order_flow.sql`: four columns on `sales_orders`
   (`delivery_address`, `customer_email`, `sheet_ref`, `new_customer`) so any step can run
-  again from the order alone. Undo: `supabase/rollback/20261017000700_order_flow.sql`.
+  again from the order alone, and a `record_order_step` that lets a void order's Square
+  step go from done to skipped once its draft is deleted. Undo:
+  `supabase/rollback/20261017000700_order_flow.sql`.
 
 ## Tests
 
 `npm test` runs the actions and the step runner against the real migrations in PGlite,
 with Sheets, Trello, Square and the geocoder mocked. They reach the database as the service
-role, as the app's server does with the secret key, with nobody on the partner list.
-Sign-in (the team password) is covered by `src/app/actions/auth.test.ts` and
+role, as the app's server does with the secret key, with nobody on the partner list. The
+void tests run the real Square module against `src/lib/testing/fakeSquare.ts`, an
+in-memory Square that keeps invoice versions and deletes only drafts. Sign-in (the team
+password) is covered by `src/app/actions/auth.test.ts` and
 `src/app/login/actions.test.ts`. `src/lib/google/testing/fakeSheets.ts`
 is an in-memory Sheets that applies inserts, writes and tags for real, so the sheet tests
 check the rows as they end up, retries and two orders written at once.

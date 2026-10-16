@@ -1,7 +1,8 @@
 /**
- * Creates DRAFT Square invoices for orders. Nothing in this file publishes or
- * sends an invoice: someone reviews the draft in the Square Dashboard and
- * sends it from there. See docs/integrations.md.
+ * Creates DRAFT Square invoices for orders, and deletes one when its order is
+ * voided while it is still a draft. Nothing in this file publishes, sends,
+ * cancels or refunds an invoice: someone reviews the draft in the Square
+ * Dashboard and sends it from there. See docs/integrations.md.
  *
  * Server-side only, because it reads SQUARE_ACCESS_TOKEN. Call it from a
  * server action or route handler, and don't mark this file 'use server'
@@ -89,6 +90,15 @@ export type DraftInvoiceResult = {
   invoiceNumber: string | null
 }
 
+/** What deleteDraftInvoice found, and did. */
+export type DraftDeletion =
+  /** It was still a draft and is gone now. Square also cancels the order it was for. */
+  | { outcome: 'deleted' }
+  /** Published (sent, scheduled, paid and so on), so it was left alone. */
+  | { outcome: 'not_draft'; status: string }
+  /** Square has no invoice with this id: deleted already, or made with another account. */
+  | { outcome: 'not_found' }
+
 export type SquareErrorDetail = {
   category: string
   code: string
@@ -122,6 +132,8 @@ type SquareOrder = { id: string; reference_id?: string }
 
 type SquareInvoice = {
   id: string
+  /** Goes up with every change. Deleting needs the current one. */
+  version?: number
   order_id?: string
   status: string
   invoice_number?: string
@@ -166,10 +178,11 @@ const describeErrors = (errors: SquareErrorDetail[]) =>
  * Calls the Square API. Network failures, timeouts, 429s and 5xx responses
  * are retried. That is safe because every write carries an idempotency key:
  * Square answers a repeated key with the first result instead of acting twice.
+ * A repeated delete can't act twice either: the second one finds nothing.
  */
 const squareRequest = async <T>(
   config: SquareConfig,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'DELETE',
   path: string,
   body?: object
 ): Promise<T> => {
@@ -514,5 +527,55 @@ export const createDraftInvoice = async (input: DraftInvoiceInput): Promise<Draf
     status: invoice.status,
     dueDate: invoice.payment_requests?.[0]?.due_date ?? dueDate,
     invoiceNumber: invoice.invoice_number ?? null,
+  }
+}
+
+/** The invoice as Square has it now, or null if Square has none with this id. */
+const getInvoice = async (config: SquareConfig, invoiceId: string) => {
+  try {
+    const { invoice } = await squareRequest<{ invoice: SquareInvoice }>(
+      config,
+      'GET',
+      `/v2/invoices/${encodeURIComponent(invoiceId)}`
+    )
+    return invoice
+  } catch (err) {
+    if (err instanceof SquareApiError && err.status === 404) return null
+    throw err
+  }
+}
+
+/**
+ * Deletes a Square invoice, but only while it is still a DRAFT, for an order that was
+ * voided. A published invoice (sent, scheduled, paid, ...) is never touched: the result
+ * says what it is, so a person can cancel or refund it in Square. Square deletes only
+ * the version it is given, so this reads the invoice first and deletes that version; a
+ * draft someone changed in between is left for a person too. Deleting a draft also
+ * cancels the Square order it was for. Safe to call again: a second call finds nothing.
+ */
+export const deleteDraftInvoice = async (invoiceId: string): Promise<DraftDeletion> => {
+  const config = getConfig()
+  const id = String(invoiceId ?? '').trim()
+  if (!id) throw new Error('There is no Square invoice id to delete')
+
+  const invoice = await getInvoice(config, id)
+  if (!invoice) return { outcome: 'not_found' }
+  if (invoice.status !== 'DRAFT') return { outcome: 'not_draft', status: invoice.status }
+
+  try {
+    await squareRequest(
+      config,
+      'DELETE',
+      `/v2/invoices/${encodeURIComponent(id)}?version=${invoice.version ?? 0}`
+    )
+    return { outcome: 'deleted' }
+  } catch (err) {
+    // Look again before calling it a failure: a reply lost after Square deleted the
+    // draft comes back as "not found" on the retry, and someone may have sent the
+    // invoice in the meantime.
+    const now = await getInvoice(config, id).catch(() => undefined)
+    if (now === null) return { outcome: 'deleted' }
+    if (now && now.status !== 'DRAFT') return { outcome: 'not_draft', status: now.status }
+    throw err
   }
 }

@@ -4,10 +4,10 @@ Two server-side modules, wired into the order flow on `feat/order-flow` (see
 `docs/order-flow.md`): the Square step runs after the sheet step for orders with Create
 Invoice on, and new businesses are geocoded after the order is saved.
 
-| Module               | What it does                                                                                           |
-| -------------------- | ------------------------------------------------------------------------------------------------------ |
-| `src/lib/square.ts`  | `createDraftInvoice()` makes a **draft** Square invoice for an order. It never publishes or sends one. |
-| `src/lib/geocode.ts` | `geocodeAddress()` turns a US street address into latitude/longitude with the free US Census Geocoder. |
+| Module               | What it does                                                                                                                                                       |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/lib/square.ts`  | `createDraftInvoice()` makes a **draft** Square invoice for an order; `deleteDraftInvoice()` deletes one when its order is voided. Neither publishes or sends one. |
+| `src/lib/geocode.ts` | `geocodeAddress()` turns a US street address into latitude/longitude with the free US Census Geocoder.                                                             |
 
 Both use plain `fetch` and add no packages. Call them only from server code (server
 actions, route handlers). Don't put `'use server'` at the top of either file: that would
@@ -166,6 +166,32 @@ can share one billing inbox, so email alone isn't enough); otherwise a new custo
 company name, email and reference id. Names match ignoring case and extra spaces. It never
 edits a customer it finds, so if that customer has no email in Square, add it there.
 
+## deleteDraftInvoice
+
+```ts
+import { deleteDraftInvoice } from '@/lib/square'
+
+const result = await deleteDraftInvoice(order.square_invoice_id)
+// { outcome: 'deleted' } | { outcome: 'not_draft', status: 'PAID' } | { outcome: 'not_found' }
+```
+
+Voiding an order calls it (`docs/order-flow.md`, "Voiding"). Square's `DeleteInvoice`
+(`DELETE /v2/invoices/{id}?version=…`) deletes only drafts, at the version it is given, and
+sets the invoice's Square order to `CANCELED`; deleted invoices are no longer returned by
+`GET /v2/invoices/{id}`. So the module:
+
+- reads the invoice first (`GET /v2/invoices/{id}`) and deletes only if its status is
+  `DRAFT`, passing the `version` it just read;
+- returns `not_draft` with Square's status (`UNPAID`, `SCHEDULED`, `PAID` and so on)
+  without touching anything, so a person can cancel or refund it in Square;
+- returns `not_found` when Square has no invoice with that id;
+- when the delete fails, reads the invoice again: gone counts as deleted (a reply lost after
+  Square deleted it), sent in the meantime counts as `not_draft`, and a draft that is still
+  there throws, leaving it for a person.
+
+It needs the same env vars and the `INVOICES_WRITE` and `ORDERS_WRITE` permissions as
+`createDraftInvoice`.
+
 ## geocodeAddress
 
 ```ts
@@ -196,10 +222,13 @@ curl -s 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?addr
 ## Tests
 
 `npm test` covers both modules with `fetch` mocked, so nothing goes over the network.
-`src/lib/square.test.ts` runs against an in-memory fake of the Square endpoints that, like
-Square, replays repeated idempotency keys and allows one invoice per order. That is how the
-retry tests check nothing is created twice. `src/lib/geocode.test.ts` uses a real Census reply
-for Powell's City of Books as its fixture.
+`src/lib/square.test.ts` runs against an in-memory fake of the Square endpoints
+(`src/lib/testing/fakeSquare.ts`) that, like Square, replays repeated idempotency keys,
+allows one invoice per order, keeps a version on every invoice and deletes only drafts. That
+is how the retry tests check nothing is created twice, and how the void tests
+(`src/app/actions/orderHistory.test.ts`) check only drafts are deleted.
+`src/lib/geocode.test.ts` uses a real Census reply for Powell's City of Books as its
+fixture.
 
 The Square API version is pinned in `square.ts` (`SQUARE_VERSION = '2026-09-16'`). Bump it on
 purpose, after reading Square's changelog, and re-run the tests.

@@ -19,6 +19,7 @@ const steps = vi.hoisted(() => ({
   untagOrderRows: vi.fn(),
   createTrelloCard: vi.fn(),
   createDraftInvoice: vi.fn(),
+  deleteDraftInvoice: vi.fn(),
 }))
 
 vi.mock('@/lib/google/sheets', () => ({
@@ -26,7 +27,10 @@ vi.mock('@/lib/google/sheets', () => ({
   untagOrderRows: steps.untagOrderRows,
 }))
 vi.mock('@/lib/trello', () => ({ createTrelloCard: steps.createTrelloCard }))
-vi.mock('@/lib/square', () => ({ createDraftInvoice: steps.createDraftInvoice }))
+vi.mock('@/lib/square', () => ({
+  createDraftInvoice: steps.createDraftInvoice,
+  deleteDraftInvoice: steps.deleteDraftInvoice,
+}))
 
 import {
   SQUARE_NOT_SET_UP,

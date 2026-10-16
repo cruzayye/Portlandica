@@ -121,6 +121,10 @@ Call them from server code with `supabase.rpc()`, or through `src/lib/db`.
 | `archive_batch(batch_id, note)`                                 | Writes off what's left and hides the batch.                                                                                                          | No change.                                                                                 |
 | `unarchive_batch(batch_id, note)`                               | Undoes the archive, restoring the written-off cans.                                                                                                  | No change.                                                                                 |
 
+The order flow's `20261017000700_order_flow.sql` makes one exception to "a done step stays
+done": once a void deletes the order's Square draft, its Square step is recorded as
+`skipped`, keeping the invoice id.
+
 All eight are `security definer` with `search_path = ''`, executable only by
 `authenticated` and `service_role`, and they call `public.is_partner()` for every request
 that comes through the API. The SQL Editor (no API request) and the service role are

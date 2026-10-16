@@ -915,6 +915,45 @@ describe('record_order_step', () => {
     })
   })
 
+  it("records a void order's deleted Square draft as skipped, and nothing else undone", async () => {
+    const { order } = await createOrder(
+      PAUL,
+      'step-5',
+      [{ product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 }],
+      { p_create_invoice: true }
+    )
+    await step(order.id, 'square', 'done', 'inv-1')
+    await step(order.id, 'trello', 'done', 'card-1')
+    // Only once the order is void.
+    await expect(step(order.id, 'square', 'skipped')).rejects.toMatchObject({
+      hint: 'step_already_done',
+    })
+
+    await query(PAUL, `select public.void_order($1, 'Customer cancelled')`, [order.id])
+    expect((await step(order.id, 'square', 'skipped')).o).toMatchObject({
+      square_status: 'skipped',
+      square_error: null,
+      square_invoice_id: 'inv-1',
+    })
+    // A void undoes no other done step, and a Square step only as skipped.
+    await expect(step(order.id, 'trello', 'skipped')).rejects.toMatchObject({
+      hint: 'step_already_done',
+    })
+    const other = await createOrder(
+      PAUL,
+      'step-6',
+      [{ product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 }],
+      { p_create_invoice: true }
+    )
+    await step(other.order.id, 'square', 'done', 'inv-2')
+    await query(PAUL, `select public.void_order($1, 'Duplicate')`, [other.order.id])
+    for (const status of ['failed', 'pending']) {
+      await expect(step(other.order.id, 'square', status)).rejects.toMatchObject({
+        hint: 'step_already_done',
+      })
+    }
+  })
+
   it('never shares a Square invoice between orders', async () => {
     const a = await createOrder(
       PAUL,

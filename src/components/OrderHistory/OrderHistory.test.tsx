@@ -203,7 +203,36 @@ describe('OrderHistory', () => {
     expect(
       screen.getByText('Sales rows 3126–3127 still show this order: fix them by hand.')
     ).toBeInTheDocument()
-    expect(screen.getByText('Delete its draft invoice in Square by hand.')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        "Its Square invoice wasn't deleted: delete it in Square if it's still a draft, or cancel or refund it by hand."
+      )
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/draft invoice was deleted/)).not.toBeInTheDocument()
+  })
+
+  it('says when a void deleted the Square draft', async () => {
+    listOrders.mockResolvedValue(history([order()]))
+    voidOrder.mockResolvedValue({
+      status: 'voided',
+      order: order({
+        voided_at: '2026-10-15T19:00:00Z',
+        void_reason: 'Customer cancelled',
+        create_invoice: true,
+        square_status: 'skipped',
+        square_invoice_id: 'inv-1',
+      }),
+      handFixes: [],
+    })
+    const user = userEvent.setup({ delay: null })
+    render(<OrderHistory />)
+
+    await user.click(await screen.findByRole('button', { name: 'Void' }))
+    await user.type(within(screen.getByRole('dialog')).getByLabelText('Why?'), 'Customer cancelled')
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Void Order' }))
+
+    expect(await screen.findByText('Its draft invoice was deleted in Square.')).toBeInTheDocument()
+    expect(screen.queryByText(/Square invoice wasn't deleted/)).not.toBeInTheDocument()
   })
 
   it('shows why orders could not be loaded', async () => {

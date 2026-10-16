@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   writeLocationCoordinates: vi.fn(),
   createTrelloCard: vi.fn(),
   createDraftInvoice: vi.fn(),
+  deleteDraftInvoice: vi.fn(),
   geocodeAddress: vi.fn(),
 }))
 
@@ -39,7 +40,10 @@ vi.mock('@/lib/google/sheets', () => ({
   writeLocationCoordinates: mocks.writeLocationCoordinates,
 }))
 vi.mock('@/lib/trello', () => ({ createTrelloCard: mocks.createTrelloCard }))
-vi.mock('@/lib/square', () => ({ createDraftInvoice: mocks.createDraftInvoice }))
+vi.mock('@/lib/square', () => ({
+  createDraftInvoice: mocks.createDraftInvoice,
+  deleteDraftInvoice: mocks.deleteDraftInvoice,
+}))
 vi.mock('@/lib/geocode', () => ({ geocodeAddress: mocks.geocodeAddress }))
 vi.mock('next/server', () => ({ after: (task: () => unknown) => mocks.afterTasks.push(task) }))
 
