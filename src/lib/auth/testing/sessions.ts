@@ -26,7 +26,7 @@ const tamperedToken = () => {
   const payload = {
     iat,
     exp: iat + 10 * 365 * 24 * 60 * 60,
-    pv: passwordVersion(TEST_AUTH.password),
+    pv: passwordVersion(TEST_AUTH.password, TEST_AUTH.sessionSecret),
   }
   return `${Buffer.from(JSON.stringify(payload)).toString('base64url')}.${signature}`
 }

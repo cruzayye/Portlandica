@@ -44,9 +44,12 @@ export const passwordMatches = (input: string, password: string) =>
 
 /**
  * Ties a session to the password it was made with: the first 16 hex characters of
- * SHA-256(TEAM_PASSWORD). Changing the password changes it, which signs everyone out.
+ * HMAC-SHA256(SESSION_SECRET, TEAM_PASSWORD). Changing the password changes it, which signs
+ * everyone out. It is keyed with SESSION_SECRET, so a copied cookie can't be used to test
+ * password guesses offline.
  */
-export const passwordVersion = (password: string) => sha256(password).toString('hex').slice(0, 16)
+export const passwordVersion = (password: string, sessionSecret: string) =>
+  createHmac('sha256', sessionSecret).update(password, 'utf8').digest('hex').slice(0, 16)
 
 /** `<payload>.<signature>`: base64url JSON `{ iat, exp, pv }`, HMAC-SHA256 signed. */
 export const createSessionToken = ({ password, sessionSecret }: AuthConfig, now = Date.now()) => {
@@ -54,7 +57,7 @@ export const createSessionToken = ({ password, sessionSecret }: AuthConfig, now 
   const payload: SessionPayload = {
     iat,
     exp: iat + SESSION_MAX_AGE_SECONDS,
-    pv: passwordVersion(password),
+    pv: passwordVersion(password, sessionSecret),
   }
   const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url')
   return `${encoded}.${sign(encoded, sessionSecret)}`
@@ -91,7 +94,7 @@ export const verifySessionToken = (
   return (
     isPayload(payload) &&
     inSeconds(now) < payload.exp &&
-    sameText(payload.pv, passwordVersion(password))
+    sameText(payload.pv, passwordVersion(password, sessionSecret))
   )
 }
 
