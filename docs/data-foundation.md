@@ -20,9 +20,9 @@ database.
   transaction.
 
 Migrations: `supabase/migrations/20261017000100_customers.sql` through
-`20261017000600_order_functions.sql`. They need `public.is_partner()` from the sign-in
-branch (`add-sign-in`, `20261015120000_partner_access.sql`) and stop with a clear error
-if it is missing.
+`20261017000600_order_functions.sql`. They need `public.is_partner()` from database step 1
+(`20261015120000_partner_access.sql`, see `SETUP.md`) and stop with a clear error if it is
+missing.
 
 ## Tables
 
@@ -75,7 +75,7 @@ products table would be more than two products need.
 | `sheet_status`, `inventory_status`, `trello_status`, `square_status` | `pending`, `done`, `failed` or `skipped`, each with an `_error` column. Square starts `skipped` unless `create_invoice`. |
 | `trello_card_id`, `square_invoice_id`                                | Unique; required for that step to be `done`.                                                                             |
 | `voided_at`, `voided_by`, `void_reason`                              | Set together by `void_order`.                                                                                            |
-| `created_by`, `created_at`, `updated_at`                             | `created_by` is the signed-in partner.                                                                                   |
+| `created_by`, `created_at`, `updated_at`                             | `created_by` is the Supabase Auth user, if any; NULL for the app, which uses the secret key with the team password.      |
 
 ### sales_order_lines
 
@@ -98,7 +98,8 @@ and void movements only), `note`, `created_by`, `created_at`. Reasons:
 | `adjustment`    | `adjust_batch` with a note, or any other count change (see below).                                                                            |
 | `archive`       | `archive_batch` writing off what's left, and `unarchive_batch` putting it back.                                                               |
 
-Partners can read the ledger but not write it directly. A trigger on `inventory` records
+Nobody writes the ledger directly: the app writes it only through the functions, and
+signed-in partners can only read it. A trigger on `inventory` records
 every count change that doesn't come through the functions (today's Inventory tab, the
 current order flow, the Supabase dashboard) as an adjustment, so the history is
 complete from the day the migration runs.
@@ -121,17 +122,22 @@ Call them from server code with `supabase.rpc()`, or through `src/lib/db`.
 All eight are `security definer` with `search_path = ''`, executable only by
 `authenticated` and `service_role`, and they call `public.is_partner()` for every request
 that comes through the API. The SQL Editor (no API request) and the service role are
-trusted. Errors carry a hint such as `insufficient_stock`, `batch_archived` or
-`order_void`; `DbError` in `src/lib/db/errors.ts` turns those into codes.
+trusted; the app's server calls them as the service role. Errors carry a hint such as
+`insufficient_stock`, `batch_archived` or `order_void`; `DbError` in
+`src/lib/db/errors.ts` turns those into codes.
 
 ## Who can do what
 
-- **Partners** (signed in, `is_partner()`): read every new table; add and edit customers
-  directly; change orders and the ledger only through the functions.
+- **The app** (its server, with the secret key: the service role): everything. Every
+  server action checks the team password session first (`SETUP.md`).
+- **Service role** (scripts such as the seed): everything.
+- **Partners** (signed in through Supabase Auth, `is_partner()`): read every new table; add
+  and edit customers directly; change orders and the ledger only through the functions.
+  Dormant with the team password: nobody signs in through Supabase Auth and the partner
+  list is empty.
 - **Signed-in non-partners**: nothing on the new tables or functions.
 - **The publishable key on its own**: nothing on the new tables or functions. Reading
   `inventory` works as before and now includes the three new columns.
-- **Service role** (scripts such as the seed): everything.
 
 ## Choices worth knowing
 
@@ -172,10 +178,10 @@ more alongside.
 
 ## Steps for Johnny, in order
 
-1. **Finish the sign-in rollout first** (all six steps of `SETUP.md` on `add-sign-in`).
-   These migrations need its `public.is_partner()`, and `supabase db push` applies every
-   pending migration in order, so pushing before its step 6 would also apply its step 2
-   too early.
+1. **Finish `SETUP.md` first** (team password live, database steps 1 and 2 done). These
+   migrations need step 1's `public.is_partner()`, and `supabase db push` applies every
+   pending migration in order, so pushing before then would also apply step 2 before the
+   team-password version is live.
 
 2. **Set up the Supabase CLI** (it's a dev dependency). `db pull` needs Docker Desktop
    running.
@@ -206,8 +212,8 @@ more alongside.
 
    If `db pull` asks "Update remote migration history table?", answer **n**. If you
    answered y, also mark the version it recorded as reverted with
-   `npx supabase migration repair --status reverted <version>`. Then mark the sign-in
-   migrations you already ran in the SQL Editor:
+   `npx supabase migration repair --status reverted <version>`. Then mark database steps 1
+   and 2, which you ran in the SQL Editor, as applied:
 
    ```bash
    npx supabase migration repair --status applied 20261015120000 20261015120100
@@ -215,8 +221,8 @@ more alongside.
 
    Commit the baseline file.
 
-4. **Merge `feat/data-foundation`** after `add-sign-in`. If `package-lock.json`
-   conflicts, take either side and run `npm install`. Then check:
+4. **Merge `feat/data-foundation`** (on `integration/combined` it already is). If
+   `package-lock.json` conflicts, take either side and run `npm install`. Then check:
 
    ```bash
    npm ci
@@ -224,9 +230,9 @@ more alongside.
    npx tsc --noEmit
    ```
 
-   Optional but worth it: rehearse the whole chain (baseline, sign-in, these six) on a
-   local copy first. It needs Docker and `add-sign-in` at 381aa1a or later. `db reset`
-   without `--linked` only touches the local database; never add `--linked`.
+   Optional but worth it: rehearse the whole chain (baseline, database steps 1 and 2,
+   these six) on a local copy first. It needs Docker. `db reset` without `--linked` only
+   touches the local database; never add `--linked`.
 
    ```bash
    npx supabase start
@@ -267,10 +273,10 @@ more alongside.
    looks wrong now, before real data goes in, `supabase/rollback/20261017_data_foundation.sql`
    removes everything these migrations added.
 
-7. **Seed the customers.** Add `SUPABASE_SERVICE_ROLE_KEY` to `.env.local` (Supabase →
-   Project Settings → API keys; server only, never `NEXT_PUBLIC_`, never committed). The
-   script also uses the app's `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_SHEET_ID` and
-   `NEXT_PUBLIC_SUPABASE_URL`, and reads the sheet with the read-only scope.
+7. **Seed the customers.** The script uses the app's own `SUPABASE_SECRET_KEY`,
+   `GOOGLE_SERVICE_ACCOUNT_JSON`, `GOOGLE_SHEET_ID` and `NEXT_PUBLIC_SUPABASE_URL` from
+   `.env.local` (`SETUP.md`; server only, never `NEXT_PUBLIC_`, never committed), and reads
+   the sheet with the read-only scope.
 
    ```bash
    npx tsx --env-file=.env.local scripts/seed-customers.ts
@@ -348,13 +354,14 @@ isDonation })`; pass the same `total_price` to `createSalesOrder` when the partn
 ## Tests
 
 `npm test` runs the migrations in PGlite, an in-process Postgres, on top of a Supabase
-stand-in (roles, `auth.uid()`, default grants, and the sign-in branch's partner check)
-and an approximation of the live schema with a few batches shaped like the real ones
-(`src/lib/db/testing/sql/`). `migrations.test.ts` exercises the SQL as anon, a signed-in
-non-partner, partners and the service role. The module and seed tests go through
+stand-in (roles, `auth.uid()` and default grants) and an approximation of the live schema
+and its access today, with a few batches shaped like the real ones
+(`src/lib/db/testing/sql/`). Database steps 1 and 2 run first with an empty partner list,
+as in production; two made-up partners are added afterwards so the dormant partner path is
+still covered. `migrations.test.ts` exercises the SQL as anon, a signed-in non-partner,
+partners and the service role (which the app uses). The module and seed tests go through
 `testing/fakeSupabase.ts`, a small stand-in for the REST client that runs each call as
-the given role, so RLS, grants and the functions' argument names are all exercised. The
-suite also passes with the sign-in branch's two migrations in the same folder.
+the given role, so RLS, grants and the functions' argument names are all exercised.
 
 ## Not verified
 
@@ -363,7 +370,7 @@ suite also passes with the sign-in branch's two migrations in the same folder.
   is written to work either way, and `db pull` will show the real ones.
 - PGlite is Postgres 18; Supabase runs 15 or 17. Nothing 18-only is used.
 - The REST client in tests is a stand-in, not PostgREST itself.
-- Two partners applying orders at the same moment: rows are locked in a fixed order to
+- Two orders applied at the same moment: rows are locked in a fixed order to
   avoid deadlocks, but PGlite has one connection, so this isn't tested.
 - The migrations haven't been applied on top of the real baseline; the optional
   rehearsal in step 4 does that before anything touches production.
