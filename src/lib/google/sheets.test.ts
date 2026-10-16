@@ -139,7 +139,7 @@ describe('writeOrderToSheet: Sales', () => {
       240, // E: Units
       398.4, // F: Sales ($)
       '', // G: Shipping Cost ($)
-      '', // H: Payment Date (not paid)
+      '', // H: Payment Date
       0, // I: Payment Received
       '=IF(I4-F4=0,"Yes","No")', // J: Paid
       '', // K
@@ -157,11 +157,12 @@ describe('writeOrderToSheet: Sales', () => {
     ])
   })
 
-  it('fills in the payment date and amount when the order is paid', async () => {
+  it('fills in the payment received but leaves the payment date blank when paid', async () => {
+    // Autopay customers pay weeks after the order, so the date is filled in when it arrives.
     await writeOrderToSheet(order({ isPaid: true }))
     const [still, sparkling] = fake().rows('Sales').slice(3, 5)
-    expect([still[7], still[8]]).toEqual([ORDER_DATE, 398.4])
-    expect([sparkling[7], sparkling[8]]).toEqual([ORDER_DATE, 597.6])
+    expect([still[7], still[8], still[9]]).toEqual(['', 398.4, '=IF(I4-F4=0,"Yes","No")'])
+    expect([sparkling[7], sparkling[8]]).toEqual(['', 597.6])
   })
 
   it("gives each row its own line's amount", async () => {
@@ -245,7 +246,7 @@ describe('writeOrderToSheet: Sales', () => {
     const rows = fake().rows('Sales')
     expect(rows).toHaveLength(8)
     expect(rows.filter((row) => row[3] === 'Hollywood Theatre')).toHaveLength(2)
-    expect(rows[3][8]).toBe(398.4)
+    expect([rows[3][7], rows[3][8]]).toEqual(['', 398.4])
     expect(rows[5][5]).toBe('=SUM(F$2:F5)')
   })
 

@@ -139,7 +139,7 @@ const salesRows = (order: SheetOrder): RowAt[] => {
     num(line.cans), // E: Units
     num(line.amount), // F: Sales ($)
     empty, // G: Shipping Cost ($)
-    order.isPaid ? num(date) : empty, // H: Payment Date
+    empty, // H: Payment Date: filled in when the money arrives (autopay pays weeks later)
     num(order.isPaid ? line.amount : 0), // I: Payment Received
     formula(`=IF(I${r}-F${r}=0,"Yes","No")`), // J: Paid
     empty, // K: Referral Cost ($)

@@ -185,8 +185,8 @@ Sales sheet and Trello):
   prompt. Under the Price, each line shows its price per can: their custom cans at their
   price, house stock at $1.50 (or at their price if they aren't a custom-can account).
 - After Submit, the result shows Sales sheet, Inventory and Trello as done.
-- Each new Sales row has its own line's amount in F, `SB-<batch id>` in M, the order date
-  in H if it was paid, and its formulas; the Total row's `SUM` reaches it.
+- Each new Sales row has its own line's amount in F, `SB-<batch id>` in M, a blank H
+  (Payment Date) even if it was paid, and its formulas; the Total row's `SUM` reaches it.
 - The Trello card is due at 9 AM on the delivery date picked and ends with `Order #<id>`.
 - The Order History tab lists the order.
 - The Inventory tab groups batches by product, shows the order's cans leaving its batch

@@ -56,7 +56,7 @@ only the steps that aren't done.
 ## The Sales sheet rows
 
 Same columns, formulas and tab names as before, one row per product (still and
-sparkling are separate rows). Two columns now get filled, and one is worked out
+sparkling are separate rows). One column now gets filled, and one is worked out
 differently:
 
 - **F (Sales ($))**: the row's own line amount (see "Customers and prices"), so in a mixed
@@ -65,7 +65,9 @@ differently:
 - **M (Inventory Reference #)**: `SB-<batch id>`, the Supabase batch the row's cans came
   from. Column N looks M up on the sheet's own Inventory tab, which has no `SB-` rows, so
   N stays 0 as it is today.
-- **H (Payment Date)**: the order date when Paid is on.
+
+**H (Payment Date)** stays blank, as before, even with Paid on: some customers are on
+autopay, which pays about 30 days later, so the date goes in when the money arrives.
 
 Dates and amounts are written as numbers and text is written as text, so nothing typed
 into the form can turn into a formula. Donations rows keep `A7`/`A8` in their Inventory
