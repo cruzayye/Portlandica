@@ -1,15 +1,18 @@
 -- Partner access to inventory: step 1 of 2.
 --
--- APPLY THIS BEFORE DEPLOYING THE SIGN-IN VERSION OF THE APP. It only adds
--- objects; nothing that works today changes.
+-- DORMANT WITH THE TEAM PASSWORD. The app signs people in with one shared team password
+-- and talks to the database from its server with the secret key (the service role),
+-- which row level security doesn't apply to. Nobody signs in through Supabase Auth and
+-- private.partner_emails stays empty, so public.is_partner() is false for every request
+-- and the policy below lets nobody in. This file is kept as it is because the later
+-- migrations and the eight ledger and order functions call public.is_partner(), and
+-- step 2 checks that this step has been applied.
 --
--- Why it has to come first: once partners sign in, the app queries Supabase
--- as the `authenticated` role instead of `anon`. Without this policy the
--- signed-in app would see an empty inventory and orders would fail after the
--- sheet row is written.
+-- When: any time before step 2. It only adds objects; nothing that works today changes,
+-- and the team-password app doesn't depend on it.
 --
 -- What it adds:
---   private.partner_emails          one row per partner (the allowlist)
+--   private.partner_emails          one row per partner (the allowlist); leave it empty
 --   public.is_partner()             true when the signed-in user's email is on it
 --   "Partners can manage inventory" one FOR ALL policy for signed-in partners
 --
@@ -19,7 +22,7 @@
 -- Why an allowlist table instead of writing the emails into the policy with
 -- auth.jwt() ->> 'email':
 --   - this repository is public, and emails in a migration would be published
---     with it; the table's rows are added in the SQL editor instead
+--     with it; the table's rows would be added in the SQL editor instead
 --   - adding or removing a partner is one INSERT or DELETE, not a new migration
 -- The table lives in the `private` schema, which the Data API does not expose,
 -- and only its owner can read it. is_partner() is SECURITY DEFINER so it can
@@ -28,14 +31,8 @@
 -- on the list. Supabase's Security Advisor shows that as warning 0029 ("callable
 -- by signed-in users"); that is intended. Signed-out callers (anon) can't run it.
 --
--- Right after applying, add the partners (lower case, the same list as the
--- ALLOWED_EMAILS env var in Vercel):
---   insert into private.partner_emails (email) values
---     ('partner-one@example.com'),
---     ('partner-two@example.com');
---
 -- Step 2 (20261015120100_tighten_database_permissions.sql) goes AFTER the
--- deploy. See SETUP.md for the full order.
+-- team-password version of the app is deployed. See SETUP.md for the full order.
 
 create schema if not exists private;
 

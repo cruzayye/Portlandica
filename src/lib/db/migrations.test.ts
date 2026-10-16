@@ -10,6 +10,7 @@ import {
   SERVICE,
   STRANGER,
   asRole,
+  createDb,
   createMigratedDb,
   migrationFiles,
   type TestAuth,
@@ -91,7 +92,6 @@ describe('migrations on the live schema', () => {
     await bare.exec(
       readFileSync(path.join(process.cwd(), 'src/lib/db/testing/sql/supabase-stub.sql'), 'utf8')
     )
-    await bare.exec('drop function public.is_partner()')
     const first = readFileSync(
       path.join(
         process.cwd(),
@@ -152,10 +152,8 @@ describe('migrations on the live schema', () => {
           order by 1`)
       ).rows.map((r) => r.x)
 
-    const before = new PGlite()
-    const sqlDir = path.join(process.cwd(), 'src/lib/db/testing/sql')
-    await before.exec(readFileSync(path.join(sqlDir, 'supabase-stub.sql'), 'utf8'))
-    await before.exec(readFileSync(path.join(sqlDir, 'live-baseline.sql'), 'utf8'))
+    // The schema as database steps 1 and 2 leave it, before any data-foundation migration.
+    const before = await createDb(migrationFiles().filter((file) => file.startsWith('20261015')))
 
     const { order } = await createOrder(PAUL, 'rollback', [
       { product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 },
@@ -311,6 +309,156 @@ describe('access', () => {
       'select public.archive_batch(46)'
     )
     expect(batch.rows).toHaveLength(1)
+  })
+})
+
+describe('database steps 1 and 2 with the team password', () => {
+  const STEP_1 = '20261015120000_partner_access.sql'
+  const STEP_2 = '20261015120100_tighten_database_permissions.sql'
+  const migration = (file: string) =>
+    readFileSync(path.join(process.cwd(), 'supabase/migrations', file), 'utf8')
+
+  // Today's live database: the baseline with no migrations applied.
+  let live: PGlite
+
+  beforeEach(async () => {
+    live = await createDb([])
+  })
+
+  afterEach(async () => {
+    await live.close()
+  })
+
+  const run = (auth: TestAuth, sql: string) =>
+    asRole(live, auth, async (tx) => (await tx.query(sql)).rows)
+
+  const policies = async (table: string) =>
+    (
+      await live.query<{ policyname: string; cmd: string; roles: string }>(
+        `select policyname, cmd, roles::text as roles from pg_policies
+         where schemaname = 'public' and tablename = $1 order by policyname`,
+        [table]
+      )
+    ).rows
+
+  const countOf = async (id: number) =>
+    Number(
+      (
+        await live.query<{ count: string }>('select count from public.inventory where id = $1', [
+          id,
+        ])
+      ).rows[0].count
+    )
+
+  const LOCKED_INVENTORY = [
+    { policyname: 'Partners can manage inventory', cmd: 'ALL', roles: '{authenticated}' },
+    { policyname: 'public can read inventory', cmd: 'SELECT', roles: '{anon}' },
+  ]
+
+  it('step 2 stops, changing nothing, until step 1 is applied', async () => {
+    const before = await policies('inventory')
+    await expect(live.exec(migration(STEP_2))).rejects.toThrow(
+      'Apply 20261015120000_partner_access.sql first.'
+    )
+    expect(await policies('inventory')).toEqual(before)
+    await run(ANON, 'update public.inventory set count = 11000 where id = 45')
+    expect(await countOf(45)).toBe(11000)
+  })
+
+  it('step 1 changes nothing the live app uses and leaves the partner list empty', async () => {
+    await live.exec(migration(STEP_1))
+    expect((await live.query('select email from private.partner_emails')).rows).toEqual([])
+    await run(ANON, 'update public.inventory set count = 11000 where id = 45')
+    expect(await run(ANON, 'select id from public.inventory where id = 45')).toHaveLength(1)
+    expect(await countOf(45)).toBe(11000)
+  })
+
+  it('step 2 locks inventory with an empty partner list and keeps the public read', async () => {
+    await live.exec(migration(STEP_1))
+    await live.exec(migration(STEP_2))
+
+    expect(await policies('inventory')).toEqual(LOCKED_INVENTORY)
+    expect(await policies('orders')).toEqual([])
+
+    // Paul's monthly-close script reads inventory with the publishable key.
+    expect(await run(ANON, 'select id, name, count from public.inventory where id = 45')).toEqual([
+      { id: 45, name: 'Portlandica', count: 12000 },
+    ])
+    // The publishable key can no longer change it.
+    for (const sql of [
+      `insert into public.inventory (name, count, "isStill") values ('Nope', 24, true)`,
+      'update public.inventory set count = 0 where id = 45',
+      'delete from public.inventory where id = 46',
+    ]) {
+      await expect(run(ANON, sql)).rejects.toMatchObject({ code: '42501' })
+    }
+    // Nobody who signs in through Supabase Auth is a partner, so they get nothing either.
+    expect(await run(PAUL, 'select id from public.inventory')).toEqual([])
+    await expect(
+      run(PAUL, `insert into public.inventory (name, count, "isStill") values ('Nope', 24, true)`)
+    ).rejects.toMatchObject({ code: '42501' })
+    expect(await countOf(45)).toBe(12000)
+
+    // The app's server uses the secret key (the service role) and keeps working.
+    await run(SERVICE, 'update public.inventory set count = 11976 where id = 45')
+    expect(await countOf(45)).toBe(11976)
+  })
+
+  it('can run each step twice', async () => {
+    for (const file of [STEP_1, STEP_1, STEP_2, STEP_2]) await live.exec(migration(file))
+    expect(await policies('inventory')).toEqual(LOCKED_INVENTORY)
+  })
+})
+
+describe('the app with the team password (service role, no partners)', () => {
+  let app: PGlite
+
+  beforeAll(async () => {
+    app = await createMigratedDb({ partners: false })
+  }, 60_000)
+
+  afterAll(async () => {
+    await app.close()
+  })
+
+  const run = <T = Record<string, unknown>>(auth: TestAuth, sql: string, params: unknown[] = []) =>
+    asRole(app, auth, async (tx) => (await tx.query<T>(sql, params)).rows)
+
+  it('records fills, counts, orders and voids through the functions', async () => {
+    const [fill] = await run<{ id: number }>(
+      SERVICE,
+      `select (public.record_fill(p_count => 240, p_is_still => true, p_fill_date => '2026-10-20',
+         p_name => 'Portlandica', p_note => 'Team fill')).id as id`
+    )
+    await run(SERVICE, `select public.adjust_batch($1, 216, 'One case dented')`, [fill.id])
+    const [{ s }] = await run<{ s: Snapshot }>(
+      SERVICE,
+      `select public.create_sales_order(p_idempotency_key => 'team-1', p_delivery_type => 'drop',
+         p_lines => $1, p_customer_name => 'Que Dice') as s`,
+      [JSON.stringify([{ product: 'still', cans: 24, batch_id: fill.id, unit_price: 1.5 }])]
+    )
+    await run(SERVICE, 'select public.apply_order_inventory($1)', [s.order.id])
+    await run(SERVICE, `select public.void_order($1, 'Entered twice')`, [s.order.id])
+
+    const movements = await run<{ reason: string; delta: number; created_by: string | null }>(
+      SERVICE,
+      'select reason, delta, created_by from public.inventory_movements where batch_id = $1 order by id',
+      [fill.id]
+    )
+    expect(movements).toEqual([
+      { reason: 'fill', delta: 240, created_by: null },
+      { reason: 'adjustment', delta: -24, created_by: null },
+      { reason: 'order', delta: -24, created_by: null },
+      { reason: 'void', delta: 24, created_by: null },
+    ])
+    expect(s.order).toMatchObject({ created_by: null })
+  })
+
+  it('turns away signed-in Supabase Auth users, since nobody is a partner', async () => {
+    expect(await run(PAUL, 'select * from public.customers')).toEqual([])
+    await expect(run(PAUL, `select public.adjust_batch(45, 0, 'zero it')`)).rejects.toMatchObject({
+      hint: 'not_partner',
+    })
   })
 })
 

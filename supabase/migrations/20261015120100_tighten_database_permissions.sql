@@ -1,20 +1,23 @@
--- Partner-only inventory changes: step 2 of 2.
+-- Lock the database: step 2 of 2.
 --
--- APPLY ONLY AFTER THE SIGN-IN VERSION OF THE APP IS DEPLOYED, and partners
--- have signed in and changed an inventory count successfully. The app
--- version live today writes to inventory without a signed-in user, so
--- applying this before the deploy breaks its inventory and order writes.
+-- APPLY ONLY AFTER THE TEAM-PASSWORD VERSION OF THE APP IS DEPLOYED, and someone has
+-- signed in and changed an inventory count successfully. That version writes with the
+-- secret key (the service role), which bypasses these policies and grants, so this step
+-- doesn't affect it. The version live before it writes to inventory with the publishable
+-- key and no signed-in user, so applying this first breaks its inventory and order
+-- writes.
 --
 -- It stops with an error, changing nothing, unless step 1
--- (20261015120000_partner_access.sql) is applied and private.partner_emails
--- has at least one row. The partner-list check is skipped when inventory is
--- empty, so a fresh database (such as `supabase db reset`, which runs
--- migrations before seed.sql) can still be built.
+-- (20261015120000_partner_access.sql) is applied. The partner list
+-- (private.partner_emails) can stay empty: with the team password nobody signs in
+-- through Supabase Auth.
 --
--- inventory: drops the older insert, update and delete policies, so only the
---   "Partners can manage inventory" policy from step 1 allows changes.
---   KEEPS "public can read inventory": the monthly-close script reads
---   inventory with the publishable key and no signed-in user.
+-- inventory: drops the older insert, update and delete policies and anon's write grants,
+--   so the publishable key can no longer change inventory. The only policy left that
+--   allows changes is step 1's "Partners can manage inventory", which lets nobody in
+--   while the partner list is empty.
+--   KEEPS "public can read inventory": Paul's monthly-close script reads inventory with
+--   the publishable key and no signed-in user.
 -- orders (legacy table, not used by the app): drops both policies, so the
 --   Data API can no longer read or write it. The rows stay.
 --
@@ -34,13 +37,6 @@ begin
       and policyname = 'Partners can manage inventory'
   ) then
     raise exception 'Apply 20261015120000_partner_access.sql first.';
-  end if;
-
-  -- Only insist on partners when there is inventory to protect. The live
-  -- database always has rows; a freshly built one has none yet.
-  if exists (select 1 from public.inventory)
-     and not exists (select 1 from private.partner_emails) then
-    raise exception 'private.partner_emails is empty. Add the partner emails first, or nobody will be able to change inventory.';
   end if;
 end
 $$;
