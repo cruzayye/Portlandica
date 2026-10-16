@@ -56,8 +56,8 @@ export type CountChange = {
   note: string
 }
 
-/** Who made a change: the partner looking, another partner, or no one signed in (setup, SQL). */
-export type ChangedBy = 'you' | 'partner' | 'system'
+/** Who made a change: the team, or no one signed in (setup, SQL). */
+export type ChangedBy = 'team' | 'system'
 
 export type HistoryOrder = {
   id: number

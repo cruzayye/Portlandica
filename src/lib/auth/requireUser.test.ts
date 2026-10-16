@@ -1,68 +1,62 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { AuthRetryableFetchError, AuthSessionMissingError } from '@supabase/supabase-js'
 
-const { getUser } = vi.hoisted(() => ({ getUser: vi.fn() }))
+const jar = vi.hoisted(() => ({ cookies: new Map<string, string>() }))
 
-vi.mock('@/lib/supabase/server', () => ({
-  createClient: async () => ({ auth: { getUser } }),
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    get: (name: string) =>
+      jar.cookies.has(name) ? { name, value: jar.cookies.get(name) } : undefined,
+  }),
 }))
 
 import { requireUser } from './requireUser'
-import { AUTH_UNAVAILABLE, NOT_A_PARTNER, SIGNED_OUT, isAuthFailure } from './authFailure'
+import { SESSION_COOKIE } from './session'
+import { SIGNED_OUT, SIGN_IN_NOT_SET_UP, isAuthFailure } from './authFailure'
+import { rejectedTokens, stubTestAuthEnv, validToken } from './testing/sessions'
 
-const signedInAs = (email: string | undefined) =>
-  getUser.mockResolvedValue({ data: { user: { id: 'user-1', email } }, error: null })
+beforeEach(() => {
+  jar.cookies.clear()
+  stubTestAuthEnv()
+})
+
+afterEach(() => {
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+})
 
 describe('requireUser', () => {
-  beforeEach(() => {
-    vi.stubEnv('ALLOWED_EMAILS', 'partner@example.com, second@example.com')
+  it('accepts a device signed in with the team password', async () => {
+    jar.cookies.set(SESSION_COOKIE, validToken())
+    expect(await requireUser()).toEqual({ failure: null })
   })
 
-  afterEach(() => {
-    vi.unstubAllEnvs()
-    getUser.mockReset()
+  it('refuses a caller with no session cookie', async () => {
+    expect(await requireUser()).toEqual({ failure: { authError: SIGNED_OUT } })
   })
 
-  it('accepts a signed-in partner', async () => {
-    signedInAs('partner@example.com')
-    const result = await requireUser()
-    expect(result.failure).toBeNull()
-    expect(result.user?.email).toBe('partner@example.com')
+  it.each(Object.entries(rejectedTokens()))('refuses a cookie that is %s', async (_, token) => {
+    jar.cookies.set(SESSION_COOKIE, token)
+    expect(await requireUser()).toEqual({ failure: { authError: SIGNED_OUT } })
   })
 
-  it('matches the partner email regardless of case', async () => {
-    signedInAs('Second@Example.com')
-    expect((await requireUser()).failure).toBeNull()
+  it('ignores a session token under any other cookie name', async () => {
+    jar.cookies.set('session', validToken())
+    expect(await requireUser()).toEqual({ failure: { authError: SIGNED_OUT } })
   })
 
-  it('rejects a caller with no session', async () => {
-    getUser.mockResolvedValue({ data: { user: null }, error: new AuthSessionMissingError() })
-    expect(await requireUser()).toEqual({ user: null, failure: { authError: SIGNED_OUT } })
-  })
+  it.each([
+    ['TEAM_PASSWORD is missing', { TEAM_PASSWORD: '' }],
+    ['TEAM_PASSWORD is under 12 characters', { TEAM_PASSWORD: 'short' }],
+    ['SESSION_SECRET is missing', { SESSION_SECRET: '' }],
+    ['SESSION_SECRET is under 32 characters', { SESSION_SECRET: 'not-thirty-two-characters' }],
+  ])('refuses everyone, and logs it, when %s', async (_, env) => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
+    jar.cookies.set(SESSION_COOKIE, validToken())
 
-  it('rejects a signed-in user who is not on the list', async () => {
-    signedInAs('stranger@example.com')
-    expect(await requireUser()).toEqual({ user: null, failure: { authError: NOT_A_PARTNER } })
-  })
-
-  it('rejects a signed-in user with no email', async () => {
-    signedInAs(undefined)
-    expect((await requireUser()).failure).toEqual({ authError: NOT_A_PARTNER })
-  })
-
-  it('rejects everyone when ALLOWED_EMAILS is not set', async () => {
-    vi.stubEnv('ALLOWED_EMAILS', '')
-    signedInAs('partner@example.com')
-    expect((await requireUser()).failure).toEqual({ authError: NOT_A_PARTNER })
-  })
-
-  it('says to try again when Supabase Auth cannot be reached', async () => {
-    getUser.mockResolvedValue({
-      data: { user: null },
-      error: new AuthRetryableFetchError('fetch failed', 0),
-    })
-    expect((await requireUser()).failure).toEqual({ authError: AUTH_UNAVAILABLE })
+    expect(await requireUser()).toEqual({ failure: { authError: SIGN_IN_NOT_SET_UP } })
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('Team sign-in is switched off'))
   })
 })
 

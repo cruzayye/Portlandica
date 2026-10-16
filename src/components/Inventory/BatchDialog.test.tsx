@@ -63,13 +63,13 @@ describe('Batch details', () => {
     actions.getBatchHistory.mockResolvedValue({
       ok: true,
       entries: [
-        historyEntry({ id: 9, change: -24, balance: 240, by: 'you', note: 'Two cases dented' }),
+        historyEntry({ id: 9, change: -24, balance: 240, by: 'team', note: 'Two cases dented' }),
         historyEntry({
           id: 8,
           reason: 'order',
           change: -1440,
           balance: 264,
-          by: 'partner',
+          by: 'team',
           at: '2026-10-02T19:30:00Z',
           order: { id: 12, customerName: 'Dame', orderDate: '2026-10-02', voided: false },
         }),
@@ -99,10 +99,10 @@ describe('Batch details', () => {
     expect(items).toHaveLength(3)
     expect(items[0]).toHaveTextContent('Count changed')
     expect(items[0]).toHaveTextContent('-24 cans')
-    expect(items[0]).toHaveTextContent('You · count after 240')
+    expect(items[0]).toHaveTextContent('Team · count after 240')
     expect(items[0]).toHaveTextContent('Two cases dented')
     expect(items[1]).toHaveTextContent('Order')
-    expect(items[1]).toHaveTextContent('Other partner')
+    expect(items[1]).toHaveTextContent('Team')
     expect(items[1]).toHaveTextContent('Order #12 · Dame · Oct 2, 2026')
     expect(items[2]).toHaveTextContent('Opening count')
     expect(items[2]).toHaveTextContent('+1,704 cans')

@@ -1,6 +1,7 @@
--- Approximation of the live public schema these migrations run on top of: the tables as
--- they exist today, with inventory access as the sign-in branch's migrations leave it
--- (anyone can read, partners can write). Column types are a best guess; `supabase db pull`
+-- Approximation of the live public schema these migrations run on top of: the tables and
+-- the access they have today, before database steps 1 and 2. The publishable key (anon)
+-- can read inventory and, through the "Allow ..." policies the live app relies on, change
+-- it. Column types and the policies' exact roles are a best guess; `supabase db pull`
 -- captures the real ones.
 
 create table public.inventory (
@@ -36,9 +37,13 @@ alter table public.inventory enable row level security;
 create policy "public can read inventory"
   on public.inventory for select to anon using (true);
 
-create policy "Partners can manage inventory"
-  on public.inventory for all to authenticated
-  using ((select public.is_partner())) with check ((select public.is_partner()));
+-- Removed by database step 2 (20261015120100_tighten_database_permissions.sql).
+create policy "Allow insert inventory"
+  on public.inventory for insert to anon with check (true);
+create policy "Allow update inventory"
+  on public.inventory for update to anon using (true) with check (true);
+create policy "Allow delete inventory"
+  on public.inventory for delete to anon using (true);
 
 -- Legacy tables the app no longer uses.
 create table public.orders (
@@ -85,6 +90,12 @@ create table public.locations (
 alter table public.orders enable row level security;
 alter table public.location_types enable row level security;
 alter table public.locations enable row level security;
+
+-- Also removed by database step 2.
+create policy "Anyone can create orders"
+  on public.orders for insert to anon with check (true);
+create policy "public can read order"
+  on public.orders for select to anon using (true);
 
 -- A few batches shaped like the live ones, so the migrations' backfills have work to do.
 insert into public.inventory (id, name, count, "isCustom", "isStill", "fillDate", source) values

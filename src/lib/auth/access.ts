@@ -1,41 +1,31 @@
-import { isAllowedEmail } from './allowlist'
-
-/** Pages anyone may open: the sign-in page and the sign-in link callback. */
-export const isPublicPath = (pathname: string) =>
-  pathname === '/login' || pathname.startsWith('/auth/')
+/** The only page anyone may open without a session: the sign-in page. */
+export const isPublicPath = (pathname: string) => pathname === '/login'
 
 export type AccessRequest = {
   pathname: string
   /** A Server Action call: a POST with the Next-Action header. */
   isServerAction: boolean
-  /** The user from the verified session, or null when signed out. */
-  user: { email?: string | null } | null
-  allowlist: string[]
+  /** The request carries a valid team session cookie. */
+  signedIn: boolean
 }
 
 export type AccessDecision = { allow: true } | { allow: false; redirectTo: string }
 
 /**
  * The redirect rule src/proxy.ts applies to every request:
- * - signed out: go to /login
- * - signed in but not on the partner list: go to /login with an explanation
- * - a partner opening /login: go straight to the app
+ * - no valid session: go to /login
+ * - signed in and opening /login: go straight to the app
  *
- * Server Action calls are let through. The browser can't follow a redirect
- * from one (the call just fails with a generic error), and every action
- * checks the caller itself with requireUser() and returns a clear message.
+ * Server Action calls are let through. The browser can't follow a redirect from one (the
+ * call just fails with a generic error), and every action checks the session itself with
+ * requireUser() and returns a clear message. The sign-in action is one of them.
  */
 export const decideAccess = ({
   pathname,
   isServerAction,
-  user,
-  allowlist,
+  signedIn,
 }: AccessRequest): AccessDecision => {
-  const isPartner = isAllowedEmail(user?.email, allowlist)
-
-  if (isPublicPath(pathname)) {
-    return isPartner && pathname === '/login' ? { allow: false, redirectTo: '/' } : { allow: true }
-  }
-  if (isPartner || isServerAction) return { allow: true }
-  return { allow: false, redirectTo: user ? '/login?error=not_allowed' : '/login' }
+  if (isServerAction) return { allow: true }
+  if (isPublicPath(pathname)) return signedIn ? { allow: false, redirectTo: '/' } : { allow: true }
+  return signedIn ? { allow: true } : { allow: false, redirectTo: '/login' }
 }

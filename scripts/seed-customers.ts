@@ -8,8 +8,8 @@
 // 3. Apply exactly what was reviewed. Refuses if the plan no longer matches the CSVs.
 //      npx tsx --env-file=.env.local scripts/seed-customers.ts --apply
 //
-// Env: GOOGLE_SERVICE_ACCOUNT_JSON and GOOGLE_SHEET_ID (the app's own), plus
-// NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (Supabase dashboard, API keys).
+// Env: GOOGLE_SERVICE_ACCOUNT_JSON, GOOGLE_SHEET_ID, NEXT_PUBLIC_SUPABASE_URL and
+// SUPABASE_SECRET_KEY: the app's own, from .env.local (see SETUP.md).
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
@@ -84,7 +84,7 @@ const main = async () => {
 
   const db = createClient(
     requireEnv('NEXT_PUBLIC_SUPABASE_URL'),
-    requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
+    requireEnv('SUPABASE_SECRET_KEY'),
     { auth: { persistSession: false } }
   )
   const [{ locations, parentCompanies }, batches, existing] = await Promise.all([

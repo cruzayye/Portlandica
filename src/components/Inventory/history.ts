@@ -3,12 +3,12 @@ import type { InventoryMovement } from '@/lib/db/types'
 import type { ChangedBy, HistoryEntry, HistoryOrder } from './types'
 import { formatDay } from './dates'
 
-export const changedBy = (createdBy: string | null, viewerId: string): ChangedBy =>
-  createdBy === null ? 'system' : createdBy === viewerId ? 'you' : 'partner'
+// With the team password there is no one person to name, only the team.
+export const changedBy = (createdBy: string | null): ChangedBy =>
+  createdBy === null ? 'system' : 'team'
 
 export const CHANGED_BY_LABELS: Record<ChangedBy, string> = {
-  you: 'You',
-  partner: 'Other partner',
+  team: 'Team',
   system: 'System',
 }
 
@@ -18,8 +18,7 @@ export const CHANGED_BY_LABELS: Record<ChangedBy, string> = {
  */
 export const historyEntries = (
   movements: InventoryMovement[],
-  orders: OrderSummary[],
-  viewerId: string
+  orders: OrderSummary[]
 ): HistoryEntry[] => {
   const ordersById = new Map(orders.map((order) => [order.id, order]))
   let balance = 0
@@ -43,7 +42,7 @@ export const historyEntries = (
                 orderDate: order?.order_date ?? null,
                 voided: Boolean(order?.voided_at),
               },
-        by: changedBy(movement.created_by, viewerId),
+        by: changedBy(movement.created_by),
         note: movement.note,
       }
     })

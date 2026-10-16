@@ -20,10 +20,7 @@ vi.mock('@/lib/supabase/server', () => ({
   },
 }))
 vi.mock('@/lib/auth/requireUser', () => ({
-  requireUser: async () => ({
-    user: { id: session.auth.sub, email: session.auth.email },
-    failure: null,
-  }),
+  requireUser: async () => ({ failure: null }),
 }))
 
 import { reasonLabel } from '@/components/Inventory/history'
@@ -133,7 +130,7 @@ describe('Inventory actions on the ledger', () => {
         reason: 'fill',
         change: 1440,
         balance: 1440,
-        by: 'you',
+        by: 'team',
         note: 'October run',
         order: null,
       }),
@@ -169,7 +166,7 @@ describe('Inventory actions on the ledger', () => {
         e.note,
       ])
     ).toEqual([
-      ['adjustment', -24, 11976, 'you', 'Recount'],
+      ['adjustment', -24, 11976, 'team', 'Recount'],
       ['opening', 12000, 12000, 'system', 'Count on hand when the ledger started'],
     ])
   })
@@ -198,10 +195,10 @@ describe('Inventory actions on the ledger', () => {
       'Archived',
       'Opening count',
     ])
-    expect(entries[1]).toMatchObject({ change: -2760, note: 'Customer closed', by: 'you' })
+    expect(entries[1]).toMatchObject({ change: -2760, note: 'Customer closed', by: 'team' })
   })
 
-  it('shows orders on the history, and which partner made each change', async () => {
+  it('shows orders on the history, and who made each change', async () => {
     const johnny = fakeSupabase(session.pg, JOHNNY)
     const hotel = await createCustomer(johnny, { name: 'Hotel Vintage', custom_cans: true })
     const { order } = await createSalesOrder(johnny, {
@@ -223,8 +220,8 @@ describe('Inventory actions on the ledger', () => {
     expect(
       expectOk(await getBatchHistory(22)).entries.map((e) => [e.reason, e.change, e.by, e.order])
     ).toEqual([
-      ['void', 1440, 'you', summary],
-      ['order', -1440, 'partner', summary],
+      ['void', 1440, 'team', summary],
+      ['order', -1440, 'team', summary],
       ['opening', 2640, 'system', null],
     ])
   })

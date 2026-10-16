@@ -26,9 +26,9 @@ vi.mock('@/lib/supabase/server', async () => {
   const { PAUL } = await import('@/lib/db/testing/testDb')
   return { createClient: async () => fakeSupabase(mocks.pg!, PAUL) }
 })
-// Sign-in is covered by src/app/actions/auth.test.ts; act as a signed-in partner here.
+// Sign-in is covered by src/app/actions/auth.test.ts; act as a signed-in device here.
 vi.mock('@/lib/auth/requireUser', () => ({
-  requireUser: async () => ({ user: { id: 'user-1', email: 'paul@example.com' }, failure: null }),
+  requireUser: async () => ({ failure: null }),
 }))
 vi.mock('@/lib/google/sheets', () => ({
   getLocationsFromSheet: mocks.getLocationsFromSheet,

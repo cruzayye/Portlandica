@@ -30,7 +30,7 @@ export const historyEntry = (over: Partial<HistoryEntry> & { id: number }): Hist
   balance: 1416,
   reason: 'adjustment',
   order: null,
-  by: 'you',
+  by: 'team',
   note: null,
   ...over,
 })

@@ -55,33 +55,25 @@ describe('historyEntries', () => {
   ]
 
   it('lists the newest first, with the count each change left', () => {
-    expect(historyEntries(movements, orders, PAUL).map((e) => [e.id, e.change, e.balance])).toEqual(
-      [
-        [5, -2640, 0],
-        [4, 1440, 2640],
-        [3, -1440, 1200],
-        [1, 2640, 2640],
-      ]
-    )
+    expect(historyEntries(movements, orders).map((e) => [e.id, e.change, e.balance])).toEqual([
+      [5, -2640, 0],
+      [4, 1440, 2640],
+      [3, -1440, 1200],
+      [1, 2640, 2640],
+    ])
   })
 
-  it('says who made each change, from the viewer’s side', () => {
-    expect(historyEntries(movements, orders, PAUL).map((e) => e.by)).toEqual([
-      'you',
-      'you',
-      'partner',
-      'system',
-    ])
-    expect(historyEntries(movements, orders, JOHNNY).map((e) => e.by)).toEqual([
-      'partner',
-      'partner',
-      'you',
+  it('says the team made each change, whoever signed in', () => {
+    expect(historyEntries(movements, orders).map((e) => e.by)).toEqual([
+      'team',
+      'team',
+      'team',
       'system',
     ])
   })
 
   it('attaches the order, and still names it when the order details are missing', () => {
-    const [, voided, ordered, opening] = historyEntries(movements, orders, PAUL)
+    const [, voided, ordered, opening] = historyEntries(movements, orders)
     expect(ordered.order).toEqual({
       id: 12,
       customerName: 'Hotel Vintage',
@@ -90,7 +82,7 @@ describe('historyEntries', () => {
     })
     expect(voided.note).toBe('Came off house stock')
     expect(opening.order).toBeNull()
-    expect(historyEntries(movements, [], PAUL)[2].order).toEqual({
+    expect(historyEntries(movements, [])[2].order).toEqual({
       id: 12,
       customerName: null,
       orderDate: null,
@@ -99,7 +91,8 @@ describe('historyEntries', () => {
   })
 
   it('treats a missing author as the system', () => {
-    expect(changedBy(null, PAUL)).toBe('system')
+    expect(changedBy(null)).toBe('system')
+    expect(changedBy(PAUL)).toBe('team')
   })
 })
 

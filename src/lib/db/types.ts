@@ -4,7 +4,7 @@ import type { Inventory } from '@/types/orders'
 // Row types for the tables in supabase/migrations/2026101700*. Hand-written to match the
 // SQL; once Johnny generates types with `supabase gen types`, these can be derived instead.
 
-/** Any Supabase client: the server client (a partner's session) or a service-role client. */
+/** Any Supabase client: the app's server client (the secret key) or a script's. */
 export type Db = SupabaseClient
 
 export type CustomerType = 'business' | 'individual'

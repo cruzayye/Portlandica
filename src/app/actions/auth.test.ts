@@ -2,14 +2,15 @@
 /// <reference types="vite/client" />
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
-// Every export of a 'use server' file can be called over HTTP, so each one
-// must turn away callers who aren't signed-in partners before touching
-// Supabase, the Google Sheet, Trello or Square. This test calls every export of
-// every action file in this folder (new files included), so an action without
-// the check fails here.
+// Every export of a 'use server' file can be called over HTTP, so each one must turn away
+// callers without a valid team session before touching Supabase, the Google Sheet, Trello
+// or Square. This test calls every export of every action file in this folder (new files
+// included) with each kind of cookie that must be refused, so an action without the
+// two-line requireUser() check fails here.
 
 const mocks = vi.hoisted(() => ({
-  getUser: vi.fn(),
+  cookies: new Map<string, string>(),
+  createClient: vi.fn(),
   from: vi.fn(),
   rpc: vi.fn(),
   sheets: vi.fn(),
@@ -18,12 +19,17 @@ const mocks = vi.hoisted(() => ({
   getLocationsFromSheet: vi.fn(),
 }))
 
-vi.mock('@/lib/supabase/server', () => ({
-  createClient: async () => ({
-    auth: { getUser: mocks.getUser },
-    from: mocks.from,
-    rpc: mocks.rpc,
+vi.mock('next/headers', () => ({
+  cookies: async () => ({
+    get: (name: string) =>
+      mocks.cookies.has(name) ? { name, value: mocks.cookies.get(name) } : undefined,
   }),
+}))
+vi.mock('@/lib/supabase/server', () => ({
+  createClient: async () => {
+    mocks.createClient()
+    return { from: mocks.from, rpc: mocks.rpc }
+  },
 }))
 vi.mock('@/lib/google/sheets', () => ({
   getLocationsFromSheet: mocks.getLocationsFromSheet,
@@ -41,7 +47,9 @@ vi.mock('@/lib/square', () => ({ createDraftInvoice: mocks.square }))
 vi.mock('next/server', () => ({ after: vi.fn() }))
 
 import * as orderActions from './orders'
-import { NOT_A_PARTNER, SIGNED_OUT } from '@/lib/auth/authFailure'
+import { SIGNED_OUT, SIGN_IN_NOT_SET_UP } from '@/lib/auth/authFailure'
+import { SESSION_COOKIE } from '@/lib/auth/session'
+import { rejectedTokens, stubTestAuthEnv, validToken } from '@/lib/auth/testing/sessions'
 
 type Action = (...args: unknown[]) => Promise<unknown>
 
@@ -60,6 +68,7 @@ const actions = Object.entries(modules).flatMap(([file, exports]) =>
 const callWithDummyArgs = (action: Action) => action({}, 1, 2, null, false)
 
 const expectNothingTouched = () => {
+  expect(mocks.createClient).not.toHaveBeenCalled()
   expect(mocks.from).not.toHaveBeenCalled()
   expect(mocks.rpc).not.toHaveBeenCalled()
   expect(mocks.sheets).not.toHaveBeenCalled()
@@ -69,26 +78,39 @@ const expectNothingTouched = () => {
 }
 
 beforeEach(() => {
-  vi.stubEnv('ALLOWED_EMAILS', 'partner@example.com')
+  mocks.cookies.clear()
+  stubTestAuthEnv()
   vi.clearAllMocks()
+  vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 
 afterEach(() => {
   vi.unstubAllEnvs()
+  vi.restoreAllMocks()
 })
 
-describe.each([
-  {
-    caller: 'a signed-out caller',
-    user: null,
+const refusedCallers = [
+  { caller: 'a signed-out caller', cookie: null, env: {}, message: SIGNED_OUT },
+  ...Object.entries(rejectedTokens()).map(([kind, cookie]) => ({
+    caller: `a caller whose cookie is ${kind}`,
+    cookie,
+    env: {},
     message: SIGNED_OUT,
-  },
+  })),
   {
-    caller: 'a signed-in non-partner',
-    user: { id: 'user-2', email: 'stranger@example.com' },
-    message: NOT_A_PARTNER,
+    caller: 'any caller while TEAM_PASSWORD is not set',
+    cookie: validToken(),
+    env: { TEAM_PASSWORD: '' },
+    message: SIGN_IN_NOT_SET_UP,
   },
-])('server actions called by $caller', ({ user, message }) => {
+]
+
+describe.each(refusedCallers)('server actions called by $caller', ({ cookie, env, message }) => {
+  beforeEach(() => {
+    if (cookie !== null) mocks.cookies.set(SESSION_COOKIE, cookie)
+    for (const [name, value] of Object.entries(env)) vi.stubEnv(name, value)
+  })
+
   it('finds the action files', () => {
     expect(actions.map((a) => a.label)).toEqual(
       expect.arrayContaining([
@@ -97,13 +119,13 @@ describe.each([
         'orderHistory.ts listOrders',
         'orderHistory.ts retryOrder',
         'orderHistory.ts voidOrder',
+        'batches.ts loadInventory',
+        'batches.ts getBatchHistory',
       ])
     )
   })
 
   it.each(actions)('$label is refused before touching any data', async ({ action }) => {
-    mocks.getUser.mockResolvedValue({ data: { user }, error: null })
-
     expect(await callWithDummyArgs(action)).toEqual({ authError: message })
     expectNothingTouched()
   })
@@ -128,12 +150,9 @@ const emptyTable = (inserted: unknown[]) => () => {
   return query
 }
 
-describe('server actions called by a partner', () => {
+describe('server actions called by a signed-in device', () => {
   it('get the real result', async () => {
-    mocks.getUser.mockResolvedValue({
-      data: { user: { id: 'user-1', email: 'partner@example.com' } },
-      error: null,
-    })
+    mocks.cookies.set(SESSION_COOKIE, validToken())
     const inserted: unknown[] = []
     mocks.from.mockImplementation(emptyTable(inserted))
     mocks.getLocationsFromSheet.mockResolvedValue([

@@ -20,12 +20,9 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/supabase/server', () => ({ createClient: async () => mocks.client }))
-// Sign-in is covered by auth.test.ts; act as a signed-in partner here.
+// Sign-in is covered by auth.test.ts; act as a signed-in device here.
 vi.mock('@/lib/auth/requireUser', () => ({
-  requireUser: async () => ({
-    user: { id: 'user-1', email: 'partner@example.com' },
-    failure: null,
-  }),
+  requireUser: async () => ({ failure: null }),
 }))
 vi.mock('@/lib/db/inventory', () => ({
   listBatches: mocks.listBatches,
@@ -449,11 +446,11 @@ describe('getBatchHistory', () => {
     expect(result).toEqual({
       ok: true,
       entries: [
-        expect.objectContaining({ id: 3, change: -24, balance: 1176, by: 'you', note: 'Recount' }),
+        expect.objectContaining({ id: 3, change: -24, balance: 1176, by: 'team', note: 'Recount' }),
         expect.objectContaining({
           id: 2,
           balance: 1200,
-          by: 'partner',
+          by: 'team',
           order: { id: 12, customerName: 'Hotel Vintage', orderDate: '2026-10-02', voided: false },
         }),
         expect.objectContaining({ id: 1, balance: 2640, by: 'system', reason: 'opening' }),

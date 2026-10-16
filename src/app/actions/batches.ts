@@ -226,7 +226,7 @@ export const unarchiveInventoryBatch = async (
 
 /** A batch's history, newest first. */
 export const getBatchHistory = async (batchId: number): Promise<HistoryResult | AuthFailure> => {
-  const { user, failure } = await requireUser()
+  const { failure } = await requireUser()
   if (failure) return failure
 
   if (!isId(batchId)) return { ok: false, error: 'Pick a batch.' }
@@ -240,7 +240,7 @@ export const getBatchHistory = async (batchId: number): Promise<HistoryResult | 
       console.error('Inventory: could not look up orders for a batch history', err)
       return []
     })
-    return { ok: true, entries: historyEntries(movements, orders, user.id) }
+    return { ok: true, entries: historyEntries(movements, orders) }
   } catch (err) {
     return failed('load a batch history', err, 'Could not load the history. Try again.')
   }
