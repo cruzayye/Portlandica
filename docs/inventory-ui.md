@@ -38,11 +38,12 @@ On phones the dialogs fill the screen (checked at 375 px wide).
 
 ### Who made a change
 
-The ledger stores the signed-in user's id. The tab shows **You** for your own changes,
-**Other partner** for anyone else's, and **System** when no one was signed in (the
-opening balances, the SQL Editor, the Supabase dashboard). Showing the other partner's
-name would need a small database function that looks up partner emails by user id; that
-is a possible follow-up, not part of this branch.
+With the team password there are no per-person accounts, so the tab shows **Team** for
+every change made in the app and **System** for the rest (the opening balances, the SQL
+Editor, the Supabase dashboard). The app's server writes as the service role, so its
+changes carry no user id; `inventory_movements.made_in_app`
+(`20261017000900_ledger_made_in_app.sql`) tells them apart: it is true when the change
+came through the Data API.
 
 ## Code
 
@@ -60,8 +61,8 @@ is a possible follow-up, not part of this branch.
 
 ## Before deploying
 
-1. **Apply the data-foundation migrations first** (after the sign-in rollout), following
-   `docs/data-foundation.md`. This tab reads `customers`, `inventory_movements` and
+1. **Apply the data-foundation migrations first** (after the team-password rollout,
+   `ROLLOUT.md` steps 1 to 3), following `docs/data-foundation.md`. This tab reads `customers`, `inventory_movements` and
    `inventory_ledger_check` and calls the ledger functions; without them it shows "Could
    not load the inventory."
 2. **Seed the customers** (`scripts/seed-customers.ts`). Without them, house-stock fills
@@ -75,7 +76,8 @@ is a possible follow-up, not part of this branch.
   the ledger functions, what is refused first, and how database errors read.
 - `src/app/actions/batches.pglite.test.ts`: the same actions against the real migrations
   in PGlite: fills, a stale count, archive and unarchive, orders and voids in the history,
-  a forced ledger mismatch, and an account the database doesn't treat as a partner.
+  a forced ledger mismatch, and a server key the database refuses. The server client
+  runs as the service role, as the app's does.
 - `src/components/Inventory/*.test.ts(x)`: the list, banner, archived toggle, batch
   dialog, count change, archive, add batch, sign-in messages, and the pure helpers.
 

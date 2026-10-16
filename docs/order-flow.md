@@ -99,6 +99,9 @@ Sales rows to fix by hand and any Square draft to delete.
 ## Tests
 
 `npm test` runs the actions and the step runner against the real migrations in PGlite,
-with Sheets, Trello, Square and the geocoder mocked. `src/lib/google/testing/fakeSheets.ts`
+with Sheets, Trello, Square and the geocoder mocked. They reach the database as the service
+role, as the app's server does with the secret key, with nobody on the partner list.
+Sign-in (the team password) is covered by `src/app/actions/auth.test.ts` and
+`src/app/login/actions.test.ts`. `src/lib/google/testing/fakeSheets.ts`
 is an in-memory Sheets that applies inserts, writes and tags for real, so the sheet tests
 check the rows as they end up, retries and two orders written at once.

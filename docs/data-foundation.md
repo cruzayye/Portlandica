@@ -88,7 +88,9 @@ still line from the sparkling or dog-water batch) or is archived.
 ### inventory_movements
 
 `batch_id`, `delta` (cans, never 0), `reason`, `order_id` and `order_line_id` (order
-and void movements only), `note`, `created_by`, `created_at`. Reasons:
+and void movements only), `note`, `created_by` (the Supabase Auth user, if any),
+`made_in_app` (true when the change came through the Data API, which is how the app makes
+them; added by `20261017000900_ledger_made_in_app.sql`), `created_at`. Reasons:
 
 | Reason          | Written by                                                                                                                                    |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -251,7 +253,8 @@ more alongside.
    ```
 
    `migration list` should show Local and Remote matching for everything except the
-   six `20261017…` files, and the dry run should list exactly those six. If it lists
+   six `20261017…` files, and the dry run should list exactly those six. (On
+   `integration/final` there are more; follow `ROLLOUT.md` step 5 there.) If it lists
    anything else, stop and sort that out first. Then:
 
    ```bash
