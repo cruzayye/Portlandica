@@ -2,10 +2,12 @@
 
 import { useState } from 'react'
 import Box from '@mui/material/Box'
+import Button from '@mui/material/Button'
 import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import OrderForm from '@/components/OrderForm/OrderForm'
 import Inventory from '@/components/Inventory/Inventory'
+import { signOut } from '@/app/login/actions'
 
 export default function Home() {
   const [tab, setTab] = useState(0)
@@ -31,6 +33,13 @@ export default function Home() {
             />
           </Box>
         )}
+      </Box>
+      <Box component="footer" sx={{ display: 'flex', justifyContent: 'center', pb: 3 }}>
+        <form action={signOut}>
+          <Button type="submit" size="small" color="inherit">
+            Sign out
+          </Button>
+        </form>
       </Box>
     </Box>
   )

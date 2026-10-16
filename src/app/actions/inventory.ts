@@ -1,10 +1,15 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
+import { requireUser, type AuthFailure } from '@/lib/auth/requireUser'
 import type { Inventory, NewInventory } from '@/types/orders'
 import type { NewOrder } from '@/types/orders'
+import { sparkCans, stillCans } from '@/lib/orders'
 
-export const getInventory = async (): Promise<Inventory[]> => {
+export const getInventory = async (): Promise<Inventory[] | AuthFailure> => {
+  const { failure } = await requireUser()
+  if (failure) return failure
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('inventory')
@@ -16,7 +21,10 @@ export const getInventory = async (): Promise<Inventory[]> => {
   return data ?? []
 }
 
-export const createInventoryItem = async (item: NewInventory): Promise<Inventory> => {
+export const createInventoryItem = async (item: NewInventory): Promise<Inventory | AuthFailure> => {
+  const { failure } = await requireUser()
+  if (failure) return failure
+
   const supabase = await createClient()
   const { data, error } = await supabase
     .from('inventory')
@@ -28,7 +36,10 @@ export const createInventoryItem = async (item: NewInventory): Promise<Inventory
   return data
 }
 
-export const deleteInventoryItem = async (id: number): Promise<void> => {
+export const deleteInventoryItem = async (id: number): Promise<void | AuthFailure> => {
+  const { failure } = await requireUser()
+  if (failure) return failure
+
   const supabase = await createClient()
   console.log(`Deleting inventory item with ID: ${id}`)
   const { error } = await supabase
@@ -40,7 +51,10 @@ export const deleteInventoryItem = async (id: number): Promise<void> => {
   
 }
 
-export const updateInventoryCount = async (id: number, count: number): Promise<void> => {
+export const updateInventoryCount = async (id: number, count: number): Promise<void | AuthFailure> => {
+  const { failure } = await requireUser()
+  if (failure) return failure
+
   const supabase = await createClient()
   const { error } = await supabase
     .from('inventory')
@@ -51,32 +65,28 @@ export const updateInventoryCount = async (id: number, count: number): Promise<v
 }
 
 export const decrementInventory = async (order: NewOrder, stillInventoryId?: number, sparkInventoryId?: number): Promise<void> => {
+  // Exported from a 'use server' file, so it gets the check too. Only
+  // createOrder calls it (after its own check), so it throws on failure like
+  // the rest of this function instead of returning the failure.
+  const { failure } = await requireUser()
+  if (failure) throw new Error(failure.authError)
+
   const supabase = await createClient()
 
   const decrements = [
-    ...(order.totalStill ?? 0) > 0
-      ? [{ id: stillInventoryId, isStill: true, isCustom: order.IsCustomStill ?? false, name: order.IsCustomStill ? (order.name ?? '') : 'Original', amount: order.totalStill! }]
+    ...stillCans(order) > 0
+      ? [{ id: stillInventoryId, product: 'Still', amount: stillCans(order) }]
       : [],
-    ...(order.totalSpark ?? 0) > 0
-      ? [{ id: sparkInventoryId, isStill: false, isCustom: order.isCustomSpark ?? false, name: order.isCustomSpark ? (order.name ?? '') : 'Original', amount: order.totalSpark! }]
+    ...sparkCans(order) > 0
+      ? [{ id: sparkInventoryId, product: 'Sparkling', amount: sparkCans(order) }]
       : [],
   ]
 
-  for (const { id, isStill, isCustom, name, amount } of decrements) {
-    let inventoryId = id
-    if (!inventoryId) {
-      const { data, error } = await supabase
-        .from('inventory')
-        .select('id, count')
-        .eq('isStill', isStill)
-        .eq('isCustom', isCustom)
-        .eq('name', name)
-        .single()
+  // Every product needs the batch it was picked from; check them all before changing any count.
+  const unpicked = decrements.find(({ id }) => !id)
+  if (unpicked) throw new Error(`No ${unpicked.product} batch was selected`)
 
-      if (error || !data) throw new Error(`Inventory item not found: ${name} (${isStill ? 'Still' : 'Spark'})`)
-      inventoryId = data.id
-    }
-
+  for (const { id: inventoryId, amount } of decrements) {
     const { data: item, error: fetchError } = await supabase
       .from('inventory')
       .select('count')

@@ -1,6 +1,6 @@
 import { google } from 'googleapis'
 import type { NewOrder } from '@/types/orders'
-import { createTrelloCard } from '@/lib/trello'
+import { salesType, sparkCans, stillCans } from '@/lib/orders'
 
 export type SheetLocation = {
   name: string
@@ -121,7 +121,7 @@ async function insertBeforeTotals(
     const updated = [...(row as unknown[])]
     updated[9] = `=IF(I${r}-F${r}=0,"Yes","No")`
     updated[13] = `=XLOOKUP(M${r},Inventory!A:A,Inventory!P:P,0,0)`
-    updated[14] = `=N${r}*E${r - 1}`
+    updated[14] = `=N${r}*E${r}`
     updated[16] = `=TEXT(A${r},"YYYY-MM")`
     updated[17] = `=IF(B${r}="Business",IF(OR(D${r}="Junior's Roasted Coffee",D${r}="Guilder Cafe inside Powell's Books",D${r}="Guilder East"),"Guilder",IF(OR(D${r}="Ben Bridge Jeweler (Downtown)",D${r}="Ben Bridge Jeweler (Washington Square)"),"Ben Bridge Jeweler",IF(OR(REGEXMATCH(D${r},"^The Great North.*"),REGEXMATCH(D${r},"^Lovejoy Bakers.*")),"The Great North",IF(REGEXMATCH(D${r},"^Elephants Delicatessen.*"),"Elephants Delicatessen",D${r})))),"")`
     updated[18] = `=IF(B${r}="Individual","",MIN(FILTER(A:A,D:D=D${r})))`
@@ -198,7 +198,7 @@ export async function appendOrder(order: NewOrder, force = false): Promise<{ dup
   const yyyy = parts.find((p) => p.type === 'year')!.value
   const order_date = `${mm}/${dd}/${yyyy}`
 
-  const type = order.isBusiness ? 'Business' : 'Individual'
+  const type = salesType(order.customerType)
   const customer = order.name ?? ''
 
   const products = [
@@ -208,8 +208,8 @@ export async function appendOrder(order: NewOrder, force = false): Promise<{ dup
 
   const notes = order.notes ?? ''
   const totalPrice = order.price ?? 0
-  const totalStill = order.totalStill ?? 0
-  const totalSpark = order.totalSpark ?? 0
+  const totalStill = stillCans(order)
+  const totalSpark = sparkCans(order)
   const totalUnits = totalStill + totalSpark
 
   if (products.length > 0 && totalUnits > 0 && !force) {
@@ -276,9 +276,10 @@ export async function appendOrder(order: NewOrder, force = false): Promise<{ dup
     ])
   }
 
-  const address = order.isNewBusiness
-    ? [order.streetAddress, order.city, order.state, order.zip].filter(Boolean).join(', ')
-    : (order.notes ?? '')
+  // Only new businesses get a locations row, so the address is the one typed into the form.
+  const address = [order.streetAddress, order.city, order.state, order.zip]
+    .filter(Boolean)
+    .join(', ')
 
   const locationsRow = [
     order.name,                // A: Business Name
@@ -290,11 +291,12 @@ export async function appendOrder(order: NewOrder, force = false): Promise<{ dup
 
   const promises: Promise<unknown>[] = []
 
-  if (salesRows.length > 0 && (order.price ?? 0) > 0) {
+  // A donation is never a sale, whatever price came with it.
+  if (!order.isDonation && salesRows.length > 0 && (order.price ?? 0) > 0) {
     promises.push(insertBeforeTotals(sheets, process.env.GOOGLE_SHEET_ID!, salesRows, order.createInvoice ?? false))
   }
 
-  if (order.isNewBusiness && !order.isDTC) {
+  if (order.customerType === 'new') {
     promises.push(
       sheets.spreadsheets.values.append({
         spreadsheetId: process.env.GOOGLE_SHEET_ID!,
@@ -308,7 +310,7 @@ export async function appendOrder(order: NewOrder, force = false): Promise<{ dup
 
   // promises.push(createTrelloCard(order))
 
-  if (order.isDonation && (order.price === 0 || order.price === null)) {
+  if (order.isDonation) {
     promises.push(appendDonation(sheets, order, order_date))
   }
 
@@ -327,8 +329,8 @@ async function appendDonation(
 ) {
   const customer = order.name ?? ''
   const notes = order.notes ?? ''
-  const totalStill = order.totalStill ?? 0
-  const totalSpark = order.totalSpark ?? 0
+  const totalStill = stillCans(order)
+  const totalSpark = sparkCans(order)
 
   const baseRows: { invRef: string; product: string; units: number }[] = []
   if (order.isStill && totalStill > 0) {
