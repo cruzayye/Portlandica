@@ -37,7 +37,7 @@ missing.
 | `parent_company`                         | From the Parent Companies tab. Text, like the Sales sheet's column R.                                                      |
 | `price_per_can`                          | Dollars. NULL means the $1.50 default (`DEFAULT_PRICE_PER_CAN`).                                                           |
 | `custom_cans`                            | True for customers with custom-printed cans.                                                                               |
-| `payment_terms_days`                     | NULL means the 30-day default. Sysco is 65.                                                                                |
+| `payment_terms_days`                     | NULL means the default: 30 days for a business, due on receipt (0) for an individual. Sysco is 65.                         |
 | `street_address`, `city`, `state`, `zip` | Parsed from the sheet's one-line address.                                                                                  |
 | `latitude`, `longitude`                  | Both or neither.                                                                                                           |
 | `email`                                  | Where invoices go, when known (the Square module can use it).                                                              |
@@ -342,8 +342,9 @@ alongside.
   the lines in proportion to their prices). Square needs whole-cent unit prices, so a
   typed total that doesn't divide evenly is billed as one lot per line (see
   `docs/integrations.md`).
-- **Square:** use the order's `id` as the never-reused order id, `paymentTermsDays(customer)`
-  for terms, `customer.email` when known, and store ids with
+- **Square:** use the order's `id` as the never-reused order id,
+  `paymentTermsDays(customer, order.type)` for terms (an individual without terms is due on
+  receipt), `customer.email` when known, and store ids with
   `recordOrderStep(db, id, 'square', 'done', { externalId })` and
   `updateCustomer(db, id, { square_customer_id })`.
 - **Batch pickers:** `batchesForLine(await listBatches(db), product, { id, name })`.

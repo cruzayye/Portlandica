@@ -220,10 +220,11 @@ account, the real Sales sheet or the delivery board:
 **Check:** the result shows Square as done. Then
 `curl -s https://connect.squareupsandbox.com/v2/invoices/<square_invoice_id> -H "Square-Version: 2026-09-16" -H "Authorization: Bearer $SQUARE_ACCESS_TOKEN"`
 shows `"status": "DRAFT"`, the title `PO TEST-1`, Sysco's 65-day due date and the line.
-Retrying from Order History leaves the done steps alone.
+Retrying from Order History leaves the done steps alone. Optionally, an Individual (DTC)
+order with Create Invoice on gets a draft due the day it was placed (due on receipt).
 
-**Undo:** Order History → Void the test order (its cans go back, its card is archived and
-its draft invoice is deleted; Order History says "Its draft invoice was deleted in
+**Undo:** Order History → Void each test order (its cans go back, its card is archived
+and its draft invoice is deleted; Order History says "Its draft invoice was deleted in
 Square." and the same curl now answers `NOT_FOUND`). Delete the sheet copy and the test
 board. Nothing in production to undo.
 

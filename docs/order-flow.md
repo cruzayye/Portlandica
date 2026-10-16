@@ -100,6 +100,10 @@ Reference # so their cost lookup keeps working.
   line's total, moved by a cent where a typed total needs it to add up. Square bills per
   can at each line's price, or one lot per line at its amount when a typed total doesn't
   come to whole cents a can.
+- Square terms: the customer's `payment_terms_days` (Sysco is 65); otherwise Net 30 for a
+  business, and due on receipt for an individual (DTC customers usually pay on the
+  website when they order). An individual booked from the form has no customer row, so
+  the order's type decides.
 - A billing email typed with Create Invoice on is saved on the customer; a Square
   customer id is saved after the first draft.
 

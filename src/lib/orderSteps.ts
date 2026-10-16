@@ -260,7 +260,7 @@ export const runOrderSteps = async (
             name: customer?.name ?? order.customer_name,
             email: order.customer_email ?? customer?.email ?? null,
             squareCustomerId: customer?.square_customer_id ?? null,
-            paymentTermsDays: paymentTermsDays(customer),
+            paymentTermsDays: paymentTermsDays(customer, order.type),
           },
           lines: invoiceLines(order),
           poNumber: order.po_number,

@@ -308,6 +308,44 @@ describe('runOrderSteps', () => {
     ).toEqual(sheetAmounts)
   })
 
+  it("makes an individual's draft due on receipt and a business's due in 30 days", async () => {
+    vi.stubEnv('SQUARE_ACCESS_TOKEN', 'sandbox-token')
+    const dtc = await placeOrder({
+      customer_name: 'Pat Doe',
+      type: 'individual',
+      create_invoice: true,
+      customer_email: 'pat@example.com',
+    })
+    await runOrderSteps(db, dtc.id)
+    expect(steps.createDraftInvoice.mock.calls[0][0].customer).toEqual({
+      name: 'Pat Doe',
+      email: 'pat@example.com',
+      squareCustomerId: null,
+      paymentTermsDays: 0,
+    })
+
+    const business = await placeOrder({ create_invoice: true })
+    await runOrderSteps(db, business.id)
+    expect(steps.createDraftInvoice.mock.calls[1][0].customer.paymentTermsDays).toBe(30)
+  })
+
+  it('keeps terms set on an individual customer', async () => {
+    vi.stubEnv('SQUARE_ACCESS_TOKEN', 'sandbox-token')
+    const pat = await createCustomer(db, {
+      name: 'Pat Doe',
+      type: 'individual',
+      payment_terms_days: 14,
+    })
+    const order = await placeOrder({
+      customer_id: pat.id,
+      customer_name: null,
+      create_invoice: true,
+    })
+    expect(order.type).toBe('individual')
+    await runOrderSteps(db, order.id)
+    expect(steps.createDraftInvoice.mock.calls[0][0].customer.paymentTermsDays).toBe(14)
+  })
+
   it('records a Square failure so it can be retried', async () => {
     vi.stubEnv('SQUARE_ACCESS_TOKEN', 'sandbox-token')
     steps.createDraftInvoice.mockRejectedValueOnce(

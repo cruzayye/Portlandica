@@ -579,6 +579,35 @@ describe('createOrder', () => {
     })
   })
 
+  it("makes an individual's Square draft due on receipt", async () => {
+    vi.stubEnv('SQUARE_ACCESS_TOKEN', 'sandbox-token')
+    mocks.createDraftInvoice.mockResolvedValue({
+      squareInvoiceId: 'inv-10',
+      squareCustomerId: 'sq-2',
+      squareOrderId: 'o',
+      status: 'DRAFT',
+      dueDate: '',
+      invoiceNumber: null,
+    })
+    saved(
+      await createOrder(
+        input({
+          customerType: 'individual',
+          name: 'Pat Doe',
+          deliveryAddress: '12 SE Ash St, Portland',
+          email: 'pat@example.com',
+          createInvoice: true,
+        }),
+        { idempotencyKey: newIdempotencyKey() }
+      )
+    )
+    expect(mocks.createDraftInvoice.mock.calls[0][0].customer).toMatchObject({
+      name: 'Pat Doe',
+      email: 'pat@example.com',
+      paymentTermsDays: 0,
+    })
+  })
+
   it('says so when Create Invoice is on but Square is not set up', async () => {
     const result = saved(
       await createOrder(
