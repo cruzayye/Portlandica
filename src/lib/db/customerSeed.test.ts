@@ -107,7 +107,7 @@ const sources = (over: Partial<SeedSources> = {}): SeedSources => ({
     ['Market of Choice', 'Market of Choice (Reed’s Crossing)'],
     ['Market of Choice', 'Market of Choice (Corvallis)'],
   ],
-  pricing: { 'Que Dice': 2, 'Hotel Vintage': 2, 'Woodlark Hotel Portland': 2 },
+  pricing: { 'Que Dice': 2, 'Hotel Vintage': 2, 'Ben Bridge Jeweler (Downtown)': 1.35 },
   paymentTerms: { Sysco: 65 },
   batches: [
     { id: 13, name: 'Que Dice', isCustom: true, customer_id: null },
@@ -138,7 +138,7 @@ describe('buildSeedPlan', () => {
       "Market of Choice (Reed's Crossing)",
       'Sysco',
       'Spirit of Sage',
-      'Woodlark Hotel Portland',
+      'Ben Bridge Jeweler (Downtown)',
     ])
     expect(customer('Que Dice')).toMatchObject({
       action: 'insert',
@@ -174,10 +174,12 @@ describe('buildSeedPlan', () => {
       customer: { payment_terms_days: 65 },
       issues: ['No address'],
     })
-    expect(customer('Woodlark Hotel Portland')).toMatchObject({
-      customer: { price_per_can: 2, custom_cans: true },
+    expect(customer('Ben Bridge Jeweler (Downtown)')).toMatchObject({
+      customer: { price_per_can: 1.35 },
       issues: ['Not in the locations tab'],
     })
+    // A price alone isn't a custom-can account; only a custom batch makes one.
+    expect(customer('Ben Bridge Jeweler (Downtown)')?.customer.custom_cans).toBeUndefined()
     expect(plan.notes).toEqual([
       'Parent Companies lists "Market of Choice (Corvallis)" (Market of Choice), which isn\'t in the locations tab',
     ])

@@ -287,8 +287,6 @@ alongside.
    it plans 237 customers and links 9 of the 10 custom batches; Hotel Vintage's batch is
    renamed to drop its trailing space. Expect these to be flagged:
    - **Dame**: custom batch, no customer by that name.
-   - **Embassy Suites by Hilton Portland Downtown**: custom batches but no agreed price,
-     so it would default to $1.50.
    - **Farmer and the Beast, Happy Day Juice Co, La Arepa**: listed twice; the second
      address goes in notes.
    - **Foodie Stash, Vanport Jazz Festival, Spirit of Sage, Sysco**: no address.
@@ -311,8 +309,6 @@ alongside.
    insert into customers (name, custom_cans) values ('Dame', true);
    ```
 
-   Set Embassy Suites' price if it isn't $1.50
-   (`update customers set price_per_can = 2.00 where name_key = 'embassy suites by hilton portland downtown';`).
    Then delete the `seed-output` folder.
 
 9. **Optional: generate types** once everything is in, to replace the hand-written ones
