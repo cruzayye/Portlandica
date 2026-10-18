@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // callers without a valid team session before touching Supabase, the Google Sheet, Trello
 // or Square. This test calls every export of every action file in this folder (new files
 // included) with each kind of cookie that must be refused, so an action without the
-// two-line requireUser() check fails here.
+// two-line requireUser() check fails here. The A.I.P Numbers feed (Apps Script) counts too.
 
 const mocks = vi.hoisted(() => ({
   cookies: new Map<string, string>(),
@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   sheets: vi.fn(),
   trello: vi.fn(),
   square: vi.fn(),
+  aip: vi.fn(),
   getLocationsFromSheet: vi.fn(),
 }))
 
@@ -47,9 +48,11 @@ vi.mock('@/lib/square', () => ({
   createDraftInvoice: mocks.square,
   deleteDraftInvoice: mocks.square,
 }))
+vi.mock('@/lib/aip', () => ({ fetchAipNumbers: mocks.aip }))
 vi.mock('next/server', () => ({ after: vi.fn() }))
 
 import * as orderActions from './orders'
+import { getAipNumbers } from './aip'
 import { SIGNED_OUT, SIGN_IN_NOT_SET_UP } from '@/lib/auth/authFailure'
 import { SESSION_COOKIE } from '@/lib/auth/session'
 import { rejectedTokens, stubTestAuthEnv, validToken } from '@/lib/auth/testing/sessions'
@@ -78,6 +81,7 @@ const expectNothingTouched = () => {
   expect(mocks.getLocationsFromSheet).not.toHaveBeenCalled()
   expect(mocks.trello).not.toHaveBeenCalled()
   expect(mocks.square).not.toHaveBeenCalled()
+  expect(mocks.aip).not.toHaveBeenCalled()
 }
 
 beforeEach(() => {
@@ -124,6 +128,7 @@ describe.each(refusedCallers)('server actions called by $caller', ({ cookie, env
         'orderHistory.ts voidOrder',
         'batches.ts loadInventory',
         'batches.ts getBatchHistory',
+        'aip.ts getAipNumbers',
       ])
     )
   })
@@ -182,5 +187,13 @@ describe('server actions called by a signed-in device', () => {
     })
     // The locations tab's names go into the customers table, once each.
     expect(inserted).toEqual([[expect.objectContaining({ name: 'Dame', type: 'business' })]])
+  })
+
+  it('get the A.I.P Numbers from the server-side fetch', async () => {
+    mocks.cookies.set(SESSION_COOKIE, validToken())
+    mocks.aip.mockResolvedValue({ json: '{"generated":"2026-10-18T12:00:00.000Z"}' })
+
+    expect(await getAipNumbers()).toEqual({ json: '{"generated":"2026-10-18T12:00:00.000Z"}' })
+    expect(mocks.aip).toHaveBeenCalledTimes(1)
   })
 })

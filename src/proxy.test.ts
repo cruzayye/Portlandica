@@ -116,4 +116,11 @@ describe('proxy matcher', () => {
     expect(runsOn('/favicon.ico')).toBe(false)
     expect(runsOn('/logo.png')).toBe(false)
   })
+
+  it('skips only the A.I.P Numbers page, which holds no data', () => {
+    expect(runsOn('/aip/index.html')).toBe(false)
+    expect(runsOn('/aip')).toBe(true)
+    expect(runsOn('/aipx/index.html')).toBe(true)
+    expect(runsOn('/api/aip')).toBe(true)
+  })
 })

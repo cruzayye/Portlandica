@@ -23,6 +23,9 @@ export const proxy = (request: NextRequest) => {
   return NextResponse.redirect(new URL(decision.redirectTo, request.url))
 }
 
+// Skipped: Next's static files and images, so the sign-in page can load them, and public/aip/,
+// the A.I.P Numbers page. That page holds no numbers: the signed-in app fetches them and posts
+// them into its sandboxed frame (src/components/AipNumbers), so it needs no session to load.
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|aip/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 }
