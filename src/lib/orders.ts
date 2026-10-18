@@ -1,0 +1,45 @@
+import type { CustomerType, NewOrder, OrderBatches } from '@/types/orders'
+import { CANS_PER_CASE } from '@/globals/constants'
+
+/** The Sales sheet's Type column (B) for each kind of customer. */
+export const salesType = (customerType: CustomerType) =>
+  customerType === 'individual' ? 'Individual' : 'Business'
+
+/**
+ * Cans for a quantity typed into the order form: cases by default, single
+ * cans when Enter Manual Number is on. Blank stays blank.
+ */
+export const toCans = (quantity: string, inCans: boolean): number | null =>
+  quantity === '' ? null : Number(quantity) * (inCans ? 1 : CANS_PER_CASE)
+
+/** The automatic price for this many cans, to the cent. Null when there's nothing to price. */
+export const priceForCans = (cans: number, pricePerCan: number): number | null =>
+  cans > 0 ? Math.round(cans * pricePerCan * 100) / 100 : null
+
+/**
+ * Cans ordered for each product. A product that is switched off counts as
+ * zero, even if its quantity field still holds a number from before.
+ */
+export const stillCans = (order: Pick<NewOrder, 'isStill' | 'totalStill'>) =>
+  order.isStill ? (order.totalStill ?? 0) : 0
+
+export const sparkCans = (order: Pick<NewOrder, 'isSpark' | 'totalSpark'>) =>
+  order.isSpark ? (order.totalSpark ?? 0) : 0
+
+/**
+ * Why an order can't be booked as it stands, or null if it can. createOrder
+ * checks this before writing anything.
+ */
+export const orderProblem = (order: NewOrder, batches: OrderBatches): string | null => {
+  if (!order.name?.trim()) return 'Enter the customer name.'
+  if (!order.isStill && !order.isSpark) return 'Choose Still or Sparkling.'
+  if (order.isStill && stillCans(order) <= 0) return 'Enter how much Still water.'
+  if (order.isSpark && sparkCans(order) <= 0) return 'Enter how much Sparkling water.'
+  if (order.isStill && !batches.still) return 'Pick the Still batch this order comes from.'
+  if (order.isSpark && !batches.spark) return 'Pick the Sparkling batch this order comes from.'
+  if (!order.deliveryType) return 'Choose Drop, Ship or Pickup.'
+  if (!order.isDonation && !((order.price ?? 0) > 0)) {
+    return 'Enter a price, or mark this order as a donation.'
+  }
+  return null
+}

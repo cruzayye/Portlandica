@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { batchesFor, customBatchesFor, preselectBatchId } from './batches'
+import { batchesFor, chosenBatchId, customBatchesFor, preselectBatchId } from './batches'
 import type { Inventory } from '@/types/orders'
 
 const batch = (over: Partial<Inventory> & { id: number }): Inventory => ({
@@ -83,5 +83,22 @@ describe('preselectBatchId', () => {
     const custom = [batch({ id: 9, name: 'Dame', isCustom: true })]
     const all = [batch({ id: 1 }), batch({ id: 2 }), ...custom]
     expect(preselectBatchId(all, custom)).toBe(9)
+  })
+})
+
+describe('chosenBatchId', () => {
+  const all = [batch({ id: 1 }), batch({ id: 2 })]
+
+  it('keeps the batch the user picked', () => {
+    expect(chosenBatchId(2, all, [])).toBe(2)
+  })
+
+  it('falls back to the preselection when nothing is picked', () => {
+    expect(chosenBatchId('', [batch({ id: 7 })], [])).toBe(7)
+  })
+
+  it('drops a pick that is no longer on offer', () => {
+    // e.g. another customer's custom batch after the customer changed
+    expect(chosenBatchId(9, all, [])).toBe('')
   })
 })

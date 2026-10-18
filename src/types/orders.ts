@@ -24,7 +24,17 @@ export type Order = {
   isDonation: boolean | null
 }
 
-export type NewOrder = Omit<Order, 'id' | 'created_at'>
+/** Who the order is for. Both kinds of business book as "Business" in the Sales sheet. */
+export type CustomerType = 'existing' | 'new' | 'individual'
+
+export type NewOrder = Omit<
+  Order,
+  'id' | 'created_at' | 'isBusiness' | 'isNewBusiness' | 'isDTC'
+> & {
+  customerType: CustomerType
+  /** An existing customer's address from Current Locations Addresses, for the Trello card. */
+  address: string | null
+}
 
 export type Inventory = {
   id: number
@@ -40,3 +50,18 @@ export type Inventory = {
 }
 
 export type NewInventory = Omit<Inventory, 'id' | 'created_at'>
+
+/** The inventory batch each product in an order is drawn from. */
+export type OrderBatches = {
+  still?: Pick<Inventory, 'id' | 'fillDate'>
+  spark?: Pick<Inventory, 'id' | 'fillDate'>
+}
+
+/** What happened to a submitted order. */
+export type CreateOrderResult =
+  // Written to the Sales sheet. Warnings name any later step (inventory, Trello) that failed.
+  | { status: 'saved'; warnings: string[] }
+  // Not written: this customer already has an order today.
+  | { status: 'duplicate'; message: string }
+  // Not written, or the sheet write could not be confirmed.
+  | { status: 'failed'; message: string }

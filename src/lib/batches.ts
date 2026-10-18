@@ -31,3 +31,13 @@ export const preselectBatchId = (
     : batches.length === 1
       ? batches[0].id
       : ''
+
+/** The batch the user picked, while it is still on offer; otherwise the preselected one. */
+export const chosenBatchId = (
+  pick: number | '',
+  batches: Inventory[],
+  customBatches: Inventory[],
+): number | '' =>
+  pick !== '' && batches.some((item) => item.id === pick)
+    ? pick
+    : preselectBatchId(batches, customBatches)
