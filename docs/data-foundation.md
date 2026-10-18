@@ -3,8 +3,8 @@
 Branch `feat/data-foundation` adds the database groundwork for three features: a
 customers table, a master record of every order, and a history of every inventory
 change. It contains migrations, typed server-side modules (`src/lib/db/`) and a customer
-seed script. Nothing is wired into the UI yet, and nothing has been applied to the live
-database.
+seed script. `feat/order-flow` wires it into the order form (`docs/order-flow.md`); the
+order in which to apply everything is in `ROLLOUT.md`.
 
 - **customers**: one row per business or person, so custom cans and prices no longer
   depend on typing a name exactly.
@@ -14,8 +14,8 @@ database.
 - **inventory_movements**: an append-only ledger. For every batch, the movements add up
   to `inventory.count`; the `inventory_ledger_check` view shows any batch where they
   don't.
-- **inventory** gains `customer_id`, `archived_at` and `product`. No existing column is
-  renamed, dropped or changed.
+- **inventory** gains `customer_id` and `archived_at`. No existing column is renamed,
+  dropped or changed.
 - Eight SQL functions make every change that touches stock or orders, each in one
   transaction.
 
@@ -37,7 +37,7 @@ missing.
 | `parent_company`                         | From the Parent Companies tab. Text, like the Sales sheet's column R.                                                      |
 | `price_per_can`                          | Dollars. NULL means the $1.50 default (`DEFAULT_PRICE_PER_CAN`).                                                           |
 | `custom_cans`                            | True for customers with custom-printed cans.                                                                               |
-| `payment_terms_days`                     | NULL means the 30-day default. Sysco is 65.                                                                                |
+| `payment_terms_days`                     | NULL means the default: 30 days for a business, due on receipt (0) for an individual. Sysco is 65.                         |
 | `street_address`, `city`, `state`, `zip` | Parsed from the sheet's one-line address.                                                                                  |
 | `latitude`, `longitude`                  | Both or neither.                                                                                                           |
 | `email`                                  | Where invoices go, when known (the Square module can use it).                                                              |
@@ -51,14 +51,10 @@ missing.
 | ------------- | ------------------------------------------------------------------------------------ |
 | `customer_id` | The customer a custom batch was filled for. Only allowed on custom batches.          |
 | `archived_at` | Set by `archive_batch`. Archived batches drop out of pickers but keep their history. |
-| `product`     | `water` (default) or `dog_water`. Still vs sparkling stays in `"isStill"`.           |
 
-Why a `product` column for dog water: "Portlandica Dog water" is still water in dog-water
-cans, so with only `isStill` and `isCustom` the order form offers it for every still-water
-order. A product column says what is in the can, keeps the existing flags meaning what
-they mean today, and lets order lines say what was sold (`still`, `sparkling`,
-`dog_water`). The migration marks the existing dog-water batch by its name. A separate
-products table would be more than two products need.
+Still vs sparkling stays in `"isStill"`, and that is the only product classification.
+"Portlandica Dog water" is just a batch name: house still stock, offered for still orders
+and sold like any other.
 
 ### sales_orders
 
@@ -79,16 +75,18 @@ products table would be more than two products need.
 
 ### sales_order_lines
 
-`product` (`still`, `sparkling`, `dog_water`), `cans`, `batch_id`, `is_custom`,
-`unit_price` (dollars, four decimals so a hand-typed total can be spread over every
-can) and `line_total` (generated, rounded to cents). `is_custom` is copied from the batch
-by a trigger, and the same trigger refuses a batch that holds a different product (a
-still line from the sparkling or dog-water batch) or is archived.
+`product` (`still` or `sparkling`), `cans`, `batch_id`, `is_custom`, `unit_price`
+(dollars, four decimals so a hand-typed total can be spread over the lines) and
+`line_total` (generated, rounded to cents). `is_custom` is copied from the batch by a
+trigger, and the same trigger refuses a batch of the other kind (a still line from a
+sparkling batch, going by its `"isStill"`) or an archived one.
 
 ### inventory_movements
 
 `batch_id`, `delta` (cans, never 0), `reason`, `order_id` and `order_line_id` (order
-and void movements only), `note`, `created_by`, `created_at`. Reasons:
+and void movements only), `note`, `created_by` (the Supabase Auth user, if any),
+`made_in_app` (true when the change came through the Data API, which is how the app makes
+them; added by `20261017000900_ledger_made_in_app.sql`), `created_at`. Reasons:
 
 | Reason          | Written by                                                                                                                                    |
 | --------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -119,6 +117,10 @@ Call them from server code with `supabase.rpc()`, or through `src/lib/db`.
 | `archive_batch(batch_id, note)`                                 | Writes off what's left and hides the batch.                                                                                                          | No change.                                                                                 |
 | `unarchive_batch(batch_id, note)`                               | Undoes the archive, restoring the written-off cans.                                                                                                  | No change.                                                                                 |
 
+The order flow's `20261017000700_order_flow.sql` makes one exception to "a done step stays
+done": once a void deletes the order's Square draft, its Square step is recorded as
+`skipped`, keeping the invoice id.
+
 All eight are `security definer` with `search_path = ''`, executable only by
 `authenticated` and `service_role`, and they call `public.is_partner()` for every request
 that comes through the API. The SQL Editor (no API request) and the service role are
@@ -137,7 +139,7 @@ trusted; the app's server calls them as the service role. Errors carry a hint su
   list is empty.
 - **Signed-in non-partners**: nothing on the new tables or functions.
 - **The publishable key on its own**: nothing on the new tables or functions. Reading
-  `inventory` works as before and now includes the three new columns.
+  `inventory` works as before and now includes the two new columns.
 
 ## Choices worth knowing
 
@@ -162,7 +164,7 @@ trusted; the app's server calls them as the service role. Errors carry a hint su
 
 ## What changes for the app that's live today
 
-The migrations are safe to apply before the UI is wired. Four visible effects:
+The migrations are safe to apply before the UI is wired. Three visible effects:
 
 - Count edits in the Inventory tab and the current order form's decrements appear in the
   ledger as adjustments. Counts themselves don't change.
@@ -170,11 +172,9 @@ The migrations are safe to apply before the UI is wired. Four visible effects:
   deleted"). Until the new UI lands, retire a batch in the SQL Editor with
   `select public.archive_batch(<id>, 'why');`. The old UI will still list it, at 0 cans.
 - Batch names are trimmed when saved, so "Hotel Vintage " can't happen again.
-- The old order form still offers the dog-water batch for still orders; the new pickers
-  don't.
 
-Paul's monthly-close script keeps working: it reads the same columns, now with three
-more alongside.
+Paul's monthly-close script keeps working: it reads the same columns, now with two more
+alongside.
 
 ## Steps for Johnny, in order
 
@@ -251,7 +251,8 @@ more alongside.
    ```
 
    `migration list` should show Local and Remote matching for everything except the
-   six `20261017…` files, and the dry run should list exactly those six. If it lists
+   six `20261017…` files, and the dry run should list exactly those six. (On
+   `integration/final` there are more; follow `ROLLOUT.md` step 5 there.) If it lists
    anything else, stop and sort that out first. Then:
 
    ```bash
@@ -264,7 +265,6 @@ more alongside.
 
    ```sql
    select * from inventory_ledger_check where difference <> 0;  -- expect no rows
-   select id, name, product from inventory where product = 'dog_water';  -- the dog water batch
    select reason, count(*), sum(delta) from inventory_movements group by reason;  -- one opening row per batch with cans
    ```
 
@@ -287,8 +287,6 @@ more alongside.
    it plans 237 customers and links 9 of the 10 custom batches; Hotel Vintage's batch is
    renamed to drop its trailing space. Expect these to be flagged:
    - **Dame**: custom batch, no customer by that name.
-   - **Embassy Suites by Hilton Portland Downtown**: custom batches but no agreed price,
-     so it would default to $1.50.
    - **Farmer and the Beast, Happy Day Juice Co, La Arepa**: listed twice; the second
      address goes in notes.
    - **Foodie Stash, Vanport Jazz Festival, Spirit of Sage, Sysco**: no address.
@@ -311,8 +309,6 @@ more alongside.
    insert into customers (name, custom_cans) values ('Dame', true);
    ```
 
-   Set Embassy Suites' price if it isn't $1.50
-   (`update customers set price_per_can = 2.00 where name_key = 'embassy suites by hilton portland downtown';`).
    Then delete the `seed-output` folder.
 
 9. **Optional: generate types** once everything is in, to replace the hand-written ones
@@ -334,12 +330,17 @@ more alongside.
   `error.shortfall`, and retry with `{ allowNegative: true }` if the partner confirms.
   Production builds strip thrown error messages from server actions, so return result
   objects to the client rather than throwing.
-- **Prices:** `priceLines(lines, { pricePerCan: pricePerCan(customer), totalPrice,
-isDonation })`; pass the same `total_price` to `createSalesOrder` when the partner typed
-  a total. Square needs whole-cent unit prices, so a typed total that doesn't divide
-  evenly is billed as one lot (see `docs/integrations.md` on `feat/integrations`).
-- **Square:** use the order's `id` as the never-reused order id, `paymentTermsDays(customer)`
-  for terms, `customer.email` when known, and store ids with
+- **Prices:** each line has its own price per can, `linePrices(lines, batches, customer)`
+  in `src/lib/orders.ts`: custom cans at the customer's `price_per_can`, house stock at it
+  only when `custom_cans` is false, otherwise $1.50. Then
+  `priceLines(lines, { pricePerCan, totalPrice, isDonation })`; pass the same
+  `total_price` to `createSalesOrder` when the partner typed a total (it is spread over
+  the lines in proportion to their prices). Square needs whole-cent unit prices, so a
+  typed total that doesn't divide evenly is billed as one lot per line (see
+  `docs/integrations.md`).
+- **Square:** use the order's `id` as the never-reused order id,
+  `paymentTermsDays(customer, order.type)` for terms (an individual without terms is due on
+  receipt), `customer.email` when known, and store ids with
   `recordOrderStep(db, id, 'square', 'done', { externalId })` and
   `updateCustomer(db, id, { square_customer_id })`.
 - **Batch pickers:** `batchesForLine(await listBatches(db), product, { id, name })`.

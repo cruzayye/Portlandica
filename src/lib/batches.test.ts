@@ -1,104 +1,114 @@
 import { describe, it, expect } from 'vitest'
-import { batchesFor, chosenBatchId, customBatchesFor, preselectBatchId } from './batches'
-import type { Inventory } from '@/types/orders'
+import {
+  batchLabel,
+  batchTitle,
+  batchesForCustomer,
+  chosenBatchId,
+  customBatches,
+  preselectBatchId,
+} from './batches'
+import type { BatchOption } from '@/types/orders'
 
-const batch = (over: Partial<Inventory> & { id: number }): Inventory => ({
-  created_at: '2026-01-01T00:00:00Z',
-  name: 'Original',
+const batch = (over: Partial<BatchOption> & { id: number }): BatchOption => ({
+  name: 'Portlandica',
   count: 1440,
   isCustom: false,
   isStill: true,
+  customer_id: null,
   fillDate: '2026-01-01',
-  totalCost: null,
-  invoiceNumber: null,
   source: null,
   ...over,
 })
 
-describe('batchesFor', () => {
-  const inventory = [
-    batch({ id: 1, name: 'Original', isStill: true }),
-    batch({ id: 2, name: 'Original', isStill: false }),
-    batch({ id: 3, name: 'Hollywood Theatre', isStill: true, isCustom: true }),
-    batch({ id: 4, name: 'Dame', isStill: true, isCustom: true }),
-  ]
+const HOLLYWOOD = 11
+const DAME = 12
 
-  it('separates still from sparkling', () => {
-    expect(batchesFor(inventory, true, null).map((b) => b.id)).toEqual([1, 3, 4].filter((id) => id === 1))
-    expect(batchesFor(inventory, false, null).map((b) => b.id)).toEqual([2])
+const inventory = [
+  batch({ id: 1, isStill: true }),
+  batch({ id: 2, isStill: false }),
+  batch({ id: 3, name: 'Hollywood Theatre', isCustom: true, customer_id: HOLLYWOOD }),
+  batch({ id: 4, name: 'Dame', isCustom: true, customer_id: DAME }),
+  // Custom cans not linked to anyone yet.
+  batch({ id: 5, name: 'Dame', isCustom: true, customer_id: null }),
+  // Just a batch name: house still stock like any other.
+  batch({ id: 6, name: 'Portlandica Dog water' }),
+]
+
+describe('batchesForCustomer', () => {
+  it('separates still from sparkling, offering dog water as house still stock', () => {
+    expect(batchesForCustomer(inventory, 'still', null).map((b) => b.id)).toEqual([1, 6])
+    expect(batchesForCustomer(inventory, 'sparkling', null).map((b) => b.id)).toEqual([2])
   })
 
-  it("excludes another customer's custom fill", () => {
-    const ids = batchesFor(inventory, true, 'Dame').map((b) => b.id)
-    expect(ids).toContain(4)
-    expect(ids).not.toContain(3)
+  it("offers a customer's own custom cans, matched by customer id", () => {
+    expect(batchesForCustomer(inventory, 'still', DAME).map((b) => b.id)).toEqual([1, 4, 6])
+    expect(batchesForCustomer(inventory, 'still', HOLLYWOOD).map((b) => b.id)).toEqual([1, 3, 6])
   })
 
-  it('offers only standard stock to an unknown customer', () => {
-    expect(batchesFor(inventory, true, 'Nobody').map((b) => b.id)).toEqual([1])
+  it("never offers another customer's custom cans or unlinked ones, whatever the name", () => {
+    expect(batchesForCustomer(inventory, 'still', 999).map((b) => b.id)).toEqual([1, 6])
   })
 })
 
-describe('customBatchesFor', () => {
-  it('keeps only this customer\'s custom fills', () => {
-    const batches = [
-      batch({ id: 1, name: 'Original' }),
-      batch({ id: 2, name: 'Dame', isCustom: true }),
-    ]
-    expect(customBatchesFor(batches, 'Dame').map((b) => b.id)).toEqual([2])
-  })
-
-  it('returns empty when the customer has none', () => {
-    expect(customBatchesFor([batch({ id: 1 })], 'Dame')).toEqual([])
+describe('customBatches', () => {
+  it('keeps only custom fills', () => {
+    expect(customBatches(batchesForCustomer(inventory, 'still', DAME)).map((b) => b.id)).toEqual([
+      4,
+    ])
   })
 })
 
 describe('preselectBatchId', () => {
+  const house = batch({ id: 1 })
+  const custom = batch({ id: 4, isCustom: true, customer_id: DAME })
+
   it('picks the single custom fill for the customer', () => {
-    const all = [batch({ id: 1 }), batch({ id: 2, name: 'Dame', isCustom: true })]
-    const custom = [all[1]]
-    expect(preselectBatchId(all, custom)).toBe(2)
+    expect(preselectBatchId([house, custom], [custom])).toBe(4)
   })
 
   it('picks the only option when there is exactly one', () => {
-    expect(preselectBatchId([batch({ id: 7 })], [])).toBe(7)
+    expect(preselectBatchId([house], [])).toBe(1)
   })
 
   it('stays blank when several batches are available', () => {
-    expect(preselectBatchId([batch({ id: 1 }), batch({ id: 2 })], [])).toBe('')
-  })
-
-  it('stays blank when the customer has two custom fills', () => {
-    // Hollywood Theatre really does have two custom Still batches (ids 3 and
-    // 35). Picking either one silently would be arbitrary.
-    const custom = [batch({ id: 3, isCustom: true }), batch({ id: 35, isCustom: true })]
-    expect(preselectBatchId([...custom, batch({ id: 1 })], custom)).toBe('')
+    expect(preselectBatchId([house, batch({ id: 7 })], [])).toBe('')
   })
 
   it('stays blank when nothing is available', () => {
     expect(preselectBatchId([], [])).toBe('')
   })
-
-  it('prefers the custom fill over standard stock', () => {
-    const custom = [batch({ id: 9, name: 'Dame', isCustom: true })]
-    const all = [batch({ id: 1 }), batch({ id: 2 }), ...custom]
-    expect(preselectBatchId(all, custom)).toBe(9)
-  })
 })
 
 describe('chosenBatchId', () => {
-  const all = [batch({ id: 1 }), batch({ id: 2 })]
+  const options = [batch({ id: 1 }), batch({ id: 7 })]
 
   it('keeps the batch the user picked', () => {
-    expect(chosenBatchId(2, all, [])).toBe(2)
+    expect(chosenBatchId(7, options, [])).toBe(7)
   })
 
   it('falls back to the preselection when nothing is picked', () => {
-    expect(chosenBatchId('', [batch({ id: 7 })], [])).toBe(7)
+    expect(chosenBatchId('', [batch({ id: 1 })], [])).toBe(1)
   })
 
   it('drops a pick that is no longer on offer', () => {
-    // e.g. another customer's custom batch after the customer changed
-    expect(chosenBatchId(9, all, [])).toBe('')
+    expect(chosenBatchId(9, options, [])).toBe('')
+  })
+})
+
+describe('batch labels', () => {
+  it('names the product and shows the cans left', () => {
+    expect(batchTitle(batch({ id: 1, isStill: false }))).toBe('Portlandica Sparkling')
+    expect(
+      batchLabel(
+        batch({
+          id: 3,
+          name: 'Hollywood Theatre',
+          isCustom: true,
+          count: 4320,
+          fillDate: '2026-08-25',
+          source: 'North Powder',
+        })
+      )
+    ).toBe('Hollywood Theatre Still (Custom) · 2026-08-25 · 4,320 left · North Powder')
   })
 })

@@ -1,13 +1,6 @@
 import { customerKey } from './customers'
 import { unwrap } from './errors'
-import type {
-  Batch,
-  BatchProduct,
-  Db,
-  InventoryMovement,
-  LedgerCheckRow,
-  LineProduct,
-} from './types'
+import type { Batch, Db, InventoryMovement, LedgerCheckRow, LineProduct } from './types'
 
 // Inventory batches and their ledger. Every count change goes through a SQL function that
 // writes a movement in the same transaction (see 20261017000500_batch_functions.sql).
@@ -24,14 +17,9 @@ export const listBatches = async (
 export const getBatch = async (db: Db, id: number) =>
   unwrap<Batch | null>(await db.from('inventory').select('*').eq('id', id).maybeSingle())
 
-/** Whether a batch holds what an order line is for. Dog water never fills a still line. */
-export const batchHoldsProduct = (
-  batch: Pick<Batch, 'isStill' | 'product'>,
-  product: LineProduct
-) =>
-  product === 'dog_water'
-    ? batch.product === 'dog_water'
-    : batch.product === 'water' && batch.isStill === (product === 'still')
+/** Whether a batch holds what an order line is for: still or sparkling, from isStill. */
+export const batchHoldsProduct = (batch: Pick<Batch, 'isStill'>, product: LineProduct) =>
+  batch.isStill === (product === 'still')
 
 /**
  * Batches an order line may draw from: live batches of the right product that are house
@@ -61,7 +49,6 @@ export type FillInput = {
   name?: string | null
   /** Set for custom cans. */
   customer_id?: number | null
-  product?: BatchProduct
   source?: string | null
   total_cost?: number | null
   invoice_number?: string | null
@@ -77,7 +64,6 @@ export const recordFill = async (db: Db, fill: FillInput) =>
       p_fill_date: fill.fill_date,
       p_name: fill.name ?? null,
       p_customer_id: fill.customer_id ?? null,
-      p_product: fill.product ?? 'water',
       p_source: fill.source ?? null,
       p_total_cost: fill.total_cost ?? null,
       p_invoice_number: fill.invoice_number ?? null,

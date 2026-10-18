@@ -6,6 +6,25 @@ import type { Batch, Customer, Db, NewCustomer } from './types'
 // buildSeedPlan is pure, so the plan can be written out as CSV and reviewed before
 // applySeedPlan writes anything. Run it with scripts/seed-customers.ts.
 
+/**
+ * Agreed prices per can as the order form hard-coded them before the customers table,
+ * plus Embassy Suites Downtown (agreed 2026-10-18). The seed copies them onto the
+ * customers; the app reads customers.price_per_can. A price alone doesn't make a
+ * custom-can account: custom_cans comes from having a custom batch, so Ben Bridge's
+ * $1.35 applies to regular cans.
+ */
+export const CUSTOMER_PRICING: Record<string, number> = {
+  'Hollywood Theatre': 1.66,
+  'The Clyde Hotel Portland by Kasa': 1.75,
+  'Tacos Fita': 1.75,
+  'Que Dice': 2.0,
+  'Hotel Vintage': 2.0,
+  'Woodlark Hotel Portland': 2.0,
+  'Ben Bridge Jeweler (Downtown)': 1.35,
+  'Ben Bridge Jeweler (Washington Square)': 1.35,
+  'Embassy Suites by Hilton Portland Downtown': 1.75,
+}
+
 /** Payment terms that differ from the 30-day default. Sysco Net 65 confirmed 2026-10-12. */
 export const CUSTOMER_PAYMENT_TERMS: Record<string, number> = {
   Sysco: 65,
@@ -272,7 +291,6 @@ export const buildSeedPlan = (sources: SeedSources): SeedPlan => {
       planned.get(customerKey(name)) ??
       add(name, 'pricing', { name, type: 'business' }, ['Not in the locations tab'])
     row.customer.price_per_can = value
-    row.customer.custom_cans = true
     if (!row.sources.includes('pricing')) row.sources.push('pricing')
   }
 

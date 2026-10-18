@@ -85,7 +85,7 @@ comment on column public.customers.price_per_can is
   'Agreed price per can in dollars. NULL means the default price (DEFAULT_PRICE_PER_CAN, $1.50).';
 comment on column public.customers.custom_cans is 'True when the customer buys custom-printed cans.';
 comment on column public.customers.payment_terms_days is
-  'Invoice terms in days (Sysco is 65). NULL means the default terms (30 days).';
+  'Invoice terms in days (Sysco is 65). NULL means the default terms: 30 days for a business, due on receipt (0) for an individual.';
 comment on column public.customers.email is 'Where invoices go, when known.';
 comment on column public.customers.square_customer_id is 'Matching customer id in Square, once linked.';
 comment on column public.customers.active is 'False hides the customer without deleting history.';

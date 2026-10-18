@@ -38,19 +38,15 @@ export type CustomerInput = Omit<Customer, 'id' | 'name_key' | 'created_at' | 'u
 export type NewCustomer = Pick<CustomerInput, 'name'> & Partial<CustomerInput>
 export type CustomerPatch = Partial<CustomerInput>
 
-/** What is in the cans. Still vs sparkling stays in the batch's isStill. */
-export type BatchProduct = 'water' | 'dog_water'
-
 /** An inventory row with the columns the data-foundation migrations add. */
 export type Batch = Inventory & {
   initialCount: number | null
   customer_id: number | null
   archived_at: string | null
-  product: BatchProduct
 }
 
-/** What a customer buys on an order line. */
-export type LineProduct = 'still' | 'sparkling' | 'dog_water'
+/** What a customer buys on an order line: still or sparkling, as the batch's isStill says. */
+export type LineProduct = 'still' | 'sparkling'
 
 export type DeliveryType = 'drop' | 'ship' | 'pickup'
 
@@ -87,6 +83,14 @@ export type SalesOrder = {
   voided_at: string | null
   voided_by: string | null
   void_reason: string | null
+  /** Where the order goes, as shown on the Trello card. */
+  delivery_address: string | null
+  /** Billing email given with the order, for the Square invoice. */
+  customer_email: string | null
+  /** Where the sheet step wrote, e.g. 'Sales!A3126:V3127'. */
+  sheet_ref: string | null
+  /** This order added the customer, so the sheet step also lists them on the locations tab. */
+  new_customer: boolean
   created_by: string | null
   created_at: string
   updated_at: string
@@ -117,6 +121,8 @@ export type InventoryMovement = {
   order_line_id: number | null
   note: string | null
   created_by: string | null
+  /** Came through the app (a Data API request), not the SQL Editor, dashboard or a migration. */
+  made_in_app: boolean
   created_at: string
 }
 

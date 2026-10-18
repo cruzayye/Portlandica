@@ -10,14 +10,17 @@ import {
   deliveryTypeFromForm,
   findSameDayOrders,
   getSalesOrder,
+  getSalesOrderByKey,
   lineTotal,
   linesTotal,
+  listRecentOrders,
   listSalesOrders,
   listUnfinishedOrders,
   newIdempotencyKey,
   pendingSteps,
   priceLines,
   recordOrderStep,
+  unitPrices,
   voidSalesOrder,
   type NewSalesOrder,
 } from './orders'
@@ -40,6 +43,30 @@ describe('pricing', () => {
     const priced = priceLines(lines, { totalPrice: 100 })
     expect(priced.map((l) => l.unit_price)).toEqual([1.3889, 1.3889])
     expect(priced.map(lineTotal)).toEqual([66.67, 33.33])
+  })
+
+  it('charges each line its own price', () => {
+    const priced = priceLines(lines, { pricePerCan: [2, 1.5] })
+    expect(priced.map((l) => l.unit_price)).toEqual([2, 1.5])
+    expect(linesTotal(priced)).toBe(132)
+    expect(() => priceLines(lines, { pricePerCan: [2] })).toThrow('one price per line')
+  })
+
+  it('spreads a manual total over lines priced differently in proportion to their prices', () => {
+    // 48 custom cans at $2.00 and 24 house cans at $1.50 ($132), typed as $120.
+    const priced = priceLines(lines, { pricePerCan: [2, 1.5], totalPrice: 120 })
+    expect(priced.map((l) => l.unit_price)).toEqual([1.8182, 1.3636])
+    expect(priced.map(lineTotal)).toEqual([87.27, 32.73])
+    expect(linesTotal(priced)).toBe(120)
+    // The same price on every line: the same as spreading over every can.
+    expect(priceLines(lines, { pricePerCan: [1.5, 1.5], totalPrice: 100 })).toEqual(
+      priceLines(lines, { totalPrice: 100 })
+    )
+  })
+
+  it('works out unit prices from cans alone', () => {
+    expect(unitPrices([240, 48], { pricePerCan: [2, 1.5] })).toEqual([2, 1.5])
+    expect(unitPrices([240, 48], { pricePerCan: [2, 1.5], isDonation: true })).toEqual([0, 0])
   })
 
   it('makes donations free whatever the price', () => {
@@ -70,13 +97,13 @@ describe('order helpers', () => {
       ...over,
     }) as SalesOrder
 
-  it('lists the steps left to run, inventory first', () => {
+  it('lists the steps left to run, sheet first', () => {
     expect(pendingSteps(order({}))).toEqual([])
     expect(
       pendingSteps(
         order({ sheet_status: 'failed', inventory_status: 'pending', square_status: 'pending' })
       )
-    ).toEqual(['inventory', 'sheet', 'square'])
+    ).toEqual(['sheet', 'inventory', 'square'])
     expect(
       pendingSteps(order({ sheet_status: 'failed', voided_at: '2026-10-16T00:00:00Z' }))
     ).toEqual([])
@@ -207,7 +234,7 @@ describe('order queries', () => {
   it('records each downstream step and what is left', async () => {
     const db = fakeSupabase(pg, PAUL)
     const { order } = await createSalesOrder(db, queDiceOrder({ create_invoice: true }))
-    expect(pendingSteps(order)).toEqual(['inventory', 'sheet', 'trello', 'square'])
+    expect(pendingSteps(order)).toEqual(['sheet', 'inventory', 'trello', 'square'])
 
     await applyOrderInventory(db, order.id)
     await recordOrderStep(db, order.id, 'sheet', 'done')
@@ -250,6 +277,54 @@ describe('order queries', () => {
     expect(
       await findSameDayOrders(db, { orderDate: '2026-10-17', customerName: 'Que Dice' })
     ).toHaveLength(0)
+  })
+
+  it('finds an order by its idempotency key and keeps the order-flow fields', async () => {
+    const db = fakeSupabase(pg, PAUL)
+    const input = queDiceOrder({
+      delivery_address: '2310 NE Broadway, Portland, OR 97232',
+      customer_email: 'Orders@QueDice.example',
+      new_customer: true,
+    })
+    const { order } = await createSalesOrder(db, input)
+
+    const found = await getSalesOrderByKey(db, input.idempotency_key)
+    expect(found).toMatchObject({
+      id: order.id,
+      delivery_address: '2310 NE Broadway, Portland, OR 97232',
+      customer_email: 'orders@quedice.example',
+      new_customer: true,
+      lines: [{ cans: 240, batch_id: 13 }],
+    })
+    expect(await getSalesOrderByKey(db, newIdempotencyKey())).toBeNull()
+
+    const ref = await recordOrderStep(db, order.id, 'sheet', 'done', {
+      externalId: 'Sales!A3126:V3126',
+    })
+    expect(ref.sheet_ref).toBe('Sales!A3126:V3126')
+  })
+
+  it('lists recent orders with their lines, voided ones included', async () => {
+    const db = fakeSupabase(pg, PAUL)
+    const a = await createSalesOrder(db, queDiceOrder())
+    const b = await createSalesOrder(
+      db,
+      queDiceOrder({
+        lines: priceLines([
+          { product: 'still', cans: 48, batch_id: 45 },
+          { product: 'sparkling', cans: 24, batch_id: 25 },
+        ]),
+      })
+    )
+    await voidSalesOrder(db, a.order.id, 'Test')
+
+    const recent = await listRecentOrders(db)
+    expect(recent.map((o) => [o.id, o.lines.map((l) => l.cans)])).toEqual([
+      [b.order.id, [48, 24]],
+      [a.order.id, [240]],
+    ])
+    expect(recent[1].voided_at).not.toBeNull()
+    expect(await listRecentOrders(db, { limit: 1 })).toHaveLength(1)
   })
 
   it('refuses orders from non-partners', async () => {

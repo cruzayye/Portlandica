@@ -58,8 +58,9 @@ was called.
   (`stillBatches` / `sparkBatches`), the preselect rule (single custom match
   wins, else single option, else blank), and the `needsStillBatch` /
   `needsSparkBatch` submit gating.
-- `src/app/actions/inventory.ts` — `decrementInventory` subtracts without a
-  floor, so counts can go negative. Worth a test once a guard exists.
+- `src/lib/orderSteps.ts` — the order steps (sheet, inventory, Trello, Square)
+  run against PGlite in `orderSteps.test.ts`; add a case there for any new
+  step behaviour.
 
 ## Rules
 

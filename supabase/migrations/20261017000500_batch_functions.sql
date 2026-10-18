@@ -10,7 +10,6 @@ create function public.record_fill(
   p_fill_date date,
   p_name text default null,
   p_customer_id bigint default null,
-  p_product text default 'water',
   p_source text default null,
   p_total_cost numeric default null,
   p_invoice_number text default null,
@@ -55,12 +54,11 @@ begin
   perform set_config('portlandica.ledger_write', 'on', true);
   insert into public.inventory (
     name, count, "isCustom", "isStill", "fillDate", "totalCost", "invoiceNumber", source,
-    customer_id, product
+    customer_id
   )
   values (
     v_name, p_count, p_customer_id is not null, p_is_still, p_fill_date, p_total_cost,
-    nullif(btrim(p_invoice_number), ''), nullif(btrim(p_source), ''), p_customer_id,
-    coalesce(p_product, 'water')
+    nullif(btrim(p_invoice_number), ''), nullif(btrim(p_source), ''), p_customer_id
   )
   returning * into v_batch;
   perform set_config('portlandica.ledger_write', 'off', true);
@@ -227,13 +225,13 @@ $$;
 
 comment on function public.unarchive_batch is 'Undo archive_batch, restoring the cans it wrote off.';
 
-revoke execute on function public.record_fill(integer, boolean, date, text, bigint, text, text, numeric, text, text)
+revoke execute on function public.record_fill(integer, boolean, date, text, bigint, text, numeric, text, text)
   from public, anon;
 revoke execute on function public.adjust_batch(bigint, integer, text, integer) from public, anon;
 revoke execute on function public.archive_batch(bigint, text) from public, anon;
 revoke execute on function public.unarchive_batch(bigint, text) from public, anon;
 
-grant execute on function public.record_fill(integer, boolean, date, text, bigint, text, text, numeric, text, text)
+grant execute on function public.record_fill(integer, boolean, date, text, bigint, text, numeric, text, text)
   to authenticated, service_role;
 grant execute on function public.adjust_batch(bigint, integer, text, integer) to authenticated, service_role;
 grant execute on function public.archive_batch(bigint, text) to authenticated, service_role;

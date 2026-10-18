@@ -86,6 +86,22 @@ const createOrder = async (
   return (await one<{ s: Snapshot }>(auth, call, Object.values(args))).s
 }
 
+// Every column, function, trigger and policy, to compare two schemas.
+const fingerprint = async (db: PGlite) =>
+  (
+    await db.query<{ x: string }>(`
+      select 'column ' || table_schema || '.' || table_name || '.' || column_name || ' ' || data_type as x
+      from information_schema.columns where table_schema in ('public', 'private')
+      union all
+      select 'function ' || n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
+      from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'private')
+      union all
+      select 'trigger ' || tgrelid::regclass || '.' || tgname from pg_trigger where not tgisinternal
+      union all
+      select 'policy ' || schemaname || '.' || tablename || '.' || policyname from pg_policies
+      order by 1`)
+  ).rows.map((r) => r.x)
+
 describe('migrations on the live schema', () => {
   it('needs the login migration first', async () => {
     const bare = new PGlite()
@@ -102,7 +118,7 @@ describe('migrations on the live schema', () => {
     )
     await expect(bare.exec(first)).rejects.toThrow(/is_partner\(\) is missing/)
     await bare.close()
-  })
+  }, 60_000)
 
   it('records an opening balance for every batch so the ledger balances', async () => {
     const rows = await pg.query<{ batch_id: number; delta: number }>(
@@ -119,39 +135,29 @@ describe('migrations on the live schema', () => {
     expect(await ledgerMismatches()).toBe(0)
   })
 
-  it('marks the dog water batch and leaves house stock as water', async () => {
-    const rows = await pg.query<{ id: number; product: string }>(
-      'select id, product from public.inventory order by id'
+  it('adds two columns to inventory and no product: dog water stays house still stock', async () => {
+    const columns = await pg.query<{ column_name: string }>(
+      `select column_name from information_schema.columns
+       where table_schema = 'public' and table_name = 'inventory'
+         and column_name in ('customer_id', 'archived_at', 'product') order by 1`
     )
-    expect(rows.rows.filter((r) => r.product === 'dog_water').map((r) => r.id)).toEqual([33])
+    expect(columns.rows.map((r) => r.column_name)).toEqual(['archived_at', 'customer_id'])
+    expect(
+      await one(SERVICE, 'select name, "isStill", "isCustom" from public.inventory where id = 33')
+    ).toEqual({ name: 'Portlandica Dog water', isStill: true, isCustom: false })
   })
 
   it('keeps the existing inventory columns readable with the public key', async () => {
     const row = await one(
       ANON,
       `select id, created_at, name, count, "isCustom", "isStill", "fillDate", "totalCost",
-              "invoiceNumber", source, "initialCount", customer_id, archived_at, product
+              "invoiceNumber", source, "initialCount", customer_id, archived_at
        from public.inventory where id = 45`
     )
-    expect(row).toMatchObject({ name: 'Portlandica', isStill: true, product: 'water' })
+    expect(row).toMatchObject({ name: 'Portlandica', isStill: true, customer_id: null })
   })
 
   it('can be rolled back to the schema it started from', async () => {
-    const fingerprint = async (db: PGlite) =>
-      (
-        await db.query<{ x: string }>(`
-          select 'column ' || table_schema || '.' || table_name || '.' || column_name || ' ' || data_type as x
-          from information_schema.columns where table_schema in ('public', 'private')
-          union all
-          select 'function ' || n.nspname || '.' || p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')'
-          from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname in ('public', 'private')
-          union all
-          select 'trigger ' || tgrelid::regclass || '.' || tgname from pg_trigger where not tgisinternal
-          union all
-          select 'policy ' || schemaname || '.' || tablename || '.' || policyname from pg_policies
-          order by 1`)
-      ).rows.map((r) => r.x)
-
     // The schema as database steps 1 and 2 leave it, before any data-foundation migration.
     const before = await createDb(migrationFiles().filter((file) => file.startsWith('20261015')))
 
@@ -161,16 +167,19 @@ describe('migrations on the live schema', () => {
     await query(PAUL, 'select public.apply_order_inventory($1)', [order.id])
     await query(PAUL, `select public.archive_batch(46)`)
 
-    await pg.exec(
-      readFileSync(
-        path.join(process.cwd(), 'supabase/rollback/20261017_data_foundation.sql'),
-        'utf8'
-      )
-    )
+    // Newest first: the order-flow rollback puts back the functions the data-foundation
+    // rollback drops by their original signatures.
+    for (const file of [
+      '20261017000900_ledger_made_in_app.sql',
+      '20261017000700_order_flow.sql',
+      '20261017_data_foundation.sql',
+    ]) {
+      await pg.exec(readFileSync(path.join(process.cwd(), 'supabase/rollback', file), 'utf8'))
+    }
     expect(await fingerprint(pg)).toEqual(await fingerprint(before))
     expect(await batchCount(45)).toBe(12000 - 24)
     await before.close()
-  })
+  }, 60_000)
 
   it('leaves the legacy orders table alone', async () => {
     await expect(
@@ -462,6 +471,67 @@ describe('the app with the team password (service role, no partners)', () => {
   })
 })
 
+describe('made_in_app', () => {
+  const latest = async (batchId: number) =>
+    (
+      await pg.query<{ reason: string; made_in_app: boolean; created_by: string | null }>(
+        `select reason, made_in_app, created_by from public.inventory_movements
+         where batch_id = $1 order by id desc limit 1`,
+        [batchId]
+      )
+    ).rows[0]
+
+  it('leaves the opening balances to the system', async () => {
+    expect(
+      await count(
+        `select 1 from public.inventory_movements where reason = 'opening' and made_in_app`
+      )
+    ).toBe(0)
+    expect(await count(`select 1 from public.inventory_movements where reason = 'opening'`)).toBe(6)
+  })
+
+  it('marks what the app does through the Data API with the secret key', async () => {
+    await query(SERVICE, `select public.adjust_batch(45, 11976, 'Recount')`)
+    expect(await latest(45)).toEqual({ reason: 'adjustment', made_in_app: true, created_by: null })
+
+    // A direct count edit through the API, as the Inventory tab made before the ledger.
+    await query(SERVICE, 'update public.inventory set count = count - 24 where id = 13')
+    expect(await latest(13)).toEqual({ reason: 'adjustment', made_in_app: true, created_by: null })
+  })
+
+  it('also marks a signed-in partner, and keeps their user id', async () => {
+    await query(PAUL, `select public.adjust_batch(45, 11976, 'Recount')`)
+    expect(await latest(45)).toEqual({
+      reason: 'adjustment',
+      made_in_app: true,
+      created_by: PAUL.sub,
+    })
+  })
+
+  it('leaves changes made in the SQL Editor or the dashboard to the system', async () => {
+    // A direct session: no request claims, like the SQL Editor.
+    await query(SERVICE, `select public.adjust_batch(45, 11976, 'Recount')`)
+    await pg.query(`select public.adjust_batch(13, 1176, 'Counted in the SQL Editor')`)
+    expect(await latest(13)).toEqual({ reason: 'adjustment', made_in_app: false, created_by: null })
+    await pg.query('update public.inventory set count = count - 24 where id = 25')
+    expect(await latest(25)).toEqual({ reason: 'adjustment', made_in_app: false, created_by: null })
+  })
+
+  it('can be undone on its own', async () => {
+    const before = await createDb(
+      migrationFiles().filter((file) => !file.endsWith('_ledger_made_in_app.sql'))
+    )
+    await pg.exec(
+      readFileSync(
+        path.join(process.cwd(), 'supabase/rollback/20261017000900_ledger_made_in_app.sql'),
+        'utf8'
+      )
+    )
+    expect(await fingerprint(pg)).toEqual(await fingerprint(before))
+    await before.close()
+  }, 60_000)
+})
+
 describe('record_fill', () => {
   it('adds a house batch with a fill movement', async () => {
     const batch = await one<{ b: Record<string, unknown> }>(
@@ -520,12 +590,21 @@ describe('record_fill', () => {
     ).rejects.toMatchObject({ hint: 'invalid_input' })
   })
 
-  it('records dog water as its own product', async () => {
-    const batch = await one<{ product: string }>(
+  it('records a dog water fill as house still stock, with no product argument', async () => {
+    const batch = await one<{ b: Record<string, unknown> }>(
       PAUL,
-      `select (public.record_fill(p_count => 240, p_is_still => true, p_fill_date => null, p_name => 'Dog water', p_product => 'dog_water')).product`
+      `select to_jsonb(public.record_fill(p_count => 240, p_is_still => true, p_fill_date => null,
+         p_name => 'Portlandica Dog water')) as b`
     )
-    expect(batch.product).toBe('dog_water')
+    expect(batch.b).toMatchObject({ name: 'Portlandica Dog water', isStill: true, isCustom: false })
+    expect(batch.b).not.toHaveProperty('product')
+    await expect(
+      query(
+        PAUL,
+        `select public.record_fill(p_count => 240, p_is_still => true, p_fill_date => null,
+           p_name => 'Dog water', p_product => 'dog_water')`
+      )
+    ).rejects.toMatchObject({ code: '42883' })
   })
 })
 
@@ -665,17 +744,31 @@ describe('create_sales_order', () => {
     })
   })
 
-  it('refuses lines whose batch holds a different product', async () => {
+  it('refuses lines whose batch holds the other kind of water', async () => {
     await expect(
       createOrder(PAUL, 'k-3', [{ product: 'still', cans: 24, batch_id: 25, unit_price: 1.5 }])
     ).rejects.toMatchObject({ hint: 'product_batch_mismatch' })
     await expect(
-      createOrder(PAUL, 'k-4', [{ product: 'still', cans: 24, batch_id: 33, unit_price: 1.5 }])
+      createOrder(PAUL, 'k-4', [{ product: 'sparkling', cans: 24, batch_id: 45, unit_price: 1.5 }])
     ).rejects.toMatchObject({ hint: 'product_batch_mismatch' })
+    expect(await count('select 1 from public.sales_orders')).toBe(0)
+  })
+
+  it('sells the dog water batch as still, and has no dog water product', async () => {
     const dog = await createOrder(PAUL, 'k-5', [
-      { product: 'dog_water', cans: 24, batch_id: 33, unit_price: 1.5 },
+      { product: 'still', cans: 24, batch_id: 33, unit_price: 1.5 },
     ])
     expect(dog.created).toBe(true)
+    expect(dog.lines).toMatchObject([{ product: 'still', batch_id: 33, is_custom: false }])
+    await expect(
+      createOrder(PAUL, 'k-5b', [{ product: 'dog_water', cans: 24, batch_id: 33, unit_price: 1.5 }])
+    ).rejects.toMatchObject({ hint: 'product_batch_mismatch' })
+    const check = await pg.query<{ def: string }>(
+      `select pg_get_constraintdef(oid) as def from pg_constraint
+       where conname = 'sales_order_lines_product_valid'`
+    )
+    expect(check.rows[0].def).toMatch(/'still'.*'sparkling'/)
+    expect(check.rows[0].def).not.toMatch(/dog/)
     expect(await count('select 1 from public.sales_orders')).toBe(1)
   })
 
@@ -845,9 +938,48 @@ describe('record_order_step', () => {
     })
     await step(order.id, 'inventory', 'failed', null, 'Network')
     await expect(step(order.id, 'email', 'done')).rejects.toMatchObject({ hint: 'invalid_input' })
-    await expect(step(order.id, 'sheet', 'done', 'row-5')).rejects.toMatchObject({
+    await expect(step(order.id, 'inventory', 'failed', 'row-5')).rejects.toMatchObject({
       hint: 'invalid_input',
     })
+  })
+
+  it("records a void order's deleted Square draft as skipped, and nothing else undone", async () => {
+    const { order } = await createOrder(
+      PAUL,
+      'step-5',
+      [{ product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 }],
+      { p_create_invoice: true }
+    )
+    await step(order.id, 'square', 'done', 'inv-1')
+    await step(order.id, 'trello', 'done', 'card-1')
+    // Only once the order is void.
+    await expect(step(order.id, 'square', 'skipped')).rejects.toMatchObject({
+      hint: 'step_already_done',
+    })
+
+    await query(PAUL, `select public.void_order($1, 'Customer cancelled')`, [order.id])
+    expect((await step(order.id, 'square', 'skipped')).o).toMatchObject({
+      square_status: 'skipped',
+      square_error: null,
+      square_invoice_id: 'inv-1',
+    })
+    // A void undoes no other done step, and a Square step only as skipped.
+    await expect(step(order.id, 'trello', 'skipped')).rejects.toMatchObject({
+      hint: 'step_already_done',
+    })
+    const other = await createOrder(
+      PAUL,
+      'step-6',
+      [{ product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 }],
+      { p_create_invoice: true }
+    )
+    await step(other.order.id, 'square', 'done', 'inv-2')
+    await query(PAUL, `select public.void_order($1, 'Duplicate')`, [other.order.id])
+    for (const status of ['failed', 'pending']) {
+      await expect(step(other.order.id, 'square', status)).rejects.toMatchObject({
+        hint: 'step_already_done',
+      })
+    }
   })
 
   it('never shares a Square invoice between orders', async () => {
@@ -867,5 +999,114 @@ describe('record_order_step', () => {
     await expect(step(b.order.id, 'square', 'done', 'inv-1')).rejects.toMatchObject({
       code: '23505',
     })
+  })
+})
+
+describe('order flow additions', () => {
+  it('keeps the delivery address, billing email and new-customer flag on the order', async () => {
+    const { order } = await createOrder(
+      PAUL,
+      'flow-1',
+      [{ product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 }],
+      {
+        p_delivery_address: '  1005 W Burnside St, Portland, OR 97209 ',
+        p_customer_email: ' AP@Example.com ',
+        p_new_customer: true,
+      }
+    )
+    expect(order).toMatchObject({
+      delivery_address: '1005 W Burnside St, Portland, OR 97209',
+      customer_email: 'ap@example.com',
+      new_customer: true,
+      sheet_ref: null,
+    })
+
+    const plain = await createOrder(PAUL, 'flow-2', [
+      { product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 },
+    ])
+    expect(plain.order).toMatchObject({
+      delivery_address: null,
+      customer_email: null,
+      new_customer: false,
+    })
+
+    await expect(
+      createOrder(PAUL, 'flow-3', [{ product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 }], {
+        p_customer_email: 'not an email',
+      })
+    ).rejects.toMatchObject({ code: '23514' })
+  })
+
+  it('records where the sheet rows went, and lets a retry move them', async () => {
+    const { order } = await createOrder(PAUL, 'flow-4', [
+      { product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 },
+    ])
+    const step = (status: string, ref: string | null) =>
+      one<{ o: Record<string, unknown> }>(
+        PAUL,
+        'select to_jsonb(public.record_order_step($1, $2, $3, $4, null)) as o',
+        [order.id, 'sheet', status, ref]
+      )
+
+    await step('failed', null)
+    expect((await step('done', 'Sales!A3126:V3126')).o).toMatchObject({
+      sheet_status: 'done',
+      sheet_error: null,
+      sheet_ref: 'Sales!A3126:V3126',
+    })
+    expect((await step('done', 'Sales!A3130:V3130')).o).toMatchObject({
+      sheet_ref: 'Sales!A3130:V3130',
+    })
+    expect((await step('done', null)).o).toMatchObject({ sheet_ref: 'Sales!A3130:V3130' })
+  })
+
+  it('can be undone on its own, leaving the data-foundation schema as it was', async () => {
+    const definitions = async (db: PGlite) =>
+      (
+        await db.query<{ x: string }>(`
+          select p.proname || ' ' || md5(pg_get_functiondef(p.oid)) as x
+          from pg_proc p where p.pronamespace = 'public'::regnamespace order by 1`)
+      ).rows.map((r) => r.x)
+
+    const before = new PGlite()
+    const sqlDir = path.join(process.cwd(), 'src/lib/db/testing/sql')
+    await before.exec(readFileSync(path.join(sqlDir, 'supabase-stub.sql'), 'utf8'))
+    await before.exec(readFileSync(path.join(sqlDir, 'live-baseline.sql'), 'utf8'))
+    for (const file of migrationFiles().filter((f) => !f.endsWith('_order_flow.sql'))) {
+      await before.exec(readFileSync(path.join(process.cwd(), 'supabase/migrations', file), 'utf8'))
+    }
+
+    await createOrder(
+      PAUL,
+      'flow-5',
+      [{ product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 }],
+      {
+        p_delivery_address: '1 Main St',
+      }
+    )
+    await pg.exec(
+      readFileSync(
+        path.join(process.cwd(), 'supabase/rollback/20261017000700_order_flow.sql'),
+        'utf8'
+      )
+    )
+    expect(await fingerprint(pg)).toEqual(await fingerprint(before))
+    expect(await definitions(pg)).toEqual(await definitions(before))
+    await before.close()
+  }, 60_000)
+})
+
+describe('API role privileges', () => {
+  it('leaves anon and authenticated no TRUNCATE on any public table', async () => {
+    // TRUNCATE ignores row level security, so neither API role may hold it.
+    const { rows } = await pg.query<{ table: string; role: string }>(`
+      select c.relname as table, r.rolname as role
+      from pg_class c
+      cross join (values ('anon'), ('authenticated')) as r (rolname)
+      where c.relnamespace = 'public'::regnamespace
+        and c.relkind in ('r', 'p')
+        and has_table_privilege(r.rolname, c.oid, 'TRUNCATE')
+    `)
+    expect(rows).toEqual([])
   })
 })

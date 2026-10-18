@@ -7,6 +7,7 @@ import Tab from '@mui/material/Tab'
 import Tabs from '@mui/material/Tabs'
 import OrderForm from '@/components/OrderForm/OrderForm'
 import Inventory from '@/components/Inventory/Inventory'
+import OrderHistory from '@/components/OrderHistory/OrderHistory'
 import { signOut } from '@/app/login/actions'
 
 export default function Home() {
@@ -18,13 +19,15 @@ export default function Home() {
         <Tabs value={tab} onChange={(_, val) => setTab(val)} variant="fullWidth">
           { <Tab label="Order Form" /> }
           { <Tab label="Inventory" /> }
+          { <Tab label="Order History" /> }
           { <Tab label="A.I.P Numbers" /> }
         </Tabs>
       </Box>
       <Box sx={{ p: { xs: 2, sm: 4 }, display: 'flex', justifyContent: 'center' }}>
         {tab === 0 && <OrderForm />}
         {tab === 1 && <Box sx={{ width: '100%', maxWidth: 560 }}><Inventory /></Box>}
-        {tab === 2 && (
+        {tab === 2 && <OrderHistory />}
+        {tab === 3 && (
           <Box sx={{ width: '100%', height: 'calc(100vh - 120px)' }}>
             <iframe
               src="https://portlandica-dashboard.vercel.app/"

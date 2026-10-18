@@ -11,12 +11,12 @@ import type {
   SalesOrderWithLines,
 } from './types'
 
-// Sales orders. The intended server flow for one form submission:
+// Sales orders. The server flow for one form submission (src/lib/orderSteps.ts):
 //   1. createSalesOrder with the form's idempotency key (a retry returns the same order)
-//   2. applyOrderInventory; on 'insufficient_stock' ask the user, then retry with
-//      allowNegative; on any other error recordOrderStep(..., 'inventory', 'failed')
-//   3. write the Sales sheet, create the Trello card and the Square invoice, recording
-//      each outcome with recordOrderStep
+//   2. write the Sales sheet, recording the outcome with recordOrderStep
+//   3. applyOrderInventory; on 'insufficient_stock' the user can retry with allowNegative;
+//      on any error recordOrderStep(..., 'inventory', 'failed')
+//   4. create the Trello card and the Square invoice, recording each outcome
 // pendingSteps(order) says what is left, so a retry only repeats what didn't finish.
 
 export type NewOrderLine = {
@@ -48,6 +48,12 @@ export type NewSalesOrder = {
   is_donation?: boolean
   /** Defaults to today in Portland. */
   order_date?: string | null
+  /** Where the order goes, for the Trello card. */
+  delivery_address?: string | null
+  /** Billing email given with the order. */
+  customer_email?: string | null
+  /** This order added the customer. */
+  new_customer?: boolean
 }
 
 export type CreatedSalesOrder = {
@@ -85,29 +91,57 @@ export const lineTotal = (line: Pick<NewOrderLine, 'cans' | 'unit_price'>) => li
 export const linesTotal = (lines: Pick<NewOrderLine, 'cans' | 'unit_price'>[]) =>
   lines.reduce((sum, line) => sum + lineCents(line), 0) / 100
 
+export type PriceOptions = {
+  /** Dollars per can: one price for every line, or one per line, in line order. */
+  pricePerCan?: number | number[]
+  /** A total typed in by hand. It replaces the sum of the lines. */
+  totalPrice?: number | null
+  isDonation?: boolean
+}
+
 /**
- * Price an order's lines. Donations are free. A manual total is spread evenly over every
- * can, as the Sales sheet splits it today (pass the same total_price to createSalesOrder
- * so the order keeps the exact amount). Otherwise each can costs pricePerCan.
+ * The price per can of each line, for lines of these many cans. Donations are free.
+ * Otherwise each line costs its pricePerCan. A manual total replaces the automatic one
+ * and is spread over the lines in proportion to what each costs at those prices: every
+ * line's price is scaled by the same factor, so a line priced higher (a customer's custom
+ * cans) stays higher. When every line has the same price, that is the same as spreading
+ * the total evenly over every can.
+ */
+export const unitPrices = (
+  cans: number[],
+  { pricePerCan = DEFAULT_PRICE_PER_CAN, totalPrice = null, isDonation = false }: PriceOptions = {}
+): number[] => {
+  if (Array.isArray(pricePerCan) && pricePerCan.length !== cans.length) {
+    throw new Error('Give one price per line')
+  }
+  const prices = cans.map((_, i) => (Array.isArray(pricePerCan) ? pricePerCan[i] : pricePerCan))
+  if (isDonation) return cans.map(() => 0)
+  const totalCans = cans.reduce((sum, n) => sum + n, 0)
+  if (totalPrice === null || totalCans <= 0) return prices
+  const automatic = cans.reduce((sum, n, i) => sum + n * prices[i], 0)
+  if (automatic <= 0 || prices.every((price) => price === prices[0])) {
+    return cans.map(() => toUnitPrice(totalPrice / totalCans))
+  }
+  return prices.map((price) => toUnitPrice((price * totalPrice) / automatic))
+}
+
+/**
+ * Price an order's lines (see unitPrices). Pass the same total_price to createSalesOrder
+ * when a total was typed, so the order keeps the exact amount.
  */
 export const priceLines = (
   lines: Omit<NewOrderLine, 'unit_price'>[],
-  {
-    pricePerCan = DEFAULT_PRICE_PER_CAN,
-    totalPrice = null,
-    isDonation = false,
-  }: { pricePerCan?: number; totalPrice?: number | null; isDonation?: boolean } = {}
+  options: PriceOptions = {}
 ): NewOrderLine[] => {
-  const totalCans = lines.reduce((sum, line) => sum + line.cans, 0)
-  const unitPrice = isDonation
-    ? 0
-    : totalPrice !== null && totalCans > 0
-      ? toUnitPrice(totalPrice / totalCans)
-      : pricePerCan
-  return lines.map((line) => ({ ...line, unit_price: unitPrice }))
+  const prices = unitPrices(
+    lines.map((line) => line.cans),
+    options
+  )
+  return lines.map((line, i) => ({ ...line, unit_price: prices[i] }))
 }
 
-const STEP_ORDER: OrderStep[] = ['inventory', 'sheet', 'trello', 'square']
+// The Sales sheet is the book of record Paul's reports read, so it goes first.
+export const STEP_ORDER: OrderStep[] = ['sheet', 'inventory', 'trello', 'square']
 
 /** Steps still to run or retry, in the order to run them. None for a voided order. */
 export const pendingSteps = (
@@ -146,6 +180,9 @@ export const createSalesOrder = async (db: Db, order: NewSalesOrder) =>
       p_is_donation: order.is_donation ?? false,
       p_order_date: order.order_date ?? null,
       p_po_number: order.po_number ?? null,
+      p_delivery_address: order.delivery_address ?? null,
+      p_customer_email: order.customer_email ?? null,
+      p_new_customer: order.new_customer ?? false,
     })
   )
 
@@ -199,6 +236,40 @@ export const getSalesOrder = async (db: Db, id: number): Promise<SalesOrderWithL
     await db.from('sales_order_lines').select('*').eq('order_id', id).order('id')
   )
   return { ...order, lines }
+}
+
+/** The order this idempotency key created, if any. */
+export const getSalesOrderByKey = async (
+  db: Db,
+  idempotencyKey: string
+): Promise<SalesOrderWithLines | null> => {
+  const order = unwrap<SalesOrder | null>(
+    await db.from('sales_orders').select('*').eq('idempotency_key', idempotencyKey).maybeSingle()
+  )
+  return order ? getSalesOrder(db, order.id) : null
+}
+
+/** Newest orders first, voided ones included, each with its lines. */
+export const listRecentOrders = async (
+  db: Db,
+  { limit = 50 }: { limit?: number } = {}
+): Promise<SalesOrderWithLines[]> => {
+  const orders = await listSalesOrders(db, { includeVoided: true, limit })
+  if (!orders.length) return []
+  const lines = unwrap<SalesOrderLine[]>(
+    await db
+      .from('sales_order_lines')
+      .select('*')
+      .in(
+        'order_id',
+        orders.map((order) => order.id)
+      )
+      .order('id')
+  )
+  return orders.map((order) => ({
+    ...order,
+    lines: lines.filter((line) => line.order_id === order.id),
+  }))
 }
 
 export const listSalesOrders = async (

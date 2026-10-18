@@ -1,9 +1,15 @@
 import { DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
 import { DbError, unwrap } from './errors'
-import type { Customer, CustomerPatch, Db, NewCustomer } from './types'
+import type { Customer, CustomerPatch, CustomerType, Db, NewCustomer } from './types'
 
-/** Invoice terms for customers without their own (Sysco is on 65). */
+/** Invoice terms for a business without its own: Net 30 (Sysco is on 65). */
 export const DEFAULT_PAYMENT_TERMS_DAYS = 30
+
+/**
+ * Invoice terms for an individual (DTC) without their own: due on receipt. They usually
+ * pay on the website when they order.
+ */
+export const INDIVIDUAL_PAYMENT_TERMS_DAYS = 0
 
 /** The key customers are matched on: trimmed and lowercased, same as customers.name_key. */
 export const customerKey = (name: string) => name.trim().toLowerCase()
@@ -11,9 +17,19 @@ export const customerKey = (name: string) => name.trim().toLowerCase()
 export const pricePerCan = (customer: Pick<Customer, 'price_per_can'> | null | undefined) =>
   customer?.price_per_can ?? DEFAULT_PRICE_PER_CAN
 
+/**
+ * Days until an invoice is due: the customer's own payment_terms_days, otherwise 30 for a
+ * business and 0 (due on receipt) for an individual. An order with no customer row (a
+ * one-off individual) goes by the order's type.
+ */
 export const paymentTermsDays = (
-  customer: Pick<Customer, 'payment_terms_days'> | null | undefined
-) => customer?.payment_terms_days ?? DEFAULT_PAYMENT_TERMS_DAYS
+  customer: (Pick<Customer, 'payment_terms_days'> & { type?: CustomerType }) | null | undefined,
+  orderType?: CustomerType
+) =>
+  customer?.payment_terms_days ??
+  ((customer?.type ?? orderType) === 'individual'
+    ? INDIVIDUAL_PAYMENT_TERMS_DAYS
+    : DEFAULT_PAYMENT_TERMS_DAYS)
 
 /** One-line address, e.g. "2310 NE Broadway, Portland, OR 97232". */
 export const formatAddress = (

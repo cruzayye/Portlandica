@@ -29,6 +29,18 @@ describe('customer helpers', () => {
     expect(paymentTermsDays({ payment_terms_days: 65 })).toBe(65)
   })
 
+  it('makes an individual without terms due on receipt, and keeps businesses on 30', () => {
+    expect(paymentTermsDays({ payment_terms_days: null, type: 'individual' })).toBe(0)
+    expect(paymentTermsDays({ payment_terms_days: null, type: 'business' })).toBe(30)
+    // A one-off individual has no customer row: the order's type decides.
+    expect(paymentTermsDays(null, 'individual')).toBe(0)
+    expect(paymentTermsDays(null, 'business')).toBe(30)
+    expect(paymentTermsDays(null)).toBe(30)
+    // Terms set on the customer always win.
+    expect(paymentTermsDays({ payment_terms_days: 14, type: 'individual' })).toBe(14)
+    expect(paymentTermsDays({ payment_terms_days: 65, type: 'business' }, 'individual')).toBe(65)
+  })
+
   it('formats an address on one line, skipping blanks', () => {
     expect(
       formatAddress({

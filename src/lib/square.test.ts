@@ -1,254 +1,14 @@
 // @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { createDraftInvoice, SquareApiError, type DraftInvoiceInput } from './square'
+import {
+  createDraftInvoice,
+  deleteDraftInvoice,
+  SquareApiError,
+  type DraftInvoiceInput,
+} from './square'
+import { ERROR_CODES, createFakeSquare, type FakeSquare } from './testing/fakeSquare'
 
-type LineItem = {
-  name: string
-  quantity: string
-  base_price_money: { amount: number; currency: string }
-}
-type Customer = {
-  id: string
-  company_name?: string
-  given_name?: string
-  family_name?: string
-  email_address?: string
-  reference_id?: string
-}
-type Order = {
-  id: string
-  location_id: string
-  customer_id?: string
-  reference_id?: string
-  state: string
-  line_items: LineItem[]
-}
-type Invoice = {
-  id: string
-  location_id: string
-  order_id: string
-  status: string
-  invoice_number: string
-  primary_recipient: { customer_id: string }
-  payment_requests: unknown[]
-  delivery_method: string
-  title?: string
-  description?: string
-}
-type Call = {
-  method: string
-  url: URL
-  headers: Record<string, string>
-  body: Record<string, unknown>
-}
-type SearchRequest = {
-  cursor?: string
-  limit?: number
-  location_ids?: string[]
-  query?: {
-    filter?: {
-      email_address?: { exact?: string }
-      reference_id?: { exact?: string }
-      customer_filter?: { customer_ids?: string[] }
-      state_filter?: { states?: string[] }
-      location_ids?: string[]
-      customer_ids?: string[]
-    }
-  }
-}
-type Failure = number | 'network' | 'lost-response'
-
-const ERROR_CODES: Record<number, string> = {
-  400: 'INVALID_VALUE',
-  401: 'UNAUTHORIZED',
-  403: 'FORBIDDEN',
-  429: 'RATE_LIMITED',
-  500: 'INTERNAL_SERVER_ERROR',
-  503: 'SERVICE_UNAVAILABLE',
-}
-
-/**
- * An in-memory stand-in for the Square endpoints square.ts uses. Like Square,
- * it replays the first response for a repeated idempotency key, rejects a key
- * reused for a different request, and allows one invoice per order. That lets
- * these tests check that retries never make a second customer, order or
- * invoice.
- */
-const createFakeSquare = () => {
-  const customers: Customer[] = []
-  const orders: Order[] = []
-  const invoices: Invoice[] = []
-  const calls: Call[] = []
-  const replays = new Map<string, { request: string; response: object }>()
-  const failures: { method: string; path: string; failure: Failure }[] = []
-  let lastId = 0
-  let pageSize = 100
-
-  const nextId = (prefix: string) => `${prefix}_${++lastId}`
-
-  const json = (status: number, body: object) =>
-    new Response(JSON.stringify(body), {
-      status,
-      headers: { 'Content-Type': 'application/json' },
-    })
-
-  const error = (status: number, code = ERROR_CODES[status]) =>
-    json(status, { errors: [{ category: 'API_ERROR', code, detail: `Fake Square says ${code}` }] })
-
-  const page = (key: string, items: object[], { cursor, limit = 100 }: SearchRequest) => {
-    const start = Number(cursor ?? 0)
-    const end = start + Math.min(limit, pageSize)
-    return json(200, {
-      [key]: items.slice(start, end),
-      ...(end < items.length && { cursor: String(end) }),
-    })
-  }
-
-  const idempotent = (body: Record<string, unknown>, create: () => object | Response) => {
-    const { idempotency_key: key, ...request } = body
-    const seen = replays.get(String(key))
-    if (seen) {
-      return seen.request === JSON.stringify(request)
-        ? json(200, seen.response)
-        : error(400, 'IDEMPOTENCY_KEY_REUSED')
-    }
-    const response = create()
-    if (response instanceof Response) return response
-    replays.set(String(key), { request: JSON.stringify(request), response })
-    return json(200, response)
-  }
-
-  const handle = ({ method, url, body }: Call): Response => {
-    const search = body as SearchRequest
-    const filter = search.query?.filter ?? {}
-
-    if (method === 'GET' && url.pathname.startsWith('/v2/customers/')) {
-      const id = decodeURIComponent(url.pathname.slice('/v2/customers/'.length))
-      const customer = customers.find((c) => c.id === id)
-      return customer ? json(200, { customer }) : error(404, 'NOT_FOUND')
-    }
-
-    switch (`${method} ${url.pathname}`) {
-      case 'POST /v2/customers/search': {
-        const email = filter.email_address?.exact?.toLowerCase()
-        const referenceId = filter.reference_id?.exact?.toLowerCase()
-        const found = customers.filter(
-          (c) =>
-            (!email || c.email_address?.toLowerCase() === email) &&
-            (!referenceId || c.reference_id?.toLowerCase() === referenceId)
-        )
-        return page('customers', found, search)
-      }
-      case 'POST /v2/customers':
-        return idempotent(body, () => {
-          const { company_name, email_address, reference_id } = body as Omit<Customer, 'id'>
-          const customer = { id: nextId('CUSTOMER'), company_name, email_address, reference_id }
-          customers.push(customer)
-          return { customer }
-        })
-      case 'POST /v2/orders/search': {
-        const customerIds = filter.customer_filter?.customer_ids
-        const states = filter.state_filter?.states
-        const found = orders.filter(
-          (o) =>
-            search.location_ids?.includes(o.location_id) &&
-            (!customerIds || customerIds.includes(o.customer_id ?? '')) &&
-            (!states || states.includes(o.state))
-        )
-        return page('orders', found.reverse(), search)
-      }
-      case 'POST /v2/orders':
-        return idempotent(body, () => {
-          const order = {
-            ...(body.order as Omit<Order, 'id' | 'state'>),
-            id: nextId('ORDER'),
-            state: 'OPEN',
-          }
-          orders.push(order)
-          return { order }
-        })
-      case 'POST /v2/invoices/search': {
-        const [locationId] = filter.location_ids ?? []
-        const found = invoices.filter(
-          (i) =>
-            i.location_id === locationId &&
-            (!filter.customer_ids || filter.customer_ids.includes(i.primary_recipient.customer_id))
-        )
-        return page('invoices', found.reverse(), search)
-      }
-      case 'POST /v2/invoices':
-        return idempotent(body, () => {
-          const fields = body.invoice as Omit<Invoice, 'id' | 'status' | 'invoice_number'> & {
-            invoice_number?: string
-          }
-          const order = orders.find((o) => o.id === fields.order_id)
-          if (!order || order.state !== 'OPEN') return error(400, 'INVALID_VALUE')
-          if (invoices.some((i) => i.order_id === order.id)) return error(400, 'BAD_REQUEST')
-          const invoice = {
-            ...fields,
-            // Square numbers invoices from 1, padded to 7 digits
-            invoice_number: fields.invoice_number ?? String(invoices.length + 1).padStart(7, '0'),
-            id: nextId('INVOICE'),
-            status: 'DRAFT',
-          }
-          invoices.push(invoice)
-          return { invoice }
-        })
-    }
-    return error(404, 'NOT_FOUND')
-  }
-
-  const fetch = vi.fn(async (input: string | URL | Request, init: RequestInit = {}) => {
-    const call: Call = {
-      method: init.method ?? 'GET',
-      url: new URL(String(input)),
-      headers: init.headers as Record<string, string>,
-      body: init.body ? JSON.parse(String(init.body)) : {},
-    }
-    calls.push(call)
-
-    const index = failures.findIndex(
-      (f) => f.method === call.method && f.path === call.url.pathname
-    )
-    if (index === -1) return handle(call)
-    const [{ failure }] = failures.splice(index, 1)
-    // Square did the work, but the reply never reached us
-    if (failure === 'lost-response') handle(call)
-    if (typeof failure !== 'number') throw new TypeError('fetch failed')
-    return error(failure)
-  })
-
-  return {
-    customers,
-    orders,
-    invoices,
-    calls,
-    fetch,
-    /** Make the next request(s) to this endpoint fail */
-    fail: (method: string, path: string, failure: Failure, times = 1) => {
-      for (let i = 0; i < times; i++) failures.push({ method, path, failure })
-    },
-    addCustomer: (fields: Omit<Customer, 'id'>) => {
-      const customer = { id: nextId('CUSTOMER'), ...fields }
-      customers.push(customer)
-      return customer
-    },
-    forgetIdempotencyKeys: () => replays.clear(),
-    setPageSize: (size: number) => {
-      pageSize = size
-    },
-    /** Requests made, as 'METHOD /path' with customer ids masked */
-    endpoints: () =>
-      calls.map(
-        (c) =>
-          `${c.method} ${c.url.pathname.replace(/^\/v2\/customers\/(?!search$).+/, '/v2/customers/:id')}`
-      ),
-    callsTo: (method: string, path: string) =>
-      calls.filter((c) => c.method === method && c.url.pathname === path),
-  }
-}
-
-let square: ReturnType<typeof createFakeSquare>
+let square: FakeSquare
 
 beforeEach(() => {
   vi.stubEnv('SQUARE_ACCESS_TOKEN', 'test-token')
@@ -667,6 +427,95 @@ describe('retries', () => {
     await expect(createDraftInvoice(anOrder())).rejects.toThrow(
       'Square POST /v2/invoices failed (400): INVALID_VALUE: Fake Square says INVALID_VALUE'
     )
+  })
+})
+
+describe('deleteDraftInvoice', () => {
+  const draft = async () => (await createDraftInvoice(anOrder())).squareInvoiceId
+
+  it('deletes a draft at its current version, which cancels its Square order', async () => {
+    const id = await draft()
+    const before = square.calls.length
+
+    expect(await deleteDraftInvoice(id)).toEqual({ outcome: 'deleted' })
+    expect(square.invoices).toEqual([])
+    expect(square.orders[0].state).toBe('CANCELED')
+    // Read first for the version, then delete exactly that version. Nothing else is called.
+    expect(square.endpoints().slice(before)).toEqual([
+      'GET /v2/invoices/:id',
+      'DELETE /v2/invoices/:id',
+    ])
+    expect(square.calls.at(-1)!.url.searchParams.get('version')).toBe('0')
+  })
+
+  it('deletes the version Square has now when the draft was edited in the Dashboard', async () => {
+    const id = await draft()
+    square.editInvoice(id)
+    square.editInvoice(id)
+
+    expect(await deleteDraftInvoice(id)).toEqual({ outcome: 'deleted' })
+    expect(square.callsTo('DELETE', `/v2/invoices/${id}`)[0].url.search).toBe('?version=2')
+  })
+
+  it.each(['UNPAID', 'SCHEDULED', 'PARTIALLY_PAID', 'PAID', 'REFUNDED', 'CANCELED'])(
+    'leaves a %s invoice alone and says what it is',
+    async (status) => {
+      const id = await draft()
+      square.setInvoiceStatus(id, status)
+
+      expect(await deleteDraftInvoice(id)).toEqual({ outcome: 'not_draft', status })
+      expect(square.invoices.map((i) => i.status)).toEqual([status])
+      expect(square.callsTo('DELETE', `/v2/invoices/${id}`)).toEqual([])
+    }
+  )
+
+  it('leaves an invoice that was sent while it was being deleted', async () => {
+    const id = await draft()
+    // Someone sends the invoice from the Dashboard just after the app read it.
+    const handle = square.fetch.getMockImplementation()!
+    square.fetch.mockImplementationOnce(async (input, init) => {
+      const response = await handle(input, init)
+      square.setInvoiceStatus(id, 'UNPAID')
+      return response
+    })
+
+    expect(await deleteDraftInvoice(id)).toEqual({ outcome: 'not_draft', status: 'UNPAID' })
+    expect(square.invoices.map((i) => i.status)).toEqual(['UNPAID'])
+  })
+
+  it('says when Square has no such invoice', async () => {
+    expect(await deleteDraftInvoice('INVOICE_GONE')).toEqual({ outcome: 'not_found' })
+    expect(square.endpoints()).toEqual(['GET /v2/invoices/:id'])
+  })
+
+  it('counts a delete whose reply was lost as done', async () => {
+    const id = await draft()
+    square.fail('DELETE', `/v2/invoices/${id}`, 'lost-response')
+
+    expect(await skippingDelays(() => deleteDraftInvoice(id))).toEqual({ outcome: 'deleted' })
+    expect(square.invoices).toEqual([])
+    // The retry found nothing left to delete.
+    expect(square.callsTo('DELETE', `/v2/invoices/${id}`)).toHaveLength(2)
+  })
+
+  it('throws when Square refuses to delete a draft, leaving it in place', async () => {
+    const id = await draft()
+    square.fail('DELETE', `/v2/invoices/${id}`, 403)
+
+    await expect(deleteDraftInvoice(id)).rejects.toMatchObject({
+      name: 'SquareApiError',
+      status: 403,
+    })
+    expect(square.invoices.map((i) => i.status)).toEqual(['DRAFT'])
+  })
+
+  it('needs an invoice id and the Square settings before calling Square', async () => {
+    await expect(deleteDraftInvoice(' ')).rejects.toThrow('no Square invoice id')
+    vi.stubEnv('SQUARE_ACCESS_TOKEN', '')
+    await expect(deleteDraftInvoice('INVOICE_1')).rejects.toThrow(
+      'Missing Square env vars: SQUARE_ACCESS_TOKEN'
+    )
+    expect(square.fetch).not.toHaveBeenCalled()
   })
 })
 

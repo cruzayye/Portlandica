@@ -15,9 +15,9 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { createClient } from '@supabase/supabase-js'
 import { google } from 'googleapis'
-import { CUSTOMER_PRICING } from '../src/globals/constants'
 import {
   CUSTOMER_PAYMENT_TERMS,
+  CUSTOMER_PRICING,
   applySeedPlan,
   batchesCsv,
   buildSeedPlan,

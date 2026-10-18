@@ -1,156 +1,154 @@
-import type { NewOrder, OrderBatches } from '@/types/orders'
-import { sparkCans, stillCans } from '@/lib/orders'
+import type { DeliveryType, LineProduct } from '@/lib/db/types'
+import { deliveryDue, formatDeliveryDate, nextDeliveryDate } from '@/lib/delivery'
 
-// Deliveries run on Portland time, not the server's (Vercel runs in UTC).
-const DELIVERY_TIME_ZONE = 'America/Los_Angeles'
-const DELIVERY_DAYS = [3, 6] // Wednesday, Saturday
-const DELIVERY_HOUR = 9
+export { formatDeliveryDate, nextDeliveryDate } from '@/lib/delivery'
 
-const pacificDateParts = (now: Date) => {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: DELIVERY_TIME_ZONE,
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-  }).formatToParts(now)
-  const part = (type: string) => Number(parts.find((p) => p.type === type)!.value)
-  return { year: part('year'), month: part('month'), day: part('day') }
+/** An order as its delivery card shows it. */
+export type TrelloOrder = {
+  orderId: number
+  customerName: string
+  deliveryType: DeliveryType
+  /** YYYY-MM-DD; the card is due at 9 AM Pacific that day. Null: the next delivery day. */
+  deliveryDate: string | null
+  lines: { product: LineProduct; cans: number; isCustom: boolean; fillDate: string | null }[]
+  address: string | null
+  poNumber: string | null
+  notes: string | null
 }
 
-// 9:00 AM Pacific on the given calendar date, whether that falls in PST or PDT.
-const atDeliveryHour = (date: Date) => {
-  const assumingPst = Date.UTC(
-    date.getUTCFullYear(),
-    date.getUTCMonth(),
-    date.getUTCDate(),
-    DELIVERY_HOUR + 8
-  )
-  const pacificHour = Number(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: DELIVERY_TIME_ZONE,
-      hour: 'numeric',
-      hourCycle: 'h23',
-    }).format(assumingPst)
-  )
-  return new Date(assumingPst - (pacificHour - DELIVERY_HOUR) * 60 * 60 * 1000)
-}
+type TrelloConfig = { apiKey: string; token: string; listId: string; boardId: string }
 
-/**
- * First Wednesday or Saturday at least two days after today's date in
- * Portland, due at 9:00 AM Pacific.
- */
-export const nextDeliveryDate = (now: Date): Date => {
-  const { year, month, day } = pacificDateParts(now)
-  // A UTC-midnight date used only as a calendar, so the server's zone can't shift the day.
-  const date = new Date(Date.UTC(year, month - 1, day + 2))
-  while (!DELIVERY_DAYS.includes(date.getUTCDay())) {
-    date.setUTCDate(date.getUTCDate() + 1)
+const DELIVERY_LABELS: Record<DeliveryType, string> = { drop: 'Drop', ship: 'Ship', pickup: 'Pickup' }
+const PRODUCT_LABELS: Record<LineProduct, string> = { still: 'Still', sparkling: 'Sparkling' }
+
+const trelloConfig = (): TrelloConfig => {
+  const apiKey = process.env.TRELLO_API_KEY
+  const token = process.env.TRELLO_TOKEN
+  const listId = process.env.TRELLO_LIST_ID
+  const boardId = process.env.TRELLO_BOARD_ID
+  if (!apiKey || !token || !listId || !boardId) {
+    const missing = [
+      !apiKey && 'TRELLO_API_KEY',
+      !token && 'TRELLO_TOKEN',
+      !listId && 'TRELLO_LIST_ID',
+      !boardId && 'TRELLO_BOARD_ID',
+    ].filter(Boolean)
+    throw new Error(`Missing Trello env vars: ${missing.join(', ')}`)
   }
-  return atDeliveryHour(date)
+  return { apiKey, token, listId, boardId }
 }
 
-export const formatDeliveryDate = (date: Date) =>
-  date.toLocaleDateString('en-US', { timeZone: DELIVERY_TIME_ZONE })
+const auth = (config: TrelloConfig) =>
+  `key=${encodeURIComponent(config.apiKey)}&token=${encodeURIComponent(config.token)}`
+
+/** The card's last line. A retry looks for it to find a card an earlier attempt made. */
+export const orderMarker = (orderId: number) => `Order #${orderId}`
+
+/** The card's title, description, due date and the fill dates to label it with. */
+export const cardFor = (order: TrelloOrder, now = new Date()) => {
+  const due = order.deliveryDate ? deliveryDue(order.deliveryDate) : nextDeliveryDate(now)
+  const deliveryType = DELIVERY_LABELS[order.deliveryType]
+  const custom = (isCustom: boolean) => (isCustom ? ' (Custom)' : '')
+
+  const name = `${order.customerName} - ${deliveryType} ${order.lines
+    .map((line) => `${line.cans} ${PRODUCT_LABELS[line.product]}${custom(line.isCustom)}`)
+    .join(' & ')}`
+  const desc = [
+    `Delivery Type: ${deliveryType}`,
+    ...order.lines.map(
+      (line) => `${PRODUCT_LABELS[line.product]} Cans: ${line.cans}${custom(line.isCustom)}`
+    ),
+    `Delivery Date: ${formatDeliveryDate(due)}`,
+    ...(order.address ? [`Address: ${order.address}`] : []),
+    ...(order.poNumber ? [`PO: ${order.poNumber}`] : []),
+    ...(order.notes ? [`Notes: ${order.notes}`] : []),
+    orderMarker(order.orderId),
+  ].join('\n')
+  // One label per batch fill date, once each.
+  const fillDates = [...new Set(order.lines.map((line) => line.fillDate).filter(Boolean))] as string[]
+  return { name, desc, due, fillDates }
+}
 
 // Board labels are named after a batch's fill date.
-const getOrCreateLabel = async (boardId: string, name: string, apiKey: string, token: string): Promise<string> => {
-  const res = await fetch(`https://api.trello.com/1/boards/${boardId}/labels?key=${apiKey}&token=${token}`)
+const getOrCreateLabel = async (config: TrelloConfig, name: string): Promise<string> => {
+  const res = await fetch(
+    `https://api.trello.com/1/boards/${config.boardId}/labels?${auth(config)}`
+  )
   if (!res.ok) throw new Error(`Trello API error fetching labels: ${res.status}`)
   const labels: { id: string; name: string }[] = await res.json()
 
   const existing = labels.find((l) => l.name === name)
   if (existing) return existing.id
 
-  const createRes = await fetch(`https://api.trello.com/1/boards/${boardId}/labels`, {
+  const createRes = await fetch(`https://api.trello.com/1/boards/${config.boardId}/labels`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, color: null, key: apiKey, token }),
+    body: JSON.stringify({ name, color: null, key: config.apiKey, token: config.token }),
   })
   if (!createRes.ok) throw new Error(`Trello API error creating label: ${createRes.status}`)
   const created: { id: string } = await createRes.json()
   return created.id
 }
 
-export async function createTrelloCard(order: NewOrder, batches: OrderBatches = {}) {
-  const apiKey = process.env.TRELLO_API_KEY
-  const token = process.env.TRELLO_TOKEN
-  const listId = process.env.TRELLO_LIST_ID
-  const boardId = process.env.TRELLO_BOARD_ID
+/** An open card on the board made for this order, if there is one. */
+const findOrderCard = async (config: TrelloConfig, orderId: number) => {
+  const res = await fetch(
+    `https://api.trello.com/1/boards/${config.boardId}/cards/open?fields=desc&${auth(config)}`
+  )
+  if (!res.ok) throw new Error(`Trello API error fetching cards: ${res.status}`)
+  const cards: { id: string; desc?: string }[] = await res.json()
+  const marker = orderMarker(orderId)
+  return cards.find((card) => (card.desc ?? '').split('\n').includes(marker))?.id ?? null
+}
 
-  if (!apiKey || !token || !listId || !boardId) {
-    throw new Error(`Missing Trello env vars: ${[!apiKey && 'TRELLO_API_KEY', !token && 'TRELLO_TOKEN', !listId && 'TRELLO_LIST_ID', !boardId && 'TRELLO_BOARD_ID'].filter(Boolean).join(', ')}`)
+/**
+ * Create the delivery card and return its id. With findExisting, a card an earlier
+ * attempt made for this order is returned instead of making a second one.
+ */
+export const createTrelloCard = async (
+  order: TrelloOrder,
+  { findExisting = false }: { findExisting?: boolean } = {}
+): Promise<string> => {
+  const config = trelloConfig()
+  if (findExisting) {
+    const existing = await findOrderCard(config, order.orderId)
+    if (existing) return existing
   }
 
-  const deliveryDate = nextDeliveryDate(new Date())
-  const customerName = order.name ?? ''
-  const deliveryType = order.deliveryType 
-
-  const totalStill = stillCans(order)
-  const totalSpark = sparkCans(order)
-
-  const titleParts: string[] = []
-  if (totalStill > 0) {
-    const label = order.IsCustomStill ? ' (Custom)' : ''
-    titleParts.push(`${totalStill} Still${label}`)
-  }
-  if (totalSpark > 0) {
-    const label = order.isCustomSpark ? ' (Custom)' : ''
-    titleParts.push(`${totalSpark} Sparkling${label}`)
-  }
-
-  const cardTitle = `${customerName} - ${deliveryType} ${titleParts.join(' & ')}`
-
-  const description: string[] = [`Delivery Type: ${deliveryType}`]
-
-  if (totalStill > 0) {
-    description.push(
-      order.IsCustomStill ? `Still Cans: ${totalStill} (Custom)` : `Still Cans: ${totalStill}`
-    )
-  }
-  if (totalSpark > 0) {
-    description.push(
-      order.isCustomSpark
-        ? `Sparkling Cans: ${totalSpark} (Custom)`
-        : `Sparkling Cans: ${totalSpark}`
-    )
-  }
-
-  description.push(`Delivery Date: ${formatDeliveryDate(deliveryDate)}`)
-
-  const address =
-    order.customerType === 'existing'
-      ? (order.address ?? '')
-      : [order.streetAddress, order.city, order.state, order.zip].filter(Boolean).join(', ')
-
-  if (address) description.push(`Address: ${address}`)
-  if (order.notes) description.push(`Notes: ${order.notes}`)
-
-  // One label per batch actually used: a Sparkling-only order gets the Sparkling batch's
-  // fill date, and a mixed order gets both (once, if they share a date).
-  const fillDates = new Set([
-    ...(totalStill > 0 && batches.still?.fillDate ? [batches.still.fillDate] : []),
-    ...(totalSpark > 0 && batches.spark?.fillDate ? [batches.spark.fillDate] : []),
-  ])
+  const card = cardFor(order)
   const idLabels: string[] = []
-  for (const fillDate of fillDates) {
-    idLabels.push(await getOrCreateLabel(boardId, fillDate, apiKey, token))
+  for (const fillDate of card.fillDates) {
+    idLabels.push(await getOrCreateLabel(config, fillDate))
   }
 
   const res = await fetch('https://api.trello.com/1/cards', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      name: cardTitle,
-      desc: description.join('\n'),
-      due: deliveryDate.toISOString(),
-      idList: listId,
+      name: card.name,
+      desc: card.desc,
+      due: card.due.toISOString(),
+      idList: config.listId,
       idLabels,
-      key: apiKey,
-      token,
+      key: config.apiKey,
+      token: config.token,
     }),
   })
-
   if (!res.ok) {
     throw new Error(`Trello API error: ${res.status} ${await res.text()}`)
   }
+  const created: { id?: string } = await res.json()
+  if (!created.id) throw new Error('Trello created the card but sent back no id')
+  return created.id
+}
+
+/** Archive a card (Trello's "closed"), e.g. when its order is voided. */
+export const archiveTrelloCard = async (cardId: string) => {
+  const config = trelloConfig()
+  const res = await fetch(`https://api.trello.com/1/cards/${encodeURIComponent(cardId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ closed: true, key: config.apiKey, token: config.token }),
+  })
+  if (!res.ok) throw new Error(`Trello API error archiving the card: ${res.status}`)
 }

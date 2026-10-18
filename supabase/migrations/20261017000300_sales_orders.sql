@@ -97,7 +97,7 @@ create table public.sales_order_lines (
   unit_price numeric(10, 4) not null,
   line_total numeric(10, 2) generated always as (round(cans * unit_price, 2)) stored,
   created_at timestamptz not null default now(),
-  constraint sales_order_lines_product_valid check (product in ('still', 'sparkling', 'dog_water')),
+  constraint sales_order_lines_product_valid check (product in ('still', 'sparkling')),
   constraint sales_order_lines_cans_positive check (cans > 0),
   constraint sales_order_lines_unit_price_valid check (unit_price >= 0)
 );
@@ -108,7 +108,8 @@ create index sales_order_lines_batch_id_idx on public.sales_order_lines (batch_i
 comment on table public.sales_order_lines is 'Products on an order. Each line draws its cans from one inventory batch.';
 comment on column public.sales_order_lines.unit_price is 'Price per can in dollars.';
 
--- A line must draw from a live batch of the right product, and takes is_custom from it.
+-- A line must draw from a live batch of its kind (still or sparkling, from the batch's
+-- "isStill"), and takes is_custom from it.
 create function private.orders_line_from_batch()
 returns trigger
 language plpgsql
@@ -117,7 +118,7 @@ as $$
 declare
   v_batch record;
 begin
-  select i.name, i."isStill" as is_still, i."isCustom" as is_custom, i.product, i.archived_at
+  select i.name, i."isStill" as is_still, i."isCustom" as is_custom, i.archived_at
   into v_batch
   from public.inventory i
   where i.id = new.batch_id;
@@ -133,9 +134,8 @@ begin
   end if;
 
   if not (
-    (new.product = 'still' and v_batch.product = 'water' and coalesce(v_batch.is_still, false))
-    or (new.product = 'sparkling' and v_batch.product = 'water' and not coalesce(v_batch.is_still, true))
-    or (new.product = 'dog_water' and v_batch.product = 'dog_water')
+    (new.product = 'still' and coalesce(v_batch.is_still, false))
+    or (new.product = 'sparkling' and not coalesce(v_batch.is_still, true))
   ) then
     raise exception 'Inventory batch % (%) cannot fill a % line', new.batch_id, v_batch.name, new.product
       using errcode = 'P0001', hint = 'product_batch_mismatch';

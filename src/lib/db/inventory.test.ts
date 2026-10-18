@@ -31,48 +31,45 @@ const batch = (over: Partial<Batch> & { id: number }): Batch => ({
   initialCount: 1440,
   customer_id: null,
   archived_at: null,
-  product: 'water',
   ...over,
 })
 
 describe('batchHoldsProduct', () => {
-  it('keeps still, sparkling and dog water apart', () => {
+  it('keeps still and sparkling apart, by isStill', () => {
     const still = batch({ id: 1 })
     const sparkling = batch({ id: 2, isStill: false })
-    const dog = batch({ id: 3, product: 'dog_water' })
     expect(batchHoldsProduct(still, 'still')).toBe(true)
     expect(batchHoldsProduct(still, 'sparkling')).toBe(false)
     expect(batchHoldsProduct(sparkling, 'sparkling')).toBe(true)
-    expect(batchHoldsProduct(dog, 'still')).toBe(false)
-    expect(batchHoldsProduct(dog, 'dog_water')).toBe(true)
+    expect(batchHoldsProduct(sparkling, 'still')).toBe(false)
   })
 })
 
 describe('batchesForLine', () => {
   const batches = [
     batch({ id: 1, name: 'Portlandica' }),
-    batch({ id: 2, name: 'Portlandica Dog water', product: 'dog_water' }),
+    batch({ id: 2, name: 'Portlandica Dog water' }),
     batch({ id: 3, name: 'Hollywood Theatre', isCustom: true, customer_id: 10 }),
     batch({ id: 4, name: 'Hotel Vintage ', isCustom: true }),
     batch({ id: 5, name: 'Old', archived_at: '2026-10-01T00:00:00Z' }),
   ]
   const ids = (
-    product: 'still' | 'dog_water',
+    product: 'still' | 'sparkling',
     customer: { id: number | null; name: string | null }
   ) => batchesForLine(batches, product, customer).map((b) => b.id)
 
-  it('offers house stock but never dog water for a still line', () => {
-    expect(ids('still', { id: null, name: 'Someone' })).toEqual([1])
-    expect(ids('dog_water', { id: null, name: 'The Dog House PDX' })).toEqual([2])
+  it('offers house still stock, the dog water batch included, for a still line', () => {
+    expect(ids('still', { id: null, name: 'Someone' })).toEqual([1, 2])
+    expect(ids('sparkling', { id: null, name: 'Someone' })).toEqual([])
   })
 
   it("offers a customer their own custom batch and nobody else's", () => {
-    expect(ids('still', { id: 10, name: 'Hollywood Theatre' })).toEqual([1, 3])
-    expect(ids('still', { id: 11, name: 'Que Dice' })).toEqual([1])
+    expect(ids('still', { id: 10, name: 'Hollywood Theatre' })).toEqual([1, 2, 3])
+    expect(ids('still', { id: 11, name: 'Que Dice' })).toEqual([1, 2])
   })
 
   it('matches an unlinked custom batch on its trimmed, case-insensitive name', () => {
-    expect(ids('still', { id: 12, name: 'hotel vintage' })).toEqual([1, 4])
+    expect(ids('still', { id: 12, name: 'hotel vintage' })).toEqual([1, 2, 4])
   })
 })
 
@@ -154,10 +151,13 @@ describe('batch functions', () => {
       'Portlandica Dog water',
       'Que Dice',
     ])
+    // Dog water is house still stock: no product column, no customer.
     expect(batches.find((b) => b.id === 33)).toMatchObject({
-      product: 'dog_water',
+      isStill: true,
+      isCustom: false,
       customer_id: null,
     })
+    expect(batches.find((b) => b.id === 33)).not.toHaveProperty('product')
   })
 
   it('refuses ledger changes from non-partners', async () => {
