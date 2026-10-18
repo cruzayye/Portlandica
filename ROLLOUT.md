@@ -240,3 +240,19 @@ customer, lines, PO and due date. Send it from Square. The app never sends invoi
 **Undo:** remove `SQUARE_ACCESS_TOKEN` from Vercel and redeploy. The invoice step is then
 skipped with a note on each order. Voiding an order deletes its draft while Square is set
 up; otherwise delete any wrong draft in the Square Dashboard.
+
+## 10. A.I.P Numbers in the app
+
+The A.I.P Numbers tab now draws Paul's dashboard itself and fetches its numbers on the
+server (docs/aip-numbers.md). Until `APPS_SCRIPT_URL` and `APPS_SCRIPT_TOKEN` are set it
+keeps showing the standalone dashboard, so this can be deployed before they are.
+
+1. Paul sets up the Apps Script side and sends you the web app's `/exec` URL and the token.
+2. In Vercel (Production and Preview) set `APPS_SCRIPT_URL` and `APPS_SCRIPT_TOKEN`, then
+   redeploy.
+
+**Check:** sign in and open A.I.P Numbers. The header says "Last refreshed" with the
+current time and the charts are drawn; Refresh Data loads them again.
+
+**Undo:** remove the two variables and redeploy. The tab shows the standalone dashboard
+again.

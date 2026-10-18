@@ -8,6 +8,7 @@ import Tabs from '@mui/material/Tabs'
 import OrderForm from '@/components/OrderForm/OrderForm'
 import Inventory from '@/components/Inventory/Inventory'
 import OrderHistory from '@/components/OrderHistory/OrderHistory'
+import AipNumbers from '@/components/AipNumbers/AipNumbers'
 import { signOut } from '@/app/login/actions'
 
 export default function Home() {
@@ -27,15 +28,7 @@ export default function Home() {
         {tab === 0 && <OrderForm />}
         {tab === 1 && <Box sx={{ width: '100%', maxWidth: 560 }}><Inventory /></Box>}
         {tab === 2 && <OrderHistory />}
-        {tab === 3 && (
-          <Box sx={{ width: '100%', height: 'calc(100vh - 120px)' }}>
-            <iframe
-              src="https://portlandica-dashboard.vercel.app/"
-              style={{ width: '100%', height: '100%', border: 'none' }}
-              title="A.I.P Numbers"
-            />
-          </Box>
-        )}
+        {tab === 3 && <AipNumbers />}
       </Box>
       <Box component="footer" sx={{ display: 'flex', justifyContent: 'center', pb: 3 }}>
         <form action={signOut}>
