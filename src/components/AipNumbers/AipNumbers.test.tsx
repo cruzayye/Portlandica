@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { SIGNED_OUT } from '@/lib/auth/authFailure'
 import { AIP_NOT_SET_UP } from '@/lib/aip'
 
@@ -9,7 +9,7 @@ vi.mock('@/app/actions/aip', () => ({
   getAipNumbers: () => getAipNumbers(),
 }))
 
-import AipNumbers, { AIP_PAGE, STANDALONE_DASHBOARD_URL } from './AipNumbers'
+import AipNumbers, { AIP_PAGE } from './AipNumbers'
 
 const DATA = '{"generated":"2026-10-18T12:00:00.000Z"}'
 
@@ -92,13 +92,12 @@ describe('AipNumbers', () => {
     expect(getAipNumbers).toHaveBeenCalledTimes(2)
   })
 
-  it('keeps showing the standalone dashboard until the app is connected', async () => {
+  it('says so in the page when the app is not connected to the spreadsheet', async () => {
     getAipNumbers.mockResolvedValue({ error: AIP_NOT_SET_UP, notSetUp: true })
-    await renderLoaded()
+    const { frame, posted } = await renderLoaded()
 
-    await waitFor(() =>
-      expect(screen.getByTitle('A.I.P Numbers').getAttribute('src')).toBe(STANDALONE_DASHBOARD_URL)
-    )
-    expect(screen.getByTitle('A.I.P Numbers').hasAttribute('sandbox')).toBe(false)
+    expect(messagesTo(posted).at(-1)?.message).toEqual({ type: 'aip:error', message: AIP_NOT_SET_UP })
+    expect(frame.getAttribute('src')).toBe(AIP_PAGE)
+    expect(frame.getAttribute('sandbox')).toBe('allow-scripts')
   })
 })

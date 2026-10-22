@@ -21,8 +21,9 @@ team password is the only one.
   property.
 - `src/proxy.ts` doesn't send `/aip/` to the sign-in page. The page has no data, and this
   way the sandboxed frame loads it the same way in every browser.
-- Until `APPS_SCRIPT_URL` and `APPS_SCRIPT_TOKEN` are both set, the tab shows the
-  standalone dashboard, as it did before.
+- If `APPS_SCRIPT_URL` or `APPS_SCRIPT_TOKEN` is missing, the page says A.I.P Numbers isn't
+  connected. The standalone dashboard was retired on 2026-10-21, and its old address now
+  forwards to this app.
 
 ## Setting it up
 

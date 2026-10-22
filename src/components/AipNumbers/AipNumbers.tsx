@@ -1,12 +1,9 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import Box from '@mui/material/Box'
 import { getAipNumbers } from '@/app/actions/aip'
 import { isAuthFailure } from '@/lib/auth/authFailure'
-
-/** Where A.I.P Numbers lived before it moved into the app. Shown until the app's copy is set up. */
-export const STANDALONE_DASHBOARD_URL = 'https://portlandica-dashboard.vercel.app/'
 
 /** The page that draws the dashboard: public/aip/index.html. */
 export const AIP_PAGE = '/aip/index.html'
@@ -28,7 +25,6 @@ const frameStyle = { width: '100%', height: '100%', border: 'none' }
 const AipNumbers = () => {
   const frameRef = useRef<HTMLIFrameElement>(null)
   const loading = useRef(false)
-  const [standalone, setStandalone] = useState(false)
 
   const post = useCallback((message: AipFrameMessage) => {
     // The sandboxed page's origin is opaque ("null"), so '*' is the only target that reaches it.
@@ -43,7 +39,6 @@ const AipNumbers = () => {
       const result = await getAipNumbers()
       if (isAuthFailure(result)) post({ type: 'aip:error', message: result.authError })
       else if ('json' in result) post({ type: 'aip:data', json: result.json })
-      else if (result.notSetUp) setStandalone(true)
       else post({ type: 'aip:error', message: result.error })
     } catch {
       post({ type: 'aip:error', message: 'Could not load the numbers. Check the connection and try again.' })
@@ -64,18 +59,14 @@ const AipNumbers = () => {
 
   return (
     <Box sx={{ width: '100%', height: 'calc(100vh - 120px)' }}>
-      {standalone ? (
-        <iframe src={STANDALONE_DASHBOARD_URL} style={frameStyle} title="A.I.P Numbers" />
-      ) : (
-        <iframe
-          ref={frameRef}
-          src={AIP_PAGE}
-          sandbox="allow-scripts"
-          onLoad={() => void load()}
-          style={frameStyle}
-          title="A.I.P Numbers"
-        />
-      )}
+      <iframe
+        ref={frameRef}
+        src={AIP_PAGE}
+        sandbox="allow-scripts"
+        onLoad={() => void load()}
+        style={frameStyle}
+        title="A.I.P Numbers"
+      />
     </Box>
   )
 }
