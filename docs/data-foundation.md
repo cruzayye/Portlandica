@@ -41,7 +41,7 @@ missing.
 | `street_address`, `city`, `state`, `zip` | Parsed from the sheet's one-line address.                                                                                  |
 | `latitude`, `longitude`                  | Both or neither.                                                                                                           |
 | `email`                                  | Where invoices go, when known (the Square module can use it).                                                              |
-| `square_customer_id`                     | Unique once linked.                                                                                                        |
+| `square_customer_id`                     | Set once linked. Chain locations may share their head office's Square customer.                                            |
 | `active`                                 | False hides a customer without losing their orders.                                                                        |
 | `notes`                                  | Free text. The seed puts a second address here for names listed twice.                                                     |
 
