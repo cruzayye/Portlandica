@@ -327,6 +327,22 @@ describe('order queries', () => {
     expect(await listRecentOrders(db, { limit: 1 })).toHaveLength(1)
   })
 
+  it('marks the orders whose customer is invoiced outside Square', async () => {
+    const db = fakeSupabase(pg, PAUL)
+    const marketOfChoice = await createCustomer(db, {
+      name: 'Market of Choice (Belmont)',
+      invoiced_outside_square: true,
+    })
+    const pureGreen = await createCustomer(db, { name: 'Pure Green' })
+    const houseStill = priceLines([{ product: 'still', cans: 24, batch_id: 45 }])
+    await createSalesOrder(db, queDiceOrder({ customer_id: marketOfChoice.id, customer_name: null, lines: houseStill }))
+    await createSalesOrder(db, queDiceOrder({ customer_id: pureGreen.id, customer_name: null, lines: houseStill }))
+    await createSalesOrder(db, queDiceOrder({ lines: houseStill }))
+
+    // Newest first: no customer record, Pure Green, Market of Choice
+    expect((await listRecentOrders(db)).map((o) => o.invoicedOutsideSquare)).toEqual([false, false, true])
+  })
+
   it('refuses orders from non-partners', async () => {
     await expect(
       createSalesOrder(fakeSupabase(pg, STRANGER), queDiceOrder())

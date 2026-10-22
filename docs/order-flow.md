@@ -27,7 +27,7 @@ The form makes one **order key** per order (a UUID). `createOrder` (src/app/acti
 | Sales sheet | Sales rows (Donations rows for a donation); a new business also goes on Current Locations Addresses.     | `sheet_ref`         |
 | Inventory   | `apply_order_inventory`: takes the cans out of the batches and writes the ledger.                        | `inventory_status`  |
 | Trello      | The delivery card, due 9 AM Pacific on the delivery date picked in the form.                             | `trello_card_id`    |
-| Square      | Only with Create Invoice on and `SQUARE_ACCESS_TOKEN` set: a **draft** invoice. Never published or sent. | `square_invoice_id` |
+| Square      | Only with Create Invoice on and `SQUARE_ACCESS_TOKEN` set, and never for a customer invoiced outside Square: a **draft** invoice. Never published or sent. | `square_invoice_id` |
 
 A failed step doesn't stop the next one. The form shows how each step went, with a
 Retry button for any that failed; the same is on the Order History tab. A retry runs
@@ -104,6 +104,12 @@ Reference # so their cost lookup keeps working.
   business, and due on receipt for an individual (DTC customers usually pay on the
   website when they order). An individual booked from the form has no customer row, so
   the order's type decides.
+- Customers invoiced outside Square (`customers.invoiced_outside_square`, on for the Market of
+  Choice stores, which are billed through their own spreadsheet) never get a Square draft. With
+  Create Invoice on, the order still marks its Sales row, the result says the customer is invoiced
+  outside Square, and Order History shows "Invoiced outside Square; no draft made". To change it,
+  run `update customers set invoiced_outside_square = true where name_key = '<name, lower case>';`
+  in the SQL Editor.
 - A billing email typed with Create Invoice on is saved on the customer; a Square
   customer id is saved after the first draft.
 

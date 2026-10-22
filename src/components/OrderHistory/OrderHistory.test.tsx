@@ -115,6 +115,16 @@ describe('OrderHistory', () => {
     expect(within(card).queryByRole('button', { name: /^Retry/ })).not.toBeInTheDocument()
   })
 
+  it('says when an order was invoiced outside Square', async () => {
+    listOrders.mockResolvedValue(
+      history([order({ create_invoice: true, square_status: 'skipped', invoicedOutsideSquare: true })])
+    )
+    render(<OrderHistory />)
+
+    const card = await screen.findByRole('article', { name: 'Order 12' })
+    expect(within(card).getByText('Square: Invoiced outside Square; no draft made')).toBeInTheDocument()
+  })
+
   it('retries what failed and shows the result', async () => {
     listOrders.mockResolvedValue(
       history([order({ sheet_status: 'failed', sheet_error: 'Sheets API 503', sheet_ref: null })])

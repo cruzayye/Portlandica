@@ -7,6 +7,7 @@ import { listBatches } from '@/lib/db/inventory'
 import {
   getSalesOrder,
   listRecentOrders,
+  markInvoicedOutsideSquare,
   recordOrderStep,
   voidSalesOrder,
 } from '@/lib/db/orders'
@@ -60,7 +61,8 @@ export const retryOrder = async (
       retry: true,
       allowNegativeInventory: allowNegativeInventory === true,
     })
-    return { status: 'done', ...run }
+    const [order] = await markInvoicedOutsideSquare(db, [run.order])
+    return { status: 'done', ...run, order }
   } catch (err) {
     console.error(`retryOrder ${orderId} failed`, err)
     return { status: 'failed', message: `The retry didn't run (${reason(err)}). Try again.` }
@@ -125,8 +127,10 @@ export const voidOrder = async (
 
     handFixes.push(...(await deleteVoidedOrderDraft(db, voided)))
 
-    const order = await getSalesOrder(db, orderId)
-    return { status: 'voided', order: order ?? { ...voided, lines: [] }, handFixes }
+    const [order] = await markInvoicedOutsideSquare(db, [
+      (await getSalesOrder(db, orderId)) ?? { ...voided, lines: [] },
+    ])
+    return { status: 'voided', order, handFixes }
   } catch (err) {
     console.error(`voidOrder ${orderId} failed`, err)
     return { status: 'failed', message: `The order wasn't voided (${reason(err)}).` }

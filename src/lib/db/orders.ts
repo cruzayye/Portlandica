@@ -266,9 +266,34 @@ export const listRecentOrders = async (
       )
       .order('id')
   )
+  return markInvoicedOutsideSquare(
+    db,
+    orders.map((order) => ({
+      ...order,
+      lines: lines.filter((line) => line.order_id === order.id),
+    }))
+  )
+}
+
+/**
+ * Marks the orders whose customer is invoiced outside Square, so Order History can say
+ * why their Square step was skipped.
+ */
+export const markInvoicedOutsideSquare = async (
+  db: Db,
+  orders: SalesOrderWithLines[]
+): Promise<SalesOrderWithLines[]> => {
+  const ids = [...new Set(orders.flatMap((order) => (order.customer_id == null ? [] : [order.customer_id])))]
+  const outside = new Set(
+    ids.length
+      ? unwrap<{ id: number }[]>(
+          await db.from('customers').select('id').in('id', ids).eq('invoiced_outside_square', true)
+        ).map((customer) => customer.id)
+      : []
+  )
   return orders.map((order) => ({
     ...order,
-    lines: lines.filter((line) => line.order_id === order.id),
+    invoicedOutsideSquare: order.customer_id != null && outside.has(order.customer_id),
   }))
 }
 

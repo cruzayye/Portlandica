@@ -53,6 +53,10 @@ export const squareReady = () => Boolean(process.env.SQUARE_ACCESS_TOKEN)
 export const SQUARE_NOT_SET_UP =
   "Square isn't set up here (no SQUARE_ACCESS_TOKEN), so no invoice draft was made. Make the invoice in Square by hand."
 
+/** Customers invoiced outside Square (Market of Choice) never get a Square draft. */
+export const invoicedOutsideSquare = (customerName: string) =>
+  `${customerName} is invoiced outside Square, so no Square draft was made.`
+
 export const SQUARE_NOT_SET_UP_FOR_VOID =
   "Square isn't set up here (no SQUARE_ACCESS_TOKEN), so the app couldn't delete this order's invoice. In the Square Dashboard (Invoices), delete it if it's still a draft, or cancel or refund it if it was sent."
 
@@ -247,6 +251,11 @@ export const runOrderSteps = async (
     }
 
     if (step === 'square') {
+      if (customer?.invoiced_outside_square) {
+        await record('square', 'skipped')
+        warnings.push(invoicedOutsideSquare(customer.name))
+        continue
+      }
       if (!squareReady()) {
         await record('square', 'skipped')
         warnings.push(SQUARE_NOT_SET_UP)
