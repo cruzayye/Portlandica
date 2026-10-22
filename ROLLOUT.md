@@ -243,9 +243,10 @@ up; otherwise delete any wrong draft in the Square Dashboard.
 
 ## 10. A.I.P Numbers in the app
 
-The A.I.P Numbers tab now draws Paul's dashboard itself and fetches its numbers on the
-server (docs/aip-numbers.md). Until `APPS_SCRIPT_URL` and `APPS_SCRIPT_TOKEN` are set it
-keeps showing the standalone dashboard, so this can be deployed before they are.
+The A.I.P Numbers tab draws Paul's dashboard itself and fetches its numbers on the server
+(docs/aip-numbers.md). Done 2026-10-21: both variables are set, the tab shows the live
+numbers, the old Apps Script deployment is archived and the standalone dashboard's address
+forwards to this app. If either variable goes missing, the tab says it isn't connected.
 
 1. Paul sets up the Apps Script side and sends you the web app's `/exec` URL and the token.
 2. In Vercel (Production and Preview) set `APPS_SCRIPT_URL` and `APPS_SCRIPT_TOKEN`, then
@@ -254,5 +255,6 @@ keeps showing the standalone dashboard, so this can be deployed before they are.
 **Check:** sign in and open A.I.P Numbers. The header says "Last refreshed" with the
 current time and the charts are drawn; Refresh Data loads them again.
 
-**Undo:** remove the two variables and redeploy. The tab shows the standalone dashboard
-again.
+**If it breaks:** check that both variables are still set in Vercel and that
+`APPS_SCRIPT_TOKEN` matches the `DASHBOARD_TOKEN` script property; the tab's error says which.
+There is no standalone dashboard to fall back to any more.
