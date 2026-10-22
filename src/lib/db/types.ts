@@ -27,6 +27,8 @@ export type Customer = {
   longitude: number | null
   email: string | null
   square_customer_id: string | null
+  /** Invoiced outside Square (Market of Choice): the order flow never makes a Square draft. */
+  invoiced_outside_square: boolean
   active: boolean
   notes: string | null
   created_at: string
@@ -108,7 +110,11 @@ export type SalesOrderLine = {
   created_at: string
 }
 
-export type SalesOrderWithLines = SalesOrder & { lines: SalesOrderLine[] }
+export type SalesOrderWithLines = SalesOrder & {
+  lines: SalesOrderLine[]
+  /** Set where Order History needs it: the order's customer is invoiced outside Square. */
+  invoicedOutsideSquare?: boolean
+}
 
 export type MovementReason = 'opening' | 'fill' | 'order' | 'void' | 'adjustment' | 'archive'
 

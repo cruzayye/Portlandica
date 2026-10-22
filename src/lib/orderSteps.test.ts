@@ -36,6 +36,7 @@ vi.mock('@/lib/square', () => ({
 import {
   SQUARE_NOT_SET_UP,
   cleanError,
+  invoicedOutsideSquare,
   invoiceLines,
   runOrderSteps,
   squareOrderRef,
@@ -211,6 +212,24 @@ describe('runOrderSteps', () => {
     const run = await runOrderSteps(db, order.id)
     expect(run.order.square_status).toBe('skipped')
     expect(run.warnings).toEqual([SQUARE_NOT_SET_UP])
+    expect(steps.createDraftInvoice).not.toHaveBeenCalled()
+  })
+
+  it('never makes a Square draft for a customer invoiced outside Square', async () => {
+    vi.stubEnv('SQUARE_ACCESS_TOKEN', 'sandbox-token')
+    const marketOfChoice = await createCustomer(db, {
+      name: 'Market of Choice (Belmont)',
+      invoiced_outside_square: true,
+    })
+    const order = await placeOrder({
+      customer_id: marketOfChoice.id,
+      customer_name: null,
+      create_invoice: true,
+    })
+    const run = await runOrderSteps(db, order.id)
+
+    expect(run.order).toMatchObject({ sheet_status: 'done', trello_status: 'done', square_status: 'skipped' })
+    expect(run.warnings).toEqual([invoicedOutsideSquare('Market of Choice (Belmont)')])
     expect(steps.createDraftInvoice).not.toHaveBeenCalled()
   })
 

@@ -38,7 +38,9 @@ const stepDetail = (order: SalesOrderWithLines, step: OrderStep) => {
   if (step === 'sheet' && order.sheet_ref) return describeSheetRef(order.sheet_ref)
   if (step === 'square' && order.square_invoice_id) return 'Draft invoice made; send it from Square'
   if (step === 'square' && order.square_status === 'skipped' && order.create_invoice) {
-    return 'No draft made: make the invoice in Square'
+    return order.invoicedOutsideSquare
+      ? 'Invoiced outside Square; no draft made'
+      : 'No draft made: make the invoice in Square'
   }
   return null
 }

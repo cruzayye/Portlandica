@@ -85,6 +85,7 @@ const customerRow = (over: Partial<Customer> & { id: number; name: string }): Cu
   longitude: null,
   email: 'billing@example.com',
   square_customer_id: null,
+  invoiced_outside_square: false,
   active: true,
   notes: null,
   created_at: '2026-10-15T00:00:00Z',
