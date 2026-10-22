@@ -97,9 +97,9 @@ tr:hover { background: #f8f9fa; }
 /* Sortable headers */
 th.sortable { cursor: pointer; user-select: none; position: relative; }
 th.sortable:hover { color: var(--blue); }
-th.sortable::after { content: ' \u2195'; font-size: 10px; opacity: 0.4; }
-th.sortable.sort-asc::after { content: ' \u2191'; opacity: 1; color: var(--blue); }
-th.sortable.sort-desc::after { content: ' \u2193'; opacity: 1; color: var(--blue); }
+th.sortable::after { content: ' \2195'; font-size: 10px; opacity: 0.4; }
+th.sortable.sort-asc::after { content: ' \2191'; opacity: 1; color: var(--blue); }
+th.sortable.sort-desc::after { content: ' \2193'; opacity: 1; color: var(--blue); }
 
 /* Status badges */
 .badge {
@@ -110,6 +110,8 @@ th.sortable.sort-desc::after { content: ' \u2193'; opacity: 1; color: var(--blue
 .badge-amber { background: #fef5e7; color: #c67c00; }
 .badge-red { background: #fde8e8; color: #c0392b; }
 .badge-blue { background: #e8f0fe; color: #2a6cb5; }
+.badge-orange { background: #fdebd8; color: #b5530a; }
+.badge-gray { background: #eef1f4; color: #5f6f7a; }
 
 /* Filter controls */
 .filter-row {
@@ -243,7 +245,7 @@ th.sortable.sort-desc::after { content: ' \u2193'; opacity: 1; color: var(--blue
         <div class="chart-container"><canvas id="revenueChart"></canvas></div>
       </div>
       <div class="chart-card">
-        <h3>Revenue Forecast (3 Scenarios)</h3>
+        <h3>Revenue Forecast (Expected, with Low&ndash;High range)</h3>
         <div class="chart-container"><canvas id="forecastChart"></canvas></div>
       </div>
       <div class="table-card">
@@ -274,9 +276,11 @@ th.sortable.sort-desc::after { content: ' \u2193'; opacity: 1; color: var(--blue
           <select id="pred-status-filter" onchange="applyPredictionFilters()">
             <option value="all">All Statuses</option>
             <option value="Overdue">Overdue</option>
+            <option value="Past Due">Past Due</option>
             <option value="Due Soon">Due Soon</option>
             <option value="Coming Up">Coming Up</option>
             <option value="On Track">On Track</option>
+            <option value="Lapsed">Lapsed</option>
           </select>
         </div>
         <div>
@@ -431,22 +435,70 @@ const fmt = (n) => { return '$' + (n || 0).toLocaleString('en-US', { minimumFrac
 const fmtDec = (n) => { return '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
 const safeEl = (id) => { const e = document.getElementById(id); if (!e) console.warn('Element not found:', id); return e; };
 
+// 'YYYY-MM' -> 'Jul' (or 'Jul 2026' with the year)
+const monthName = (ym, withYear) => {
+  const [y, m] = ym.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'short' }) + (withYear ? ' ' + y : '');
+};
+const signedPct = (n) => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+const kpiCard = (label, value, detail, valueClass) =>
+  '<div class="kpi-card"><div class="label">' + label + '</div><div class="value' + (valueClass ? ' ' + valueClass : '') + '">' +
+  value + '</div><div class="detail">' + detail + '</div></div>';
+
 // ===== REVENUE TAB =====
+// The growth the forecast uses: the last 3 complete months against the same months a year earlier.
+const growthKpi = (s) => {
+  const g = s.growth;
+  if (!g) return kpiCard('Recent Growth', '&mdash;', 'Needs the updated Apps Script');
+  if (g.rawFactor === null) return kpiCard('Recent Growth', '&mdash;', 'No year-ago months to compare yet');
+  const change = (g.rawFactor - 1) * 100;
+  const capped = g.capped ? ' &middot; the forecast uses ' + signedPct((g.factor - 1) * 100) : '';
+  return kpiCard('Recent Growth', signedPct(change),
+    monthName(g.months[0]) + '&ndash;' + monthName(g.months[2]) + ' vs the same months a year earlier' + capped,
+    change >= 0 ? 'positive' : 'negative');
+};
+
+const ytdKpi = (s, mr) => {
+  const y = s.ytd;
+  if (!y) {
+    // Older Apps Script: no same-days comparison
+    const year = new Date().getFullYear().toString();
+    return kpiCard('YTD Revenue', fmt(mr.filter(m => m.month.startsWith(year)).reduce((t, m) => t + m.revenue, 0)), 'This calendar year');
+  }
+  const detail = y.growthPct === null ? 'Nothing sold on these days last year'
+    : '<span class="' + (y.growthPct >= 0 ? 'positive' : 'negative') + '">' + signedPct(y.growthPct) + '</span> vs the same days last year (' + fmt(y.priorRevenue) + ')';
+  return kpiCard('YTD Revenue', fmt(y.revenue), detail);
+};
+
+const activeKpi = (s) => {
+  const a = s.activeCustomers;
+  if (!a) return kpiCard('Customers', s.totalCustomers, 'All time');
+  return kpiCard('Active Customers', a.total, 'Ordered in the last ' + a.days + ' days: ' + a.business + ' businesses, ' +
+    a.individual + ' individuals &middot; ' + a.allTime + ' all time');
+};
+
+const forecastMethod = (s, fc) => {
+  const g = s.growth;
+  if (!g) return 'These numbers come from the older Apps Script; the Low/Expected/High method arrives with its update.';
+  const band = fc.length && fc[0].expected ? Math.round((1 - fc[0].low / fc[0].expected) * 100) : 25;
+  const growthText = g.rawFactor === null ? 'no growth adjustment yet (no year-ago months to compare)'
+    : signedPct((g.factor - 1) * 100) + ' growth (' + monthName(g.months[0]) + '&ndash;' + monthName(g.months[2]) +
+      ' against the same months a year earlier' + (g.capped ? ', capped' : '') + ')';
+  return 'How it works: Expected = the same month a year earlier &times; ' + growthText + '. Low and High are ' + band +
+    '% either side: replaying 2026, about 7 in 10 months landed in that range.';
+};
+
 const renderRevenue = () => {
   const s = dashData.summary;
   const mr = dashData.monthlyRevenue;
 
   if (s.partialMonth) {
-    document.getElementById('partial-note').innerHTML = '<div class="partial-note">&#128202; ' + s.partialMonth.month + ' is partial (' + s.partialMonth.dayOfMonth + ' days). Revenue so far: ' + fmt(s.partialMonth.revenue) + '. Averages and YoY exclude partial months.</div>';
+    document.getElementById('partial-note').innerHTML = '<div class="partial-note">&#128202; ' + s.partialMonth.month + ' is partial (' + s.partialMonth.dayOfMonth + ' days). Revenue so far: ' + fmt(s.partialMonth.revenue) + '. Averages and growth use complete months only.</div>';
   }
 
-  const ytdRevenue = mr.filter(m => m.month.startsWith(new Date().getFullYear().toString())).reduce((s, m) => s + m.revenue, 0);
-
   document.getElementById('revenue-kpis').innerHTML =
-    '<div class="kpi-card"><div class="label">Trailing 6-Month Avg</div><div class="value">' + fmt(s.trailing6Avg) + '</div><div class="detail">Per month (complete months)</div></div>' +
-    '<div class="kpi-card"><div class="label">YoY Growth (Q1)</div><div class="value ' + (s.yoyGrowth >= 0 ? 'positive' : 'negative') + '">' + (s.yoyGrowth >= 0 ? '+' : '') + s.yoyGrowth + '%</div><div class="detail">Jan-Mar comparison</div></div>' +
-    '<div class="kpi-card"><div class="label">YTD Revenue</div><div class="value">' + fmt(ytdRevenue) + '</div><div class="detail">Target: ' + fmt(s.annualTarget) + '</div></div>' +
-    '<div class="kpi-card"><div class="label">Active Customers</div><div class="value">' + s.totalCustomers + '</div><div class="detail">All time</div></div>';
+    kpiCard('Trailing 6-Month Avg', fmt(s.trailing6Avg), 'Per month (complete months)') +
+    growthKpi(s) + ytdKpi(s, mr) + activeKpi(s);
 
   // Revenue chart
   const labels = mr.map(m => m.month);
@@ -464,33 +516,36 @@ const renderRevenue = () => {
     }
   });
 
-  // Forecast chart
-  const fc = dashData.forecast;
+  // Forecast: Expected with a Low-High range (an older Apps Script calls them moderate/conservative/aggressive)
+  const fc = dashData.forecast.map(f => ({
+    month: f.month,
+    low: f.low !== undefined ? f.low : f.conservative,
+    expected: f.expected !== undefined ? f.expected : f.moderate,
+    high: f.high !== undefined ? f.high : f.aggressive
+  }));
   if (forecastChart) forecastChart.destroy();
   forecastChart = new Chart(document.getElementById('forecastChart'), {
     type: 'line',
     data: {
       labels: fc.map(f => f.month),
       datasets: [
-        { label: 'Aggressive', data: fc.map(f => f.aggressive), borderColor: 'rgba(46,204,113,0.8)', backgroundColor: 'rgba(46,204,113,0.1)', fill: true, tension: 0.3 },
-        { label: 'Moderate', data: fc.map(f => f.moderate), borderColor: 'rgba(74,144,217,0.9)', backgroundColor: 'rgba(74,144,217,0.1)', fill: true, tension: 0.3, borderWidth: 3 },
-        { label: 'Conservative', data: fc.map(f => f.conservative), borderColor: 'rgba(243,156,18,0.8)', backgroundColor: 'rgba(243,156,18,0.1)', fill: true, tension: 0.3 }
+        { label: 'High', data: fc.map(f => f.high), borderColor: 'rgba(46,204,113,0.8)', backgroundColor: 'rgba(46,204,113,0.1)', fill: true, tension: 0.3 },
+        { label: 'Expected', data: fc.map(f => f.expected), borderColor: 'rgba(74,144,217,0.9)', backgroundColor: 'rgba(74,144,217,0.1)', fill: true, tension: 0.3, borderWidth: 3 },
+        { label: 'Low', data: fc.map(f => f.low), borderColor: 'rgba(243,156,18,0.8)', backgroundColor: 'rgba(243,156,18,0.1)', fill: true, tension: 0.3 }
       ]
     },
     options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } } }
   });
 
-  // Forecast table with annual totals
-  const totalCon = fc.reduce((s, f) => s + f.conservative, 0);
-  const totalMod = fc.reduce((s, f) => s + f.moderate, 0);
-  const totalAgg = fc.reduce((s, f) => s + f.aggressive, 0);
+  // Forecast table with the total of the months shown
+  const total = (key) => fc.reduce((t, f) => t + f[key], 0);
 
   document.getElementById('forecast-table').innerHTML =
-    '<table class="forecast-table"><thead><tr><th>Month</th><th>Conservative</th><th>Moderate</th><th>Aggressive</th></tr></thead><tbody>' +
-    fc.map(f => '<tr><td>' + f.month + '</td><td>' + fmt(f.conservative) + '</td><td>' + fmt(f.moderate) + '</td><td>' + fmt(f.aggressive) + '</td></tr>').join('') +
-    '<tr class="annual-total"><td>ANNUAL TOTAL</td><td>' + fmt(totalCon) + '</td><td>' + fmt(totalMod) + '</td><td>' + fmt(totalAgg) + '</td></tr>' +
+    '<table class="forecast-table"><thead><tr><th>Month</th><th>Low</th><th>Expected</th><th>High</th></tr></thead><tbody>' +
+    fc.map((f, i) => '<tr><td>' + f.month + (i === 0 ? ' (this month)' : '') + '</td><td>' + fmt(f.low) + '</td><td>' + fmt(f.expected) + '</td><td>' + fmt(f.high) + '</td></tr>').join('') +
+    '<tr class="annual-total"><td>NEXT ' + fc.length + ' MONTHS</td><td>' + fmt(total('low')) + '</td><td>' + fmt(total('expected')) + '</td><td>' + fmt(total('high')) + '</td></tr>' +
     '</tbody></table>' +
-    '<p style="font-size:11px;color:var(--text-light);margin-top:8px">Methodology: Seasonal indices from prior year, growth rate ' + dashData.summary.growthRate + 'x (Q1 YoY). Conservative = trailing avg x seasonal x 0.85. Moderate = prior year same-month x growth. Aggressive = moderate x 1.15.</p>';
+    '<p style="font-size:11px;color:var(--text-light);margin-top:8px">' + forecastMethod(s, fc) + '</p>';
 
   // Parent companies
   const pcs = dashData.parentCompanies || [];
@@ -683,51 +738,70 @@ const closeModal = () => {
 };
 
 // ===== PREDICTIONS TAB (sortable + filterable) =====
+// The Apps Script sets every status from 2026-10-19 on (its predictions carry tooNew). With an
+// older one, work out Lapsed and Past Due here the same way.
+const statusOf = (p) => {
+  if (p.tooNew !== undefined) return p.status;
+  if (p.daysUntil < -p.avgInterval) return 'Lapsed';
+  if (p.daysUntil < -14) return 'Overdue';
+  if (p.daysUntil < 0) return 'Past Due';
+  return p.status;
+};
+const STATUS_ORDER = ['Overdue', 'Past Due', 'Due Soon', 'Coming Up', 'On Track', 'Lapsed'];
+const STATUS_BADGE = { 'Overdue': 'badge-red', 'Past Due': 'badge-orange', 'Due Soon': 'badge-amber',
+  'Coming Up': 'badge-blue', 'On Track': 'badge-green', 'Lapsed': 'badge-gray' };
+
 const renderPredictions = () => {
   allPredictions = dashData.predictions || [];
-  const overdue = allPredictions.filter(p => p.status === 'Overdue').length;
-  const dueSoon = allPredictions.filter(p => p.status === 'Due Soon').length;
-  const comingUp = allPredictions.filter(p => p.status === 'Coming Up').length;
+  applyPredictionFilters();
+};
 
-  const learned = allPredictions.filter(p => p.predictionMethod === 'learned').length;
-  const blended = allPredictions.filter(p => p.predictionMethod === 'blended').length;
-  const intervalOnly = allPredictions.filter(p => p.predictionMethod === 'interval').length;
-  const seasonal = allPredictions.filter(p => p.seasonalIndex && p.seasonalIndex !== 1).length;
+// The cards count the customers the table can list: same search, revenue and active filters, any status.
+const renderPredictionKpis = (preds, lapsedHidden) => {
+  const count = (status) => preds.filter(p => statusOf(p) === status).length;
+  const learned = preds.filter(p => p.predictionMethod === 'learned').length;
+  const blended = preds.filter(p => p.predictionMethod === 'blended').length;
+  const intervalOnly = preds.filter(p => p.predictionMethod === 'interval').length;
+  const seasonal = preds.filter(p => p.seasonalIndex && p.seasonalIndex !== 1).length;
+  const tooNew = preds.filter(p => p.tooNew).length;
 
   document.getElementById('prediction-kpis').innerHTML =
-    '<div class="kpi-card"><div class="label">Overdue</div><div class="value negative">' + overdue + '</div><div class="detail">Past predicted date by 14+ days</div></div>' +
-    '<div class="kpi-card"><div class="label">Due Soon</div><div class="value" style="color:var(--amber)">' + dueSoon + '</div><div class="detail">Within 0-14 days</div></div>' +
-    '<div class="kpi-card"><div class="label">Coming Up</div><div class="value" style="color:var(--blue)">' + comingUp + '</div><div class="detail">Within 15-30 days</div></div>' +
-    '<div class="kpi-card"><div class="label">Prediction Quality</div><div class="value">' + allPredictions.length + '</div><div class="detail" style="line-height:1.6">' +
+    '<div class="kpi-card"><div class="label">Overdue</div><div class="value negative">' + count('Overdue') + '</div><div class="detail">More than 2 weeks past the predicted date</div></div>' +
+    '<div class="kpi-card"><div class="label">Past Due</div><div class="value" style="color:#b5530a">' + count('Past Due') + '</div><div class="detail">1&ndash;14 days past the predicted date</div></div>' +
+    '<div class="kpi-card"><div class="label">Due Soon</div><div class="value" style="color:var(--amber)">' + count('Due Soon') + '</div><div class="detail">Today to 14 days out</div></div>' +
+    '<div class="kpi-card"><div class="label">Coming Up</div><div class="value" style="color:var(--blue)">' + count('Coming Up') + '</div><div class="detail">15&ndash;30 days out</div></div>' +
+    '<div class="kpi-card"><div class="label">Prediction Quality</div><div class="value">' + preds.length + '</div><div class="detail" style="line-height:1.6">' +
     '<span style="color:#2ecc71;font-weight:600">' + learned + '</span> learned · ' +
     '<span style="color:#4a90d9;font-weight:600">' + blended + '</span> blended · ' +
     '<span style="color:#f39c12;font-weight:600">' + intervalOnly + '</span> interval-only' +
     (seasonal > 0 ? '<br>' + seasonal + ' with seasonal adjustment' : '') +
+    (tooNew > 0 ? '<br>' + tooNew + ' too new to predict (3 or fewer orders)' : '') +
+    (lapsedHidden > 0 ? '<br>' + lapsedHidden + ' lapsed not shown' : '') +
     '</div></div>';
-
-  applyPredictionFilters();
 };
 
 const applyPredictionFilters = () => {
   const status = document.getElementById('pred-status-filter').value;
   const search = (document.getElementById('pred-search').value || '').toLowerCase();
   const minRev = parseFloat(document.getElementById('pred-min-revenue').value) || 0;
-  const activeOnly = document.getElementById('pred-active-only').checked;
+  // Choosing "Lapsed" lists them even while "Active customers only" is ticked
+  const activeOnly = document.getElementById('pred-active-only').checked && status !== 'Lapsed';
 
-  let filtered = allPredictions.filter(p => {
-    if (status !== 'all' && p.status !== status) return false;
+  const matching = allPredictions.filter(p => {
     if (search && !p.customer.toLowerCase().includes(search) && !(p.parent || '').toLowerCase().includes(search)) return false;
     if (minRev > 0 && (p.totalRevenue || 0) < minRev) return false;
-    // Lapsed filter: customer is lapsed if days since last order > 2x their avg interval
-    // Since daysUntil = avgInterval - daysSinceLastOrder, lapsed when daysUntil < -avgInterval
-    if (activeOnly && p.daysUntil < -p.avgInterval) return false;
     return true;
   });
+  const listable = activeOnly ? matching.filter(p => statusOf(p) !== 'Lapsed') : matching;
+  renderPredictionKpis(listable, matching.length - listable.length);
 
-  // Sort
+  const filtered = listable.filter(p => status === 'all' || statusOf(p) === status);
+
+  // Sort (status by urgency)
   filtered.sort((a, b) => {
     let va = a[predSortCol], vb = b[predSortCol];
-    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
+    if (predSortCol === 'status') { va = STATUS_ORDER.indexOf(statusOf(a)); vb = STATUS_ORDER.indexOf(statusOf(b)); }
+    else if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
     if (va < vb) return predSortDir === 'asc' ? -1 : 1;
     if (va > vb) return predSortDir === 'asc' ? 1 : -1;
     return 0;
@@ -778,7 +852,8 @@ const renderPredictionTable = (preds) => {
     '<th class="' + predSortClass('status') + '" onclick="sortPredictions(\'status\')">Status</th>' +
     '</tr></thead><tbody>' +
     preds.map(p => {
-      const sc = p.status === 'Overdue' ? 'badge-red' : p.status === 'Due Soon' ? 'badge-amber' : p.status === 'Coming Up' ? 'badge-blue' : 'badge-green';
+      const status = statusOf(p);
+      const sc = STATUS_BADGE[status] || 'badge-green';
       const cansDay = p.avgCansPerDay != null ? p.avgCansPerDay : '—';
       const remaining = p.estimatedRemaining != null ? p.estimatedRemaining + ' cans' : '—';
       const lastInfo = p.lastOrderCans ? '<br><span style="font-size:11px;color:var(--text-light)">' + p.lastOrderCans + ' cans (avg ' + (p.avgOrderCans || '—') + ')</span>' : '';
@@ -796,6 +871,9 @@ const renderPredictionTable = (preds) => {
 
       // Method badge for the predicted date cell
       const methodBadge = '<br><span style="font-size:10px;padding:1px 6px;border-radius:8px;background:' + mColor + '22;color:' + mColor + ';font-weight:600" title="' + tooltip + '">' + mLabel + (p.seasonalIndex && p.seasonalIndex !== 1 ? ' · ' + p.seasonalIndex + 'x' : '') + '</span>';
+      // With 3 or fewer orders the date is only a rough guess
+      const newBadge = '<br><span class="badge badge-gray" title="Only ' + p.orderCount + ' orders so far, so this date is a rough guess">Too new to predict</span>';
+      const confidenceTip = p.tooNew !== undefined ? 'Chance the reorder lands within 2 weeks of this date, measured by replaying past orders' : tooltip;
 
       return '<tr onclick="openCustomerModal(\'' + p.customer.replace(/'/g, "\\'") + '\')" style="cursor:pointer">' +
         '<td><strong>' + p.customer + '</strong>' + (p.parent ? '<br><span style="font-size:11px;color:var(--text-light)">' + p.parent + '</span>' : '') + '</td>' +
@@ -804,10 +882,10 @@ const renderPredictionTable = (preds) => {
         '<td>' + p.lastOrder + lastInfo + '</td>' +
         '<td>' + cansDay + '</td>' +
         '<td>' + remaining + '</td>' +
-        '<td title="' + tooltip + '">' + p.predictedDate + methodBadge + '</td>' +
+        '<td title="' + tooltip + '">' + p.predictedDate + (p.tooNew ? newBadge : methodBadge) + '</td>' +
         '<td>' + p.daysUntil + '</td>' +
-        '<td title="' + tooltip + '">' + p.confidence + '%</td>' +
-        '<td><span class="badge ' + sc + '">' + p.status + '</span></td></tr>';
+        '<td title="' + confidenceTip + '">' + p.confidence + '%</td>' +
+        '<td><span class="badge ' + sc + '">' + status + '</span></td></tr>';
     }).join('') + '</tbody></table>';
 };
 
@@ -859,6 +937,7 @@ const renderTopMonth = () => {
 
 // --- Annual view ---
 const getYearList = () => {
+  if (dashData.topByYear) return dashData.topByYear.map(y => y.year); // newest first
   const tbm = dashData.topByMonth || [];
   const years = [...new Set(tbm.map(m => m.month.substring(0, 4)))];
   years.sort((a, b) => b.localeCompare(a)); // newest first
@@ -901,6 +980,14 @@ const renderTopYear = () => {
     return;
   }
   const year = years[topYearIndex];
+  // The Apps Script totals each year from every order
+  const yearly = (dashData.topByYear || []).find(y => y.year === year);
+  if (yearly) {
+    document.getElementById('top-year-label').textContent = year + (yearly.isPartial ? ' (to date)' : '');
+    renderTopTables(yearly.topIndividual, yearly.topParent);
+    return;
+  }
+  // Older Apps Script: only the last 12 months' top-10 lists to go on
   const tbm = dashData.topByMonth || [];
   const yearMonths = tbm.filter(m => m.month.startsWith(year));
   const hasPartial = yearMonths.some(m => m.isPartial);
@@ -911,6 +998,15 @@ const renderTopYear = () => {
 
 // --- All-Time view ---
 const renderTopAllTime = () => {
+  const label = document.getElementById('top-alltime-label');
+  const allTime = dashData.topAllTime;
+  if (allTime) {
+    label.textContent = 'All-Time Totals' + (allTime.since ? ' (since ' + monthName(allTime.since, true) + ')' : '');
+    renderTopTables(allTime.topIndividual, allTime.topParent);
+    return;
+  }
+  // Older Apps Script: only the last 12 months' top-10 lists to go on
+  label.textContent = 'Last 12 Months (from each month\'s top 10)';
   const tbm = dashData.topByMonth || [];
   if (tbm.length === 0) {
     document.getElementById('top-individual-table').innerHTML = '<p style="color:var(--text-light)">No data available.</p>';
@@ -941,31 +1037,71 @@ const renderTopTables = (individuals, parents) => {
 // ===== COLLECTIONS TAB =====
 const renderCollections = () => {
   const col = dashData.collections || {};
-  const aging = col.aging || {};
   const debtors = col.debtors || [];
 
   const kpiEl = document.getElementById('collections-kpis');
   if (!kpiEl) { console.error('Missing element: collections-kpis'); return; }
-  kpiEl.innerHTML =
-    '<div class="kpi-card"><div class="label">Total Outstanding</div><div class="value negative">' + fmtDec(aging.total) + '</div><div class="detail">Across all accounts</div></div>' +
-    '<div class="kpi-card"><div class="label">Current (0-30 days)</div><div class="value">' + fmtDec(aging.current) + '</div></div>' +
-    '<div class="kpi-card"><div class="label">31-60 Days</div><div class="value" style="color:var(--amber)">' + fmtDec(aging.days30) + '</div></div>' +
-    '<div class="kpi-card"><div class="label">Over 90 Days</div><div class="value negative">' + fmtDec(aging.over90) + '</div></div>';
+  if (col.agingByDue) renderCollectionsByDueDate(col, debtors, kpiEl);
+  else renderCollectionsByAge(col.aging || {}, debtors, kpiEl);
+};
 
+const drawAgingChart = (labels, values) => {
   if (agingChart) agingChart.destroy();
   agingChart = new Chart(document.getElementById('agingChart'), {
     type: 'doughnut',
     data: {
-      labels: ['Current (0-30)', '31-60 Days', '61-90 Days', '91-120 Days', 'Over 120'],
-      datasets: [{ data: [aging.current, aging.days30, aging.days60, aging.days90, aging.over90], backgroundColor: ['rgba(46,204,113,0.8)', 'rgba(74,144,217,0.8)', 'rgba(243,156,18,0.8)', 'rgba(231,76,60,0.8)', 'rgba(142,68,173,0.8)'] }]
+      labels: labels,
+      datasets: [{ data: values, backgroundColor: ['rgba(46,204,113,0.8)', 'rgba(74,144,217,0.8)', 'rgba(243,156,18,0.8)', 'rgba(231,76,60,0.8)', 'rgba(142,68,173,0.8)'] }]
     },
     options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
   });
+};
+
+const termsNote = (terms) => {
+  const listed = Object.entries(terms.byCustomer || {}).map(([name, days]) => name + ' ' + days + ' days');
+  const individuals = terms.individualDays ? 'individuals ' + terms.individualDays + ' days' : 'individuals on receipt';
+  return 'Due date = order date + payment terms: ' + listed.concat([individuals]).join(', ') + ', everyone else ' +
+    (terms.defaultDays || 30) + ' days. Part payments recorded in Payment Received are subtracted.';
+};
+
+// By days past the due date, net of part payments (Apps Script from 2026-10-19 on)
+const renderCollectionsByDueDate = (col, debtors, kpiEl) => {
+  const a = col.agingByDue;
+  kpiEl.innerHTML =
+    kpiCard('Total Outstanding', fmtDec(a.total), 'After part payments &middot; ' + debtors.length + ' accounts', 'negative') +
+    kpiCard('Not Yet Due', fmtDec(a.notDue), 'Still within payment terms') +
+    kpiCard('Past Due', fmtDec(a.pastDue), 'Past the due date', 'negative') +
+    kpiCard('90+ Days Late', fmtDec(a.late90plus), 'More than 90 days past the due date', 'negative');
+
+  drawAgingChart(['Not yet due', '1-30 days late', '31-60 days late', '61-90 days late', '90+ days late'],
+    [a.notDue, a.late1to30, a.late31to60, a.late61to90, a.late90plus]);
+
+  const terms = (days) => (days === 0 ? 'On receipt' : 'Net ' + days);
+  document.getElementById('debtors-table').innerHTML =
+    '<table><thead><tr><th>Customer</th><th>Parent</th><th>Owed</th><th>Past Due</th><th>Invoices</th><th>Most Days Late</th><th>Terms</th></tr></thead><tbody>' +
+    debtors.map(d =>
+      '<tr><td><strong>' + d.customer + '</strong></td><td>' + (d.parent || '&mdash;') + '</td><td>' + fmtDec(d.totalOwed) + '</td>' +
+      (d.pastDueOwed > 0 ? '<td style="color:var(--red)">' + fmtDec(d.pastDueOwed) + '</td>' : '<td>&mdash;</td>') +
+      '<td>' + d.invoiceCount + '</td><td>' + (d.mostDaysLate > 0 ? d.mostDaysLate : 'Not late') + '</td><td>' + terms(d.termsDays) + '</td></tr>'
+    ).join('') + '</tbody></table>' +
+    '<p style="font-size:11px;color:var(--text-light);margin-top:8px">' + termsNote(col.terms || {}) + '</p>';
+};
+
+// Older Apps Script: by days since the order
+const renderCollectionsByAge = (aging, debtors, kpiEl) => {
+  kpiEl.innerHTML =
+    kpiCard('Total Outstanding', fmtDec(aging.total), 'Across all accounts', 'negative') +
+    kpiCard('Current (0-30 days)', fmtDec(aging.current), 'Since the order date') +
+    kpiCard('31-60 Days', fmtDec(aging.days30), 'Since the order date') +
+    kpiCard('Over 90 Days', fmtDec((aging.days90 || 0) + (aging.over90 || 0)), 'Since the order date', 'negative');
+
+  drawAgingChart(['Current (0-30)', '31-60 Days', '61-90 Days', '91-120 Days', 'Over 120'],
+    [aging.current, aging.days30, aging.days60, aging.days90, aging.over90]);
 
   document.getElementById('debtors-table').innerHTML =
     '<table><thead><tr><th>Customer</th><th>Parent</th><th>Total Owed</th><th>Invoices</th><th>Oldest (days)</th></tr></thead><tbody>' +
     debtors.map(d =>
-      '<tr><td><strong>' + d.customer + '</strong></td><td>' + (d.parent || '&mdash;') + '</td><td class="negative">' + fmtDec(d.totalOwed) + '</td><td>' + d.invoiceCount + '</td><td>' + d.oldestDays + '</td></tr>'
+      '<tr><td><strong>' + d.customer + '</strong></td><td>' + (d.parent || '&mdash;') + '</td><td>' + fmtDec(d.totalOwed) + '</td><td>' + d.invoiceCount + '</td><td>' + d.oldestDays + '</td></tr>'
     ).join('') + '</tbody></table>';
 };
 

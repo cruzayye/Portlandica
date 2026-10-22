@@ -53,5 +53,13 @@ Edit `public/aip/index.html`. Its numbers arrive only as `message` events from t
 The page sends only `{ type: 'aip:refresh' }`. Because its origin is opaque, it can't use
 `localStorage`, `sessionStorage` or cookies, and it can't open pop-ups.
 
+### Numbers the page reads (since 2026-10-19)
+
+Apps Script now sends `summary.growth`, `summary.ytd`, `summary.activeCustomers`, `forecast[].low`,
+`expected`, `high`, `topByYear`, `topAllTime`, `collections.agingByDue` and `collections.terms`. Each
+prediction also has `tooNew`, `regularityScore`, and the statuses `Past Due` and `Lapsed`. The page
+still works with an Apps Script from before then: it falls back to the older fields, shows "Needs
+the updated Apps Script" where a number is missing, and works out Lapsed and Past Due itself.
+
 To try it locally, run the app with `npm run dev`, point `APPS_SCRIPT_URL` at the Apps
 Script deployment (or any server that answers like it), and open the tab after signing in.
