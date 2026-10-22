@@ -14,6 +14,8 @@ beforeEach(() => {
   vi.stubEnv('SQUARE_ACCESS_TOKEN', 'test-token')
   vi.stubEnv('SQUARE_LOCATION_ID', 'LOCATION_1')
   vi.stubEnv('SQUARE_ENVIRONMENT', 'sandbox')
+  // Due dates are never before today, so the tests' today is fixed: Oct 15 in Portland
+  vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-10-15T18:00:00Z') })
   square = createFakeSquare()
   vi.stubGlobal('fetch', square.fetch)
 })
@@ -34,14 +36,14 @@ const anOrder = (overrides: Partial<DraftInvoiceInput> = {}): DraftInvoiceInput 
 
 /** Runs `run` on fake timers, so the retry back-off doesn't slow the tests down */
 const skippingDelays = async <T>(run: () => Promise<T>) => {
-  vi.useFakeTimers({ toFake: ['setTimeout'] })
+  vi.useFakeTimers({ toFake: ['setTimeout', 'Date'], now: Date.now() })
   let settled = false
   const outcome = run().finally(() => {
     settled = true
   })
   outcome.catch(() => {}) // the caller handles it
   while (!settled) await vi.advanceTimersToNextTimerAsync()
-  vi.useRealTimers()
+  vi.useFakeTimers({ toFake: ['Date'], now: Date.now() })
   return outcome
 }
 
@@ -147,6 +149,41 @@ describe('createDraftInvoice', () => {
     ])
   })
 
+  it("never sets a due date before today at the Square location, which may not be Portland's", async () => {
+    // 10:30pm on Oct 15 in Portland is already Oct 16 at a location set to UTC, like the sandbox's
+    vi.setSystemTime(new Date('2026-10-16T05:30:00Z'))
+    square.setLocationTimeZone('UTC')
+
+    const result = await createDraftInvoice(
+      anOrder({
+        orderDate: new Date('2026-10-16T05:30:00Z'),
+        customer: { name: 'Dame', paymentTermsDays: 0 },
+      })
+    )
+
+    expect(result.dueDate).toBe('2026-10-16')
+    expect(square.invoices[0].payment_requests).toEqual([
+      { request_type: 'BALANCE', due_date: '2026-10-16', automatic_payment_source: 'NONE' },
+    ])
+    expect(square.callsTo('GET', '/v2/locations/LOCATION_1')).toHaveLength(1)
+  })
+
+  it('moves a due-on-receipt date to the day the order is retried', async () => {
+    vi.setSystemTime(new Date('2026-10-18T18:00:00Z'))
+
+    // Ordered on Oct 15, retried on Oct 18
+    const result = await createDraftInvoice(anOrder({ customer: { name: 'Dame', paymentTermsDays: 0 } }))
+
+    expect(result.dueDate).toBe('2026-10-18')
+  })
+
+  it('keeps the payment terms date while it is still ahead', async () => {
+    vi.setSystemTime(new Date('2026-10-18T18:00:00Z'))
+
+    // Net 30 from Oct 15
+    expect((await createDraftInvoice(anOrder())).dueDate).toBe('2026-11-14')
+  })
+
   it('counts from today when no order date is given', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-10-15T18:00:00Z'))
@@ -224,6 +261,7 @@ describe('createDraftInvoice', () => {
 
     expect(new Set(square.endpoints())).toEqual(
       new Set([
+        'GET /v2/locations/:id',
         'GET /v2/customers/:id',
         'POST /v2/customers/search',
         'POST /v2/customers',
@@ -338,12 +376,13 @@ describe('finding the Square customer', () => {
 describe('retries', () => {
   it('returns the same draft when called again for the same order', async () => {
     const first = await createDraftInvoice(anOrder())
-    const createsBefore = square.endpoints().filter((e) => !e.includes('search')).length
+    const creates = () => square.endpoints().filter((e) => e.startsWith('POST') && !e.includes('search'))
+    const createsBefore = creates().length
 
     const second = await createDraftInvoice(anOrder())
 
     expect(second).toEqual(first)
-    expect(square.endpoints().filter((e) => !e.includes('search'))).toHaveLength(createsBefore)
+    expect(creates()).toHaveLength(createsBefore)
     expect([square.customers, square.orders, square.invoices].map((list) => list.length)).toEqual([
       1, 1, 1,
     ])

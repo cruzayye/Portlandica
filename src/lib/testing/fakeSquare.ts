@@ -85,6 +85,7 @@ export const createFakeSquare = () => {
   const failures: { method: string; path: string; failure: FakeFailure }[] = []
   let lastId = 0
   let pageSize = 100
+  let locationTimeZone = 'America/Los_Angeles'
 
   const nextId = (prefix: string) => `${prefix}_${++lastId}`
 
@@ -146,6 +147,11 @@ export const createFakeSquare = () => {
   const handle = ({ method, url, body }: FakeCall): Response => {
     const search = body as SearchRequest
     const filter = search.query?.filter ?? {}
+
+    if (method === 'GET' && url.pathname.startsWith('/v2/locations/')) {
+      const id = decodeURIComponent(url.pathname.slice('/v2/locations/'.length))
+      return json(200, { location: { id, timezone: locationTimeZone } })
+    }
 
     if (method === 'GET' && url.pathname.startsWith('/v2/customers/')) {
       const id = decodeURIComponent(url.pathname.slice('/v2/customers/'.length))
@@ -284,12 +290,17 @@ export const createFakeSquare = () => {
     setPageSize: (size: number) => {
       pageSize = size
     },
+    /** The location's time zone, which Square counts "today" in (the sandbox's is UTC) */
+    setLocationTimeZone: (timeZone: string) => {
+      locationTimeZone = timeZone
+    },
     /** Requests made, as 'METHOD /path' with customer and invoice ids masked */
     endpoints: () =>
       calls.map(
         (c) =>
           `${c.method} ${c.url.pathname
             .replace(/^\/v2\/customers\/(?!search$).+/, '/v2/customers/:id')
+            .replace(/^\/v2\/locations\/.+/, '/v2/locations/:id')
             .replace(INVOICE_PATH, '/v2/invoices/:id')}`
       ),
     callsTo: (method: string, path: string) =>

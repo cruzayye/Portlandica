@@ -73,7 +73,8 @@ export type DraftInvoiceInput = {
   deliveryMethod?: 'EMAIL' | 'SHARE_MANUALLY'
   /**
    * When the order was placed. The due date counts from this day in Pacific
-   * time. Defaults to now; pass the order's created_at so a retry on a later
+   * time, but is never before today at the Square location (Square refuses
+   * that). Defaults to now; pass the order's created_at so a retry on a later
    * day sends Square the same invoice.
    */
   orderDate?: Date
@@ -434,9 +435,12 @@ const toLineItem = (line: InvoiceLine): SquareLineItem => {
 }
 
 /** The calendar date in Portland (YYYY-MM-DD) at `date`, plus `days` */
-const pacificDatePlusDays = (date: Date, days: number) => {
+const PORTLAND_TIME_ZONE = 'America/Los_Angeles'
+
+/** The day `days` after `date` in `timeZone`, as YYYY-MM-DD. */
+const datePlusDays = (date: Date, days: number, timeZone = PORTLAND_TIME_ZONE) => {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Los_Angeles',
+    timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -446,6 +450,16 @@ const pacificDatePlusDays = (date: Date, days: number) => {
   return new Date(Date.UTC(part('year'), part('month') - 1, part('day') + days))
     .toISOString()
     .slice(0, 10)
+}
+
+/** The Square location's time zone, e.g. America/Los_Angeles. Square counts "today" there. */
+const locationTimeZone = async (config: SquareConfig) => {
+  const { location } = await squareRequest<{ location?: { timezone?: string } }>(
+    config,
+    'GET',
+    `/v2/locations/${encodeURIComponent(config.locationId)}`
+  )
+  return location?.timezone || PORTLAND_TIME_ZONE
 }
 
 /**
@@ -481,7 +495,7 @@ export const createDraftInvoice = async (input: DraftInvoiceInput): Promise<Draf
 
   const orderDate = input.orderDate ?? new Date()
   if (Number.isNaN(orderDate.getTime())) throw new Error('orderDate is not a valid date')
-  const dueDate = pacificDatePlusDays(orderDate, termsDays)
+  const termsDueDate = datePlusDays(orderDate, termsDays)
 
   const poNumber = input.poNumber?.trim()
   const note = input.note?.trim()
@@ -496,6 +510,12 @@ export const createDraftInvoice = async (input: DraftInvoiceInput): Promise<Draf
   const description = [poNumber && `PO ${poNumber}`, note, remitTo && `Remit to: ${remitTo}`]
     .filter(Boolean)
     .join('\n')
+
+  // Square refuses a due date before today at the location. A due-on-receipt order
+  // retried on a later day, or a location in another time zone (the sandbox's is
+  // UTC), would hit that, so the due date is never earlier than the location's today.
+  const locationToday = datePlusDays(new Date(), 0, await locationTimeZone(config))
+  const dueDate = termsDueDate < locationToday ? locationToday : termsDueDate
 
   const customer = await findOrCreateCustomer(
     config,
