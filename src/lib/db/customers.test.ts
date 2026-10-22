@@ -112,6 +112,18 @@ describe('customer queries', () => {
     expect(await findCustomerByName(db, 'Hotel Vintage Annex')).toBeNull()
   })
 
+  it('lets chain locations share one Square customer', async () => {
+    const db = fakeSupabase(pg, PAUL)
+    const downtown = await createCustomer(db, { name: 'Ben Bridge Jeweler (Downtown)' })
+    const square = await createCustomer(db, { name: 'Ben Bridge Jeweler (Washington Square)' })
+
+    await updateCustomer(db, downtown.id, { square_customer_id: 'SQUARE_CUSTOMER_1' })
+    await updateCustomer(db, square.id, { square_customer_id: 'SQUARE_CUSTOMER_1' })
+
+    expect((await getCustomer(db, square.id))?.square_customer_id).toBe('SQUARE_CUSTOMER_1')
+    expect((await getCustomer(db, downtown.id))?.square_customer_id).toBe('SQUARE_CUSTOMER_1')
+  })
+
   it('needs a name', async () => {
     await expect(createCustomer(fakeSupabase(pg, PAUL), { name: '   ' })).rejects.toMatchObject({
       code: 'invalid_input',
