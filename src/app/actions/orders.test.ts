@@ -565,6 +565,7 @@ describe('createOrder', () => {
       status: 'DRAFT',
       dueDate: '',
       invoiceNumber: null,
+      unlinkedItems: [],
     })
     const result = saved(
       await createOrder(
@@ -574,8 +575,9 @@ describe('createOrder', () => {
     )
     expect(result.order).toMatchObject({ square_status: 'done', square_invoice_id: 'inv-9' })
     expect(mocks.createDraftInvoice.mock.calls[0][0]).toMatchObject({
-      poNumber: '40012345',
+      title: 'PO #40012345',
       customer: { name: 'Lovejoy Bakers', paymentTermsDays: 30 },
+      invoiceNumber: { series: 'LovejoyBakers' },
     })
   })
 
@@ -588,6 +590,7 @@ describe('createOrder', () => {
       status: 'DRAFT',
       dueDate: '',
       invoiceNumber: null,
+      unlinkedItems: [],
     })
     saved(
       await createOrder(

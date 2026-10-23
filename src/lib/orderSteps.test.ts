@@ -13,6 +13,7 @@ import {
 import { fakeSupabase } from '@/lib/db/testing/fakeSupabase'
 import { SERVICE, createMigratedDb } from '@/lib/db/testing/testDb'
 import type { Db } from '@/lib/db/types'
+import { INVOICE_REMINDERS } from '@/lib/invoiceDraft'
 import type { InvoiceLine } from '@/lib/square'
 
 const steps = vi.hoisted(() => ({
@@ -37,7 +38,7 @@ import {
   SQUARE_NOT_SET_UP,
   cleanError,
   invoicedOutsideSquare,
-  invoiceLines,
+  notInItemLibrary,
   runOrderSteps,
   squareOrderRef,
 } from './orderSteps'
@@ -68,7 +69,8 @@ beforeEach(async () => {
     squareCustomerId: 'sq-cust-1',
     status: 'DRAFT',
     dueDate: '2026-11-14',
-    invoiceNumber: '000042',
+    invoiceNumber: 'Sysco_02',
+    unlinkedItems: [],
   })
   vi.stubEnv('SQUARE_ACCESS_TOKEN', '')
 })
@@ -250,6 +252,7 @@ describe('runOrderSteps', () => {
     const run = await runOrderSteps(db, order.id)
 
     expect(run.order).toMatchObject({ square_status: 'done', square_invoice_id: 'inv-1' })
+    expect(run.warnings).toEqual([])
     expect(steps.createDraftInvoice).toHaveBeenCalledWith({
       orderId: squareOrderRef(order),
       orderDate: new Date(order.created_at),
@@ -260,10 +263,38 @@ describe('runOrderSteps', () => {
         paymentTermsDays: 65,
       },
       lines: [
-        { name: 'Still Cans', cans: 120, unitPrice: 1.5 },
-        { name: 'Sparkling Cans', cans: 48, unitPrice: 1.5 },
+        {
+          item: '24 pack - Still',
+          quantity: 5,
+          amountCents: 18000,
+          listPriceCents: 3600,
+          discountName: 'Sysco Discount',
+        },
+        {
+          item: '24 pack - Sparkling',
+          quantity: 2,
+          amountCents: 7200,
+          listPriceCents: 3600,
+          discountName: 'Sysco Discount',
+        },
       ],
-      poNumber: '40012345',
+      title: 'PO #40012345',
+      message: [
+        'Portlandica, order of 5 cases of Still and 2 cases of Sparkling (168 cans total) @ $1.50/can for a total of $252.',
+        '',
+        'Ordered: 10/15/2026',
+        'Delivery by: 10/21/2026',
+        '',
+        '**** MAILING ADDRESS ****',
+        'Portlandica',
+        'P.O. Box 5374',
+        'Portland, OR 97228',
+        '*********',
+      ].join('\n'),
+      serviceDate: '2026-10-15',
+      invoiceNumber: { series: 'Sysco' },
+      reminders: INVOICE_REMINDERS,
+      savePaymentMethod: true,
     })
     const { data } = await db
       .from('customers')
@@ -294,10 +325,36 @@ describe('runOrderSteps', () => {
       { product: 'still', cans: 240, batchId: 13, isCustom: true, amount: 480 },
       { product: 'sparkling', cans: 48, batchId: 25, isCustom: false, amount: 72 },
     ])
-    expect(steps.createDraftInvoice.mock.calls[0][0].lines).toEqual([
-      { name: 'Still Cans (Custom)', cans: 240, unitPrice: 2 },
-      { name: 'Sparkling Cans', cans: 48, unitPrice: 1.5 },
+    expect(
+      (steps.createDraftInvoice.mock.calls[0][0].lines as InvoiceLine[]).map(
+        ({ item, quantity, amountCents }) => ({ item, quantity, amountCents })
+      )
+    ).toEqual([
+      { item: '24 pack - Sparkling', quantity: 2, amountCents: 7200 },
+      { item: '24 pack - Customized Portland Water Can', quantity: 10, amountCents: 48000 },
     ])
+  })
+
+  it('warns when a draft line is not in the Square Item Library', async () => {
+    vi.stubEnv('SQUARE_ACCESS_TOKEN', 'sandbox-token')
+    steps.createDraftInvoice.mockResolvedValueOnce({
+      squareInvoiceId: 'inv-1',
+      squareOrderId: 'sq-order-1',
+      squareCustomerId: 'sq-cust-1',
+      status: 'DRAFT',
+      dueDate: '2026-11-14',
+      invoiceNumber: 'LovejoyBakers_022',
+      unlinkedItems: ['24 pack - Still'],
+    })
+    const order = await placeOrder({ create_invoice: true })
+
+    const run = await runOrderSteps(db, order.id)
+
+    expect(run.order.square_status).toBe('done')
+    expect(run.warnings).toEqual([notInItemLibrary(['24 pack - Still'])])
+    expect(run.warnings[0]).toBe(
+      "Not in the Square Item Library: 24 pack - Still. The draft lists it by name, so Square's item reports won't count it."
+    )
   })
 
   it('splits a typed total over a mixed order the same way on the sheet and the invoice', async () => {
@@ -322,9 +379,8 @@ describe('runOrderSteps', () => {
     )
     expect(sheetAmounts).toEqual([434.78, 65.22])
     const invoice = steps.createDraftInvoice.mock.calls[0][0].lines as InvoiceLine[]
-    expect(
-      invoice.map((line) => Math.round(line.unitPrice * (line.caseSize ?? 1) * 100) / 100)
-    ).toEqual(sheetAmounts)
+    // Sparkling first, then the custom still cans
+    expect(invoice.map((line) => line.amountCents / 100)).toEqual([65.22, 434.78])
   })
 
   it("makes an individual's draft due on receipt and a business's due in 30 days", async () => {
@@ -425,82 +481,6 @@ describe('runOrderSteps', () => {
       expect.stringMatching(/Couldn't save how the Trello step went \(connection reset\)/),
     ])
     expect((await getSalesOrder(db, order.id))?.trello_status).toBe('pending')
-  })
-})
-
-describe('invoiceLines', () => {
-  const line = (over: object) => ({
-    id: 1,
-    order_id: 1,
-    product: 'still' as const,
-    cans: 240,
-    batch_id: 45,
-    is_custom: false,
-    unit_price: 1.5,
-    line_total: 360,
-    created_at: '',
-    ...over,
-  })
-
-  it('bills per can when the prices are whole cents and add up', () => {
-    expect(
-      invoiceLines({
-        total_price: 398.4,
-        lines: [line({ is_custom: true, unit_price: 1.66, line_total: 398.4 })],
-      })
-    ).toEqual([{ name: 'Still Cans (Custom)', cans: 240, unitPrice: 1.66 }])
-  })
-
-  it('bills a typed total as one lot per line, to the exact total', () => {
-    const lines = invoiceLines({
-      total_price: 500,
-      lines: [
-        line({ cans: 200, unit_price: 1.6667, line_total: 333.34 }),
-        line({ id: 2, product: 'sparkling', cans: 100, unit_price: 1.6667, line_total: 166.67 }),
-      ],
-    })
-    expect(lines.map(({ name, cans, caseSize }) => ({ name, cans, caseSize }))).toEqual([
-      { name: 'Still Cans (200)', cans: 200, caseSize: 200 },
-      { name: 'Sparkling Cans (100)', cans: 100, caseSize: 100 },
-    ])
-    const total = lines.reduce((sum, l) => sum + Math.round(l.unitPrice * l.caseSize! * 100), 0)
-    expect(total).toBe(50000)
-  })
-
-  it('bills each line of a mixed order at its own price', () => {
-    expect(
-      invoiceLines({
-        total_price: 552,
-        lines: [
-          line({ is_custom: true, unit_price: 2, line_total: 480 }),
-          line({ id: 2, product: 'sparkling', cans: 48, unit_price: 1.5, line_total: 72 }),
-        ],
-      })
-    ).toEqual([
-      { name: 'Still Cans (Custom)', cans: 240, unitPrice: 2 },
-      { name: 'Sparkling Cans', cans: 48, unitPrice: 1.5 },
-    ])
-  })
-
-  it("bills a typed total over lines priced differently by each line's amount", () => {
-    const lines = invoiceLines({
-      total_price: 500,
-      lines: [
-        line({ is_custom: true, unit_price: 1.8116, line_total: 434.78 }),
-        line({ id: 2, product: 'sparkling', cans: 48, unit_price: 1.3587, line_total: 65.22 }),
-      ],
-    })
-    expect(
-      lines.map(({ name, cans, caseSize, unitPrice }) => ({
-        name,
-        cans,
-        caseSize,
-        amount: Math.round(unitPrice * caseSize! * 100) / 100,
-      }))
-    ).toEqual([
-      { name: 'Still Cans (Custom) (240)', cans: 240, caseSize: 240, amount: 434.78 },
-      { name: 'Sparkling Cans (48)', cans: 48, caseSize: 48, amount: 65.22 },
-    ])
   })
 })
 
