@@ -1,16 +1,12 @@
 import type { Batch, Customer, Db, OrderStep, SalesOrder, SalesOrderWithLines } from '@/lib/db/types'
 import type { Shortfall } from '@/types/orders'
 import { DbError } from '@/lib/db/errors'
-import { formatAddress, getCustomer, paymentTermsDays, updateCustomer } from '@/lib/db/customers'
+import { formatAddress, getCustomer, updateCustomer } from '@/lib/db/customers'
 import { listBatches } from '@/lib/db/inventory'
 import { applyOrderInventory, getSalesOrder, pendingSteps, recordOrderStep } from '@/lib/db/orders'
 import { untagOrderRows, writeOrderToSheet, type SheetOrder } from '@/lib/google/sheets'
-import {
-  createDraftInvoice,
-  deleteDraftInvoice,
-  type DraftDeletion,
-  type InvoiceLine,
-} from '@/lib/square'
+import { draftInvoiceFor } from '@/lib/invoiceDraft'
+import { createDraftInvoice, deleteDraftInvoice, type DraftDeletion } from '@/lib/square'
 import { createTrelloCard, type TrelloOrder } from '@/lib/trello'
 import { batchTitle } from '@/lib/batches'
 import { lineAmounts, shortfallMessage } from '@/lib/orders'
@@ -68,42 +64,9 @@ export const SQUARE_NOT_SET_UP_FOR_VOID =
 export const squareOrderRef = (order: Pick<SalesOrder, 'id' | 'idempotency_key'>) =>
   `${order.id}-${order.idempotency_key.slice(0, 8)}`
 
-const PRODUCT_NAMES = { still: 'Still Cans', sparkling: 'Sparkling Cans' }
-
-const isWholeCents = (dollars: number) => Math.abs(dollars * 100 - Math.round(dollars * 100)) < 1e-6
-
-/**
- * Invoice lines for an order, one per order line at its own price, matching the Sales
- * rows. Billed per can when every price is whole cents and the lines add up to the
- * order's total; otherwise (a typed total that doesn't divide evenly) each line is billed
- * as one lot of its amount (lineAmounts), so the invoice comes to exactly the order's
- * total.
- */
-export const invoiceLines = (
-  order: Pick<SalesOrderWithLines, 'total_price' | 'lines'>
-): InvoiceLine[] => {
-  const name = (line: SalesOrderWithLines['lines'][number]) =>
-    `${PRODUCT_NAMES[line.product]}${line.is_custom ? ' (Custom)' : ''}`
-  const totalCents = Math.round(Number(order.total_price) * 100)
-  const lineCents = order.lines.reduce(
-    (sum, line) => sum + Math.round(Number(line.unit_price) * 100) * line.cans,
-    0
-  )
-  if (order.lines.every((line) => isWholeCents(Number(line.unit_price))) && lineCents === totalCents) {
-    return order.lines.map((line) => ({
-      name: name(line),
-      cans: line.cans,
-      unitPrice: Number(line.unit_price),
-    }))
-  }
-  const amounts = lineAmounts(order)
-  return order.lines.map((line, i) => ({
-    name: `${name(line)} (${line.cans})`,
-    cans: line.cans,
-    unitPrice: amounts[i] / line.cans,
-    caseSize: line.cans,
-  }))
-}
+/** Square draft lines that aren't linked to the Item Library, said so a person can fix the names. */
+export const notInItemLibrary = (items: string[]) =>
+  `Not in the Square Item Library: ${items.join(', ')}. The draft lists ${items.length === 1 ? 'it' : 'them'} by name, so Square's item reports won't count ${items.length === 1 ? 'it' : 'them'}.`
 
 const sheetOrderFor = (order: SalesOrderWithLines, customer: Customer | null): SheetOrder => {
   const amounts = lineAmounts(order)
@@ -264,17 +227,10 @@ export const runOrderSteps = async (
       try {
         const draft = await createDraftInvoice({
           orderId: squareOrderRef(order),
-          orderDate: new Date(order.created_at),
-          customer: {
-            name: customer?.name ?? order.customer_name,
-            email: order.customer_email ?? customer?.email ?? null,
-            squareCustomerId: customer?.square_customer_id ?? null,
-            paymentTermsDays: paymentTermsDays(customer, order.type),
-          },
-          lines: invoiceLines(order),
-          poNumber: order.po_number,
+          ...draftInvoiceFor(order, customer),
         })
         await record('square', 'done', { externalId: draft.squareInvoiceId })
+        if (draft.unlinkedItems.length) warnings.push(notInItemLibrary(draft.unlinkedItems))
         if (customer && customer.square_customer_id !== draft.squareCustomerId) {
           await updateCustomer(db, customer.id, { square_customer_id: draft.squareCustomerId }).catch(
             (err) => {

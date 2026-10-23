@@ -97,9 +97,13 @@ Reference # so their cost lookup keeps working.
   price, split in proportion to each line's automatic price: Still $434.78 · Sparkling
   $65.22 (automatic: $552.00)". The order keeps the typed total exactly.
 - The Sales rows and the Square draft use the same line amounts (`lineAmounts`): each
-  line's total, moved by a cent where a typed total needs it to add up. Square bills per
-  can at each line's price, or one lot per line at its amount when a typed total doesn't
-  come to whole cents a can.
+  line's total, moved by a cent where a typed total needs it to add up. The draft is made
+  the way Paul makes invoices by hand (`src/lib/invoiceDraft.ts`; `docs/integrations.md`,
+  "What a draft looks like"): the business (or `PO #…`) as the title, the next number in
+  the customer's series, the order date as the service date, his message with the cases,
+  price, total, order and delivery dates and the mailing address, and 24 packs from the
+  Square Item Library less the customer's discount, so it comes to the order's total to the
+  cent. A line the Item Library doesn't have is still billed, with a warning.
 - Square terms: the customer's `payment_terms_days` (Sysco is 65); otherwise Net 30 for a
   business, and due on receipt for an individual (DTC customers usually pay on the
   website when they order). An individual booked from the form has no customer row, so
@@ -138,7 +142,8 @@ The app doesn't edit Sales rows: the result lists the rows to fix by hand.
 - `src/app/actions/orderHistory.ts`: `listOrders`, `retryOrder`, `voidOrder`.
 - `src/lib/orderSteps.ts`: the step runner. `src/lib/customerSync.ts`: customers from the
   locations tab, geocoding.
-- `src/lib/google/sheets.ts`, `src/lib/trello.ts`, `src/lib/square.ts`, `src/lib/geocode.ts`.
+- `src/lib/google/sheets.ts`, `src/lib/trello.ts`, `src/lib/square.ts` (with
+  `src/lib/invoiceDraft.ts` for what the draft says), `src/lib/geocode.ts`.
 - `supabase/migrations/20261017000700_order_flow.sql`: four columns on `sales_orders`
   (`delivery_address`, `customer_email`, `sheet_ref`, `new_customer`) so any step can run
   again from the order alone, and a `record_order_step` that lets a void order's Square
