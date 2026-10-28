@@ -531,15 +531,26 @@ const ytdKpi = (s) => {
 };
 
 // Where this calendar year should finish if the forecast holds: sold so far + the rest of this month +
-// the forecast for the later months of the year. Null without the numbers it needs.
+// every later month of the year. The forecast covers 8 months, so until May the last months of the year
+// are worked out here the same way: the month a year earlier x growth, Low/High the same band.
+// Null without the numbers it needs.
 const yearProjection = (s) => {
   const fc = dashData.forecast || [];
-  if (!s.ytd || !fc.length) return null;
+  if (!s.ytd || !s.growth || !fc.length) return null;
   const year = String(generatedAt().getFullYear());
   const first = fc[0];
   const soFar = first.actualToDate !== undefined ? first.actualToDate
     : (s.partialMonth && s.partialMonth.month === first.month ? s.partialMonth.revenue : 0);
-  const later = fc.slice(1).filter((f) => f.month.startsWith(year));
+  const byMonth = new Map((dashData.monthlyRevenue || []).map((m) => [m.month, m.revenue]));
+  const band = fc.length > 1 && fc[1].expected ? 1 - fc[1].low / fc[1].expected : 0.25;
+  const later = [];
+  for (let m = addMonths(first.month, 1); m.startsWith(year); m = addMonths(m, 1)) {
+    const f = fc.find((x) => x.month === m);
+    if (f) { later.push(f); continue; }
+    const ly = byMonth.get(addMonths(m, -12));
+    const expected = Math.round(ly > 0 ? ly * s.growth.factor : s.trailing6Avg);
+    later.push({ month: m, expected, low: Math.round(expected * (1 - band)), high: Math.round(expected * (1 + band)), lastYear: ly ?? null });
+  }
   const rest = (key) => Math.max(0, first[key] - soFar) + sum(later, (f) => f[key]);
   const t = s.thisMonth;
   // The rest of the year if it only matched last year: the same days of this month, then the same months
