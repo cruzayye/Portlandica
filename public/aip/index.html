@@ -3,357 +3,343 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Portlandica Dashboard</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<!-- The numbers arrive by postMessage, so the page needs no connections of its own: block them all. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>A.I.P Numbers</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" integrity="sha384-bs/nf9FbdNouRbMiFcrcZfLXYPKiPaGVGplVbv7dLGECccEXDW+S3zjqSKR5ZEaD" crossorigin="anonymous"></script>
 <style>
 :root {
   --navy: #1a1a2e;
   --blue: #4a90d9;
-  --green: #2ecc71;
-  --amber: #f39c12;
-  --red: #e74c3c;
+  --blue-dark: #2a6cb5;
+  --green: #1e9e5a;
+  --amber: #c67c00;
+  --orange: #b5530a;
+  --red: #c0392b;
   --bg: #f5f7fa;
   --card: #ffffff;
   --text: #2c3e50;
-  --text-light: #7f8c8d;
+  --text-light: #5f6f7a;
   --border: #e1e8ed;
 }
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.45; }
+button, input, select { font: inherit; color: inherit; }
+h3 { font-size: 15px; font-weight: 700; }
+.positive { color: var(--green); }
+.negative { color: var(--red); }
+.v-orange { color: var(--orange); }
+.v-amber { color: var(--amber); }
+.v-blue { color: var(--blue-dark); }
+.muted { color: var(--text-light); }
+.small { font-size: 12px; }
+.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 /* Loading */
-#loading {
-  display: flex; align-items: center; justify-content: center;
-  min-height: 100vh; background: var(--bg); flex-direction: column;
-}
-.spinner { width: 48px; height: 48px; border: 4px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 1s linear infinite; }
+#loading { display: flex; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; }
+.spinner { width: 44px; height: 44px; border: 4px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-#loading p { margin-top: 16px; color: var(--text-light); font-size: 16px; }
-
-/* Dashboard */
+#loading p { margin-top: 14px; color: var(--text-light); }
 #dashboard { display: none; }
-header {
-  background: var(--navy); color: white; padding: 16px 24px;
-  display: flex; align-items: center; justify-content: space-between;
-}
-header h1 { font-size: 20px; font-weight: 700; }
-header .subtitle { font-size: 12px; opacity: 0.7; }
-header .refresh-btn {
-  background: rgba(255,255,255,0.15); color: white; border: none;
-  padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px;
-}
-header .refresh-btn:hover { background: rgba(255,255,255,0.25); }
-.last-updated { font-size: 11px; opacity: 0.5; margin-top: 2px; }
 
-/* Tabs */
-.tabs {
-  display: flex; background: white; border-bottom: 2px solid var(--border);
-  padding: 0 24px; overflow-x: auto;
-}
-.tab {
-  padding: 14px 20px; cursor: pointer; font-size: 14px; font-weight: 500;
-  color: var(--text-light); border-bottom: 3px solid transparent;
-  transition: all 0.2s; white-space: nowrap;
-}
+/* Header and tabs */
+.topbar { background: var(--navy); color: #fff; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.topbar h1 { font-size: 17px; font-weight: 700; }
+.last-updated { font-size: 12px; opacity: 0.75; }
+.refresh-btn { background: rgba(255,255,255,0.15); color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.refresh-btn:hover, .refresh-btn:focus-visible { background: rgba(255,255,255,0.28); }
+.tabs { display: flex; background: #fff; border-bottom: 2px solid var(--border); padding: 0 8px; overflow-x: auto; }
+.tab { padding: 12px 14px; cursor: pointer; font-weight: 500; color: var(--text-light); border: none; background: none; border-bottom: 3px solid transparent; margin-bottom: -2px; white-space: nowrap; }
 .tab:hover { color: var(--text); }
-.tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+.tab.active { color: var(--blue-dark); border-bottom-color: var(--blue); }
+.tab:focus-visible, .sortable button:focus-visible, [data-customer]:focus-visible, [data-parent]:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 
-/* Content */
-.content { padding: 24px; max-width: 1400px; margin: 0 auto; }
+/* Layout */
+.content { padding: 12px; max-width: 1400px; margin: 0 auto; }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
+.card { background: var(--card); border-radius: 12px; padding: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 14px; }
+.card h3 { margin-bottom: 10px; }
+.card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; margin-bottom: 10px; }
+.card-head h3 { margin-bottom: 0; }
+.count { font-weight: 400; color: var(--text-light); font-size: 13px; }
+.note { color: var(--text-light); font-size: 13px; margin-bottom: 10px; }
+.footnote { color: var(--text-light); font-size: 12px; margin-top: 10px; }
+.grid-2 { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; }
+.chart-container { position: relative; height: 240px; }
+.chart-container.short { height: 190px; }
+.chart-container.bar { height: 64px; }
+.card.fill { display: flex; flex-direction: column; }
+.card.fill .chart-container { flex: 1 1 auto; min-height: 190px; height: auto; }
+.chart-missing { color: var(--text-light); font-size: 13px; padding: 16px 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--text-light); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.swatch.line { height: 0; width: 14px; border-top: 2px solid; border-radius: 0; }
+.swatch.dash { height: 0; width: 14px; border-top: 2px dashed; border-radius: 0; }
 
-/* KPI Cards */
-.kpi-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
-.kpi-card {
-  background: var(--card); border-radius: 12px; padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-}
-.kpi-card .label { font-size: 12px; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.5px; }
-.kpi-card .value { font-size: 28px; font-weight: 700; margin: 4px 0; }
+/* KPI cards */
+.kpi-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.kpi-card { background: var(--card); border-radius: 12px; padding: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+.kpi-card .label { font-size: 11px; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.5px; }
+.kpi-card .value { font-size: 22px; font-weight: 700; margin: 2px 0; font-variant-numeric: tabular-nums; }
 .kpi-card .detail { font-size: 12px; color: var(--text-light); }
-.kpi-card .positive { color: var(--green); }
-.kpi-card .negative { color: var(--red); }
+.kpi-card.wide { grid-column: 1 / -1; }
 
-/* Charts */
-.chart-card {
-  background: var(--card); border-radius: 12px; padding: 24px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 24px;
-}
-.chart-card h3 { font-size: 16px; margin-bottom: 16px; }
-.chart-container { position: relative; height: 300px; }
-
-/* Tables */
-.table-card {
-  background: var(--card); border-radius: 12px; padding: 24px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 24px; overflow-x: auto;
-}
-.table-card h3 { font-size: 16px; margin-bottom: 16px; }
+/* Tables (they turn into stacked cards on a phone) */
+.table-wrap { overflow-x: auto; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th { text-align: left; padding: 10px 12px; border-bottom: 2px solid var(--border); font-weight: 600; color: var(--text-light); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
-td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
-tr:hover { background: #f8f9fa; }
+th { text-align: left; padding: 8px 10px; border-bottom: 2px solid var(--border); font-weight: 600; color: var(--text-light); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap; }
+th.num { text-align: right; }
+td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+tbody tr:hover { background: #f8f9fa; }
+tr[data-customer], tr[data-parent] { cursor: pointer; }
+tr.section td { background: #f0f4f8; font-weight: 600; font-size: 12px; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.5px; }
+tr.total td { font-weight: 700; border-top: 2px solid var(--navy); background: #f0f4f8; }
+.sortable button { background: none; border: none; padding: 0; cursor: pointer; font-size: inherit; font-weight: inherit; letter-spacing: inherit; text-transform: inherit; color: inherit; }
+.sortable button::after { content: ' \2195'; font-size: 10px; opacity: 0.4; }
+.sortable.sort-asc button::after { content: ' \2191'; opacity: 1; color: var(--blue); }
+.sortable.sort-desc button::after { content: ' \2193'; opacity: 1; color: var(--blue); }
+.sortable button:hover { color: var(--blue-dark); }
+.name { font-weight: 600; }
+.sub { font-size: 12px; color: var(--text-light); }
+.reason { font-size: 12px; color: var(--text-light); margin-top: 2px; max-width: 46ch; }
+.link-btn { background: none; border: none; color: var(--blue-dark); cursor: pointer; padding: 0; text-decoration: underline; }
 
-/* Sortable headers */
-th.sortable { cursor: pointer; user-select: none; position: relative; }
-th.sortable:hover { color: var(--blue); }
-th.sortable::after { content: ' \2195'; font-size: 10px; opacity: 0.4; }
-th.sortable.sort-asc::after { content: ' \2191'; opacity: 1; color: var(--blue); }
-th.sortable.sort-desc::after { content: ' \2193'; opacity: 1; color: var(--blue); }
+/* Badges */
+.badge { display: inline-block; padding: 2px 9px; border-radius: 12px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.badge-green { background: #e8f8f0; color: #157a45; }
+.badge-amber { background: #fef5e7; color: #9a5d00; }
+.badge-red { background: #fde8e8; color: #a8291c; }
+.badge-blue { background: #e8f0fe; color: #2a5d9b; }
+.badge-orange { background: #fdebd8; color: #9c4609; }
+.badge-gray { background: #eef1f4; color: #52616b; }
+.badge-purple { background: #f1ebfa; color: #6a3d9a; }
 
-/* Status badges */
-.badge {
-  display: inline-block; padding: 3px 10px; border-radius: 12px;
-  font-size: 11px; font-weight: 600;
-}
-.badge-green { background: #e8f8f0; color: #1a9c5b; }
-.badge-amber { background: #fef5e7; color: #c67c00; }
-.badge-red { background: #fde8e8; color: #c0392b; }
-.badge-blue { background: #e8f0fe; color: #2a6cb5; }
-.badge-orange { background: #fdebd8; color: #b5530a; }
-.badge-gray { background: #eef1f4; color: #5f6f7a; }
+/* Filters */
+.filter-row { display: flex; gap: 10px 14px; margin-bottom: 12px; align-items: flex-end; flex-wrap: wrap; }
+.filter-row select, .filter-row input[type="search"] { padding: 8px 10px; border: 2px solid var(--border); border-radius: 8px; background: #fff; outline: none; }
+.filter-row select:focus, .filter-row input[type="search"]:focus { border-color: var(--blue); }
+.filter-row input[type="search"] { flex: 1 1 200px; min-width: 0; }
+.field { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--text-light); font-weight: 600; }
+.check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; padding-bottom: 8px; }
 
-/* Filter controls */
-.filter-row {
-  display: flex; gap: 12px; margin-bottom: 16px; align-items: center; flex-wrap: wrap;
-}
-.filter-row select, .filter-row input {
-  padding: 8px 12px; border: 2px solid var(--border); border-radius: 8px;
-  font-size: 13px; outline: none; background: white;
-}
-.filter-row select:focus, .filter-row input:focus { border-color: var(--blue); }
-.filter-row label { font-size: 12px; color: var(--text-light); font-weight: 600; }
-
-/* Parent company cards */
-.parent-card {
-  background: var(--card); border-radius: 12px; padding: 20px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 16px;
-  border-left: 4px solid var(--blue); cursor: pointer; transition: box-shadow 0.2s;
-}
-.parent-card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
-.parent-card h4 { font-size: 15px; margin-bottom: 8px; }
-.parent-card .meta { font-size: 12px; color: var(--text-light); margin-bottom: 12px; }
-.parent-card .locations { display: flex; flex-wrap: wrap; gap: 8px; }
-.parent-card .loc-tag {
-  background: #f0f4f8; padding: 4px 10px; border-radius: 6px;
-  font-size: 12px; color: var(--text);
-}
-
-/* Forecast table */
-.forecast-table td, .forecast-table th { text-align: right; }
-.forecast-table td:first-child, .forecast-table th:first-child { text-align: left; }
-.forecast-table tr.annual-total td { font-weight: 700; border-top: 3px solid var(--navy); background: #f0f4f8; font-size: 14px; }
+/* Top customers */
+.view-toggle { display: flex; gap: 8px; margin-bottom: 12px; }
+.view-btn { padding: 7px 16px; border: 2px solid var(--border); background: #fff; border-radius: 8px; cursor: pointer; font-weight: 600; color: var(--text-light); }
+.view-btn:hover { border-color: var(--blue); color: var(--blue-dark); }
+.view-btn.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+.period-nav { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.period-nav button { padding: 6px 12px; border: 2px solid var(--border); background: #fff; border-radius: 6px; cursor: pointer; }
+.period-nav button:hover { border-color: var(--blue); color: var(--blue-dark); }
+.period-label { font-size: 15px; font-weight: 600; min-width: 140px; text-align: center; }
+.top-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 14px; }
 
 /* Modal */
-.modal-overlay {
-  display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;
-}
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: flex-start; justify-content: center; padding: 12px; overflow-y: auto; }
 .modal-overlay.active { display: flex; }
-.modal {
-  background: white; border-radius: 12px; padding: 24px; width: 90%; max-width: 900px;
-  max-height: 85vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-}
-.modal h3 { margin-bottom: 16px; }
-.modal .close-btn {
-  float: right; background: none; border: none; font-size: 24px;
-  cursor: pointer; color: var(--text-light);
-}
-.modal-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; }
-.modal-chart-box { background: #f8f9fa; border-radius: 8px; padding: 16px; }
-.modal-chart-box h4 { font-size: 13px; color: var(--text-light); margin-bottom: 8px; }
-.modal-chart-container { position: relative; height: 200px; }
+.modal { background: #fff; border-radius: 12px; padding: 16px; width: 100%; max-width: 900px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+.modal-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
+.modal-head h3 { font-size: 17px; }
+.close-btn { background: none; border: none; font-size: 26px; line-height: 1; cursor: pointer; color: var(--text-light); }
+.modal .kpi-row { margin-bottom: 12px; }
+.modal .kpi-card { box-shadow: none; background: #f8f9fa; }
+.modal .kpi-card .value { font-size: 19px; }
+.account-line { background: #f8f9fa; border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 13px; }
+.modal-charts { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 12px; }
+.modal-chart-box { background: #f8f9fa; border-radius: 8px; padding: 12px; }
+.modal-chart-box h4 { font-size: 12px; color: var(--text-light); margin-bottom: 6px; font-weight: 600; }
+.modal-chart-container { position: relative; height: 190px; }
+.modal h4.section { margin: 4px 0 6px; font-size: 13px; }
 
-/* Top Customers tab */
-/* View toggle */
-.view-toggle { display: flex; gap: 8px; margin-bottom: 16px; }
-.view-btn {
-  padding: 8px 20px; border: 2px solid var(--border); background: white;
-  border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--text-light);
-  transition: all 0.2s;
+@media (max-width: 639px) {
+  table.stack thead { display: none; }
+  table.stack, table.stack tbody, table.stack tr, table.stack td { display: block; width: 100%; }
+  table.stack tr { border: 1px solid var(--border); border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; background: var(--card); }
+  table.stack td { border: none; padding: 2px 0; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; text-align: right; }
+  table.stack td::before { content: attr(data-label); color: var(--text-light); font-size: 12px; text-align: left; flex: none; }
+  table.stack td.lead { display: block; text-align: left; padding-bottom: 6px; }
+  table.stack td.ph { display: none; }
+  table.stack td.lead::before { content: none; }
+  table.stack tr.section, table.stack tr.total { border: none; padding: 0; background: none; }
+  table.stack tr.section td { padding: 6px 0; background: none; }
+  table.stack tr.section td::before, table.stack tr.total td::before { content: none; }
+  table.stack tr.total td { border-top: 2px solid var(--navy); padding: 8px 0 0; }
+  table.stack tr.total td:empty { display: none; }
+  .reason { max-width: none; }
 }
-.view-btn:hover { border-color: var(--blue); color: var(--blue); }
-.view-btn.active { background: var(--blue); color: white; border-color: var(--blue); }
-
-.month-nav { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
-.month-nav button {
-  padding: 6px 14px; border: 2px solid var(--border); background: white;
-  border-radius: 6px; cursor: pointer; font-size: 13px;
+@media (min-width: 768px) {
+  .topbar { padding: 12px 24px; }
+  .topbar h1 { font-size: 19px; }
+  .tabs { padding: 0 16px; }
+  .tab { padding: 14px 18px; }
+  .content { padding: 20px 24px; }
+  .card { padding: 20px; margin-bottom: 20px; }
+  .kpi-row { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .kpi-card { padding: 16px 18px; }
+  .kpi-card .value { font-size: 26px; }
+  .kpi-card.wide { grid-column: auto; }
+  .chart-container { height: 300px; }
+  .chart-container.short { height: 220px; }
+  .modal-overlay { align-items: center; padding: 24px; }
+  .modal { padding: 24px; max-height: 88vh; overflow-y: auto; }
+  .modal .kpi-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .modal-charts { grid-template-columns: 1fr 1fr; }
 }
-.month-nav button:hover { border-color: var(--blue); color: var(--blue); }
-.month-nav .current-month { font-size: 16px; font-weight: 600; min-width: 120px; text-align: center; }
-.top-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-
-/* Search */
-.search-bar {
-  width: 100%; padding: 10px 16px; border: 2px solid var(--border); border-radius: 8px;
-  font-size: 14px; outline: none; margin-bottom: 16px;
-}
-.search-bar:focus { border-color: var(--blue); }
-
-/* Partial month note */
-.partial-note {
-  background: #fff8e1; border: 1px solid #ffe082; border-radius: 8px;
-  padding: 12px 16px; font-size: 13px; color: #7b6b00; margin-bottom: 16px;
-}
-
-/* Responsive */
-@media (max-width: 768px) {
-  .kpi-row { grid-template-columns: 1fr 1fr; }
-  .content { padding: 16px; }
-  header { padding: 12px 16px; }
-  .tabs { padding: 0 8px; }
-  .tab { padding: 12px 14px; font-size: 13px; }
-  .modal-charts { grid-template-columns: 1fr; }
-  .top-grid { grid-template-columns: 1fr; }
+@media (min-width: 1100px) {
+  .grid-2, .top-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
 </style>
 </head>
 <body>
 
-<!-- Loading -->
 <div id="loading">
   <div class="spinner"></div>
   <p>Loading live data from your spreadsheet...</p>
 </div>
 
-<!-- Dashboard -->
 <div id="dashboard">
-  <header>
+  <header class="topbar">
     <div>
-      <h1>Portlandica Dashboard</h1>
+      <h1>A.I.P Numbers</h1>
       <div class="last-updated" id="last-updated"></div>
     </div>
-    <button class="refresh-btn" onclick="requestRefresh()">&#8635; Refresh Data</button>
+    <button type="button" class="refresh-btn" data-action="refresh">&#8635; Refresh</button>
   </header>
 
-  <div class="tabs" id="tab-bar">
-    <div class="tab active" data-tab="revenue">Revenue Overview</div>
-    <div class="tab" data-tab="customers">Customer Health</div>
-    <div class="tab" data-tab="predictions">Reorder Predictions</div>
-    <div class="tab" data-tab="topcustomers">Top Customers</div>
-    <div class="tab" data-tab="collections">Collections</div>
-  </div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button type="button" class="tab active" role="tab" aria-selected="true" aria-controls="tab-revenue" data-tab="revenue">Revenue Overview</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-customers" data-tab="customers">Customer Health</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-predictions" data-tab="predictions">Reorder Predictions</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-topcustomers" data-tab="topcustomers">Top Customers</button>
+    <button type="button" class="tab" role="tab" aria-selected="false" aria-controls="tab-collections" data-tab="collections">Collections</button>
+  </nav>
 
-  <div class="content">
-    <!-- Revenue Tab -->
-    <div class="tab-content active" id="tab-revenue">
-      <div id="partial-note"></div>
+  <main class="content">
+    <!-- Revenue -->
+    <section class="tab-content active" id="tab-revenue" role="tabpanel">
       <div class="kpi-row" id="revenue-kpis"></div>
-      <div class="chart-card">
-        <h3>Monthly Revenue Trend</h3>
-        <div class="chart-container"><canvas id="revenueChart"></canvas></div>
+      <div class="card">
+        <div class="card-head"><h3>Monthly revenue</h3><div class="legend" id="revenue-legend"></div></div>
+        <div class="chart-container"><canvas id="revenueChart" role="img" aria-label="Revenue by month, with the same month a year earlier"></canvas></div>
       </div>
-      <div class="chart-card">
-        <h3>Revenue Forecast (Expected, with Low&ndash;High range)</h3>
-        <div class="chart-container"><canvas id="forecastChart"></canvas></div>
+      <div class="grid-2">
+        <div class="card" id="movers-card">
+          <h3>Where this year's change came from</h3>
+          <div id="movers"></div>
+        </div>
+        <div class="card fill" id="new-accounts-card">
+          <h3>New business accounts</h3>
+          <p class="note" id="new-accounts-note"></p>
+          <div class="chart-container"><canvas id="newAccountsChart" role="img" aria-label="New business accounts by month of their first order"></canvas></div>
+        </div>
       </div>
-      <div class="table-card">
-        <h3>Forecast Details</h3>
-        <div id="forecast-table"></div>
+      <div class="card">
+        <div class="card-head"><h3>Forecast</h3><div class="legend" id="forecast-legend"></div></div>
+        <div class="chart-container"><canvas id="forecastChart" role="img" aria-label="Expected revenue for the coming months with a low to high range"></canvas></div>
+        <div class="table-wrap" id="forecast-table" style="margin-top:14px"></div>
       </div>
-      <div class="table-card">
-        <h3>Parent Company Groups</h3>
-        <div id="parent-companies"></div>
+      <div class="card">
+        <h3>Parent company groups</h3>
+        <div class="table-wrap" id="parent-companies"></div>
       </div>
-    </div>
+    </section>
 
-    <!-- Customers Tab -->
-    <div class="tab-content" id="tab-customers">
-      <input class="search-bar" placeholder="Search customers or parent companies..." oninput="filterCustomers(this.value)">
-      <div class="table-card">
-        <h3>All Customers <span id="customer-count" style="font-weight:400;color:var(--text-light);font-size:13px"></span></h3>
-        <div id="customers-table"></div>
+    <!-- Customer Health -->
+    <section class="tab-content" id="tab-customers" role="tabpanel">
+      <div class="filter-row">
+        <input type="search" id="cust-search" placeholder="Search customers or parent companies" aria-label="Search customers or parent companies">
+        <label class="field">Health
+          <select id="cust-health">
+            <option value="all">All</option>
+            <option>Growing</option>
+            <option>Steady</option>
+            <option>Shrinking</option>
+            <option>New</option>
+            <option>Slipping</option>
+            <option>Lapsed</option>
+            <option>Lost</option>
+          </select>
+        </label>
+        <label class="check"><input type="checkbox" id="cust-recent" checked> Ordered in the last 12 months</label>
       </div>
-    </div>
+      <div class="card">
+        <div class="card-head"><h3>Customers <span class="count" id="customer-count"></span></h3></div>
+        <div class="table-wrap" id="customers-table"></div>
+        <p class="footnote" id="health-note"></p>
+      </div>
+    </section>
 
-    <!-- Predictions Tab -->
-    <div class="tab-content" id="tab-predictions">
+    <!-- Reorder Predictions -->
+    <section class="tab-content" id="tab-predictions" role="tabpanel">
       <div class="kpi-row" id="prediction-kpis"></div>
       <div class="filter-row">
-        <div>
-          <label>Status</label><br>
-          <select id="pred-status-filter" onchange="applyPredictionFilters()">
-            <option value="all">All Statuses</option>
-            <option value="Overdue">Overdue</option>
-            <option value="Past Due">Past Due</option>
-            <option value="Due Soon">Due Soon</option>
-            <option value="Coming Up">Coming Up</option>
-            <option value="On Track">On Track</option>
-            <option value="Lapsed">Lapsed</option>
+        <label class="field">Status
+          <select id="pred-status">
+            <option value="all">All statuses</option>
+            <option>Overdue</option>
+            <option>Past Due</option>
+            <option>Due Soon</option>
+            <option>Coming Up</option>
+            <option>On Track</option>
+            <option>Off-season</option>
+            <option>Lapsed</option>
+            <option>Lost</option>
           </select>
-        </div>
-        <div>
-          <label>Search</label><br>
-          <input type="text" id="pred-search" placeholder="Customer name..." oninput="applyPredictionFilters()">
-        </div>
-        <div>
-          <label>Min Revenue</label><br>
-          <input type="number" id="pred-min-revenue" placeholder="0" style="width:100px" oninput="applyPredictionFilters()">
-        </div>
-        <div style="display:flex;align-items:flex-end;padding-bottom:4px">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;white-space:nowrap">
-            <input type="checkbox" id="pred-active-only" onchange="applyPredictionFilters()" checked>
-            Active customers only
-          </label>
-        </div>
+        </label>
+        <input type="search" id="pred-search" placeholder="Customer name" aria-label="Search customers">
+        <label class="check"><input type="checkbox" id="pred-regulars" checked> Regulars only (4+ orders)</label>
+        <label class="check"><input type="checkbox" id="pred-hide-gone" checked> Hide lapsed and lost</label>
       </div>
-      <div class="table-card">
-        <h3>Reorder Predictions <span id="pred-count" style="font-weight:400;color:var(--text-light);font-size:13px"></span></h3>
-        <div id="predictions-table"></div>
+      <div class="card">
+        <div class="card-head"><h3>Reorder predictions <span class="count" id="pred-count"></span></h3></div>
+        <p class="note" id="pred-sort-note"></p>
+        <div class="table-wrap" id="predictions-table"></div>
+        <p class="footnote">Confidence is how often a date like this one landed within 2 weeks of the real reorder when past orders were replayed. Customers with 3 or fewer orders are too new to predict well. Lapsed: a whole usual gap late and 60+ days quiet. Lost and Off-season come from the account rules the weekly sales report uses.</p>
       </div>
-    </div>
+    </section>
 
-    <!-- Top Customers Tab -->
-    <div class="tab-content" id="tab-topcustomers">
+    <!-- Top Customers -->
+    <section class="tab-content" id="tab-topcustomers" role="tabpanel">
       <div class="view-toggle">
-        <button class="view-btn active" data-view="monthly" onclick="switchTopView('monthly')">Monthly</button>
-        <button class="view-btn" data-view="annual" onclick="switchTopView('annual')">Annual</button>
-        <button class="view-btn" data-view="alltime" onclick="switchTopView('alltime')">All-Time</button>
+        <button type="button" class="view-btn active" data-view="monthly">Monthly</button>
+        <button type="button" class="view-btn" data-view="annual">Annual</button>
+        <button type="button" class="view-btn" data-view="alltime">All-Time</button>
       </div>
-      <div id="top-monthly-nav" class="month-nav">
-        <button onclick="changeTopMonth(1)">&larr; Prev</button>
-        <div class="current-month" id="top-month-label"></div>
-        <button onclick="changeTopMonth(-1)">Next &rarr;</button>
+      <div class="period-nav" id="period-nav">
+        <button type="button" data-step="1" aria-label="Earlier">&larr; Prev</button>
+        <div class="period-label" id="period-label"></div>
+        <button type="button" data-step="-1" aria-label="Later">Next &rarr;</button>
       </div>
-      <div id="top-annual-nav" class="month-nav" style="display:none">
-        <button onclick="changeTopYear(1)">&larr; Prev</button>
-        <div class="current-month" id="top-year-label"></div>
-        <button onclick="changeTopYear(-1)">Next &rarr;</button>
-      </div>
-      <div id="top-alltime-label" style="display:none;font-size:16px;font-weight:600;margin-bottom:16px;">All-Time Totals</div>
       <div class="top-grid">
-        <div class="table-card">
-          <h3>Top Individual Customers</h3>
-          <div id="top-individual-table"></div>
-        </div>
-        <div class="table-card">
-          <h3>Top Parent Companies</h3>
-          <div id="top-parent-table"></div>
-        </div>
+        <div class="card"><h3>Top individual customers</h3><div class="table-wrap" id="top-individual-table"></div></div>
+        <div class="card"><h3>Top parent companies</h3><div class="table-wrap" id="top-parent-table"></div></div>
       </div>
-    </div>
+    </section>
 
-    <!-- Collections Tab -->
-    <div class="tab-content" id="tab-collections">
+    <!-- Collections -->
+    <section class="tab-content" id="tab-collections" role="tabpanel">
       <div class="kpi-row" id="collections-kpis"></div>
-      <div class="chart-card">
-        <h3>Aging Breakdown</h3>
-        <div class="chart-container"><canvas id="agingChart"></canvas></div>
+      <div class="card">
+        <div class="card-head"><h3>What's owed, by how late it is</h3></div>
+        <div class="legend" id="aging-legend" style="margin-bottom:6px"></div>
+        <div class="chart-container bar"><canvas id="agingChart" role="img" aria-label="Money owed split by how many days past the due date"></canvas></div>
       </div>
-      <div class="table-card">
-        <h3>Outstanding Accounts</h3>
-        <div id="debtors-table"></div>
+      <div class="card">
+        <div class="card-head"><h3>Outstanding accounts <span class="count" id="debtor-count"></span></h3></div>
+        <div class="table-wrap" id="debtors-table"></div>
+        <p class="footnote" id="terms-note"></p>
       </div>
-    </div>
-  </div>
+    </section>
+  </main>
 </div>
 
-<!-- Customer Modal -->
-<div class="modal-overlay" id="customer-modal" onclick="if(event.target===this)closeModal()">
+<div class="modal-overlay" id="customer-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
   <div class="modal">
-    <button class="close-btn" onclick="closeModal()">&times;</button>
-    <h3 id="modal-title"></h3>
+    <div class="modal-head">
+      <h3 id="modal-title"></h3>
+      <button type="button" class="close-btn" data-action="close-modal" aria-label="Close">&times;</button>
+    </div>
     <div id="modal-content"></div>
   </div>
 </div>
@@ -363,28 +349,117 @@ th.sortable.sort-desc::after { content: ' \2193'; opacity: 1; color: var(--blue)
 // sends it the numbers: the app's server fetches them from the spreadsheet, so this page
 // never sees the spreadsheet's address, and it runs apart from the app.
 let dashData = null;
-let allCustomers = [];
-let allPredictions = [];
-let predSortCol = 'daysUntil';
-let predSortDir = 'asc';
-let topMonthIndex = 0;
-let revenueChart = null;
-let forecastChart = null;
-let agingChart = null;
-let modalTrendChart = null;
-let modalProductChart = null;
+let custByName = new Map();
+let predByName = new Map();
+let debtByName = new Map();
+const charts = {};
+const view = { top: 'monthly', topIndex: 0 };
+const sortState = {
+  customers: { key: 'ttm', dir: 'desc' },
+  predictions: { key: 'priority', dir: 'desc' },
+  debtors: { key: 'pastDue', dir: 'desc' }
+};
 
-// Tab switching
-document.querySelectorAll('.tab').forEach(t => {
-  t.addEventListener('click', (event) => {
-    const tab = event.currentTarget;
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-    document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
-    tab.classList.add('active');
-    document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+// ===== Formatting =====
+const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (ch) => ESCAPES[ch]);
+const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n || 0)).toLocaleString('en-US');
+const money2 = (n) => (n < 0 ? '-$' : '$') + Math.abs(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const signedMoney = (n) => (n >= 0 ? '+' : '-') + '$' + Math.abs(Math.round(n)).toLocaleString('en-US');
+const signedPct = (n) => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+const tone = (n, text) => '<span class="' + (n >= 0 ? 'positive' : 'negative') + '">' + text + '</span>';
+const axisMoney = (v) => (Math.abs(v) >= 1000 ? '$' + String(Math.round(v / 100) / 10) + 'k' : '$' + v);
+const days = (n) => n + (n === 1 ? ' day' : ' days');
+// The parent company, unless it is just the customer's own name
+const parentOf = (name, parent) => (parent && parent !== name ? parent : '');
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+// 'YYYY-MM' -> "Oct '26" (short), "Oct 2026" (default) or "October 2026" (long)
+const monthLabel = (ym, form) => {
+  const [y, m] = ym.split('-').map(Number);
+  if (form === 'short') return MONTHS[m - 1] + " '" + String(y).slice(2);
+  return (form === 'long' ? MONTHS_LONG : MONTHS)[m - 1] + ' ' + y;
+};
+const addMonths = (ym, n) => {
+  const i = Number(ym.slice(0, 4)) * 12 + Number(ym.slice(5, 7)) - 1 + n;
+  return Math.floor(i / 12) + '-' + String(i % 12 + 1).padStart(2, '0');
+};
+const parseDay = (iso) => { const [y, m, d] = String(iso).split('-').map(Number); return new Date(y, m - 1, d); };
+const generatedAt = () => new Date(dashData.generated);
+const daysSince = (iso) => {
+  const g = generatedAt();
+  return Math.round((new Date(g.getFullYear(), g.getMonth(), g.getDate()) - parseDay(iso)) / 86400000);
+};
+const dayLabel = (iso) => {
+  if (!iso) return '&mdash;';
+  const d = parseDay(iso);
+  const opts = d.getFullYear() === generatedAt().getFullYear() ? { month: 'short', day: 'numeric' } : { month: 'short', day: 'numeric', year: 'numeric' };
+  return d.toLocaleDateString('en-US', opts);
+};
+// Months 1-12 -> "Sep-Feb" for a run that wraps around the year, or "Jun, Aug" otherwise
+const monthRun = (list) => {
+  const set = new Set(list);
+  if (!list.length || set.size === 12) return 'all year';
+  const start = list.find((m) => !set.has(m === 1 ? 12 : m - 1));
+  const run = [];
+  for (let m = start; set.has(m) && run.length < 12; m = m === 12 ? 1 : m + 1) run.push(m);
+  if (run.length === set.size) return run.length === 1 ? MONTHS[run[0] - 1] : MONTHS[run[0] - 1] + '&ndash;' + MONTHS[run[run.length - 1] - 1];
+  return [...set].sort((a, b) => a - b).map((m) => MONTHS[m - 1]).join(', ');
+};
+const sum = (list, fn) => list.reduce((t, x) => t + (fn ? fn(x) : x), 0);
+
+const kpiCard = (label, value, detail, valueClass, extraClass) =>
+  '<div class="kpi-card' + (extraClass ? ' ' + extraClass : '') + '"><div class="label">' + label + '</div><div class="value' +
+  (valueClass ? ' ' + valueClass : '') + '">' + value + '</div><div class="detail">' + detail + '</div></div>';
+
+const CUSTOMER_ATTRS = (name) => ' data-customer="' + esc(name) + '" tabindex="0"';
+
+// columns: [{ label, render(row), num, lead, sortKey, phoneHide }]. The table turns into stacked cards on a
+// phone, without the phoneHide columns.
+const buildTable = ({ id, columns, rows, rowAttrs, extraRows }) => {
+  const state = id ? sortState[id] : null;
+  const head = columns.map((c) => {
+    const active = state && c.sortKey && state.key === c.sortKey;
+    const cls = [c.num ? 'num' : '', state && c.sortKey ? 'sortable' : '', active ? 'sort-' + state.dir : ''].filter(Boolean).join(' ');
+    const aria = active ? ' aria-sort="' + (state.dir === 'asc' ? 'ascending' : 'descending') + '"' : '';
+    const label = state && c.sortKey ? '<button type="button" data-sort="' + id + ':' + c.sortKey + '">' + c.label + '</button>' : c.label;
+    return '<th' + (cls ? ' class="' + cls + '"' : '') + aria + '>' + label + '</th>';
+  }).join('');
+  const tdClass = (c) => [c.lead ? 'lead' : c.num ? 'num' : '', c.phoneHide ? 'ph' : ''].filter(Boolean).join(' ');
+  const body = rows.map((r) => '<tr' + (rowAttrs ? rowAttrs(r) : '') + '>' + columns.map((c) =>
+    '<td data-label="' + c.label + '"' + (tdClass(c) ? ' class="' + tdClass(c) + '"' : '') + '>' +
+    (c.lead ? c.render(r) : '<div class="cell">' + c.render(r) + '</div>') + '</td>').join('') + '</tr>').join('');
+  return '<table class="stack"><thead><tr>' + head + '</tr></thead><tbody>' + body + (extraRows || '') + '</tbody></table>';
+};
+
+const sortRows = (rows, id, valueOf) => {
+  const { key, dir } = sortState[id];
+  const sign = dir === 'asc' ? 1 : -1;
+  return rows.slice().sort((a, b) => {
+    const va = valueOf(a, key);
+    const vb = valueOf(b, key);
+    if (va === vb) return 0;
+    if (va === null || va === undefined) return 1;
+    if (vb === null || vb === undefined) return -1;
+    return (typeof va === 'string' ? va.localeCompare(vb) : va - vb) * sign;
   });
-});
+};
 
+// Charts load from a CDN; if that fails the numbers and tables still work.
+const drawChart = (id, config) => {
+  if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  const canvas = document.getElementById(id);
+  if (!canvas) return;
+  if (typeof Chart === 'undefined') {
+    canvas.parentElement.innerHTML = '<p class="chart-missing">The chart couldn\'t load. The numbers below are complete.</p>';
+    return;
+  }
+  charts[id] = new Chart(canvas, config);
+};
+
+const COLORS = { blue: 'rgba(74,144,217,0.78)', blueLine: '#2a6cb5', amber: 'rgba(230,145,20,0.8)', gray: '#9aa5b1', band: 'rgba(74,144,217,0.14)' };
+
+// ===== Loading and messages =====
 const showLoading = () => {
   document.getElementById('loading').style.display = 'flex';
   document.getElementById('dashboard').style.display = 'none';
@@ -407,10 +482,13 @@ const showData = (json) => {
     showMessage('Error: Could not read the numbers. Try refreshing.');
     return;
   }
+  custByName = new Map((dashData.customers || []).map((c) => [c.name, c]));
+  predByName = new Map((dashData.predictions || []).map((p) => [p.customer, p]));
+  debtByName = new Map(((dashData.collections || {}).debtors || []).map((d) => [d.customer, d]));
   document.getElementById('loading').style.display = 'none';
   document.getElementById('dashboard').style.display = 'block';
-  const gen = new Date(dashData.generated);
-  document.getElementById('last-updated').textContent = 'Last refreshed: ' + gen.toLocaleString();
+  document.getElementById('last-updated').textContent = 'Last refreshed ' +
+    generatedAt().toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const renders = [
     ['Revenue', renderRevenue],
     ['Customers', renderCustomers],
@@ -419,7 +497,7 @@ const showData = (json) => {
     ['Collections', renderCollections]
   ];
   for (const [name, fn] of renders) {
-    try { fn(); } catch(e) { console.error('Render error in ' + name + ':', e); }
+    try { fn(); } catch (e) { console.error('Render error in ' + name + ':', e); }
   }
 };
 
@@ -431,679 +509,643 @@ window.addEventListener('message', (event) => {
   else if (type === 'aip:error') showMessage('Error: ' + event.data.message);
 });
 
-const fmt = (n) => { return '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }); };
-const fmtDec = (n) => { return '$' + (n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
-const safeEl = (id) => { const e = document.getElementById(id); if (!e) console.warn('Element not found:', id); return e; };
-
-// 'YYYY-MM' -> 'Jul' (or 'Jul 2026' with the year)
-const monthName = (ym, withYear) => {
-  const [y, m] = ym.split('-').map(Number);
-  return new Date(y, m - 1, 1).toLocaleString('en-US', { month: 'short' }) + (withYear ? ' ' + y : '');
-};
-const signedPct = (n) => (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
-const kpiCard = (label, value, detail, valueClass) =>
-  '<div class="kpi-card"><div class="label">' + label + '</div><div class="value' + (valueClass ? ' ' + valueClass : '') + '">' +
-  value + '</div><div class="detail">' + detail + '</div></div>';
-
 // ===== REVENUE TAB =====
+const thisMonthKpi = (s) => {
+  const t = s.thisMonth;
+  if (!t) {
+    const p = s.partialMonth;
+    return p ? kpiCard(monthLabel(p.month, 'long') + ' so far', money(p.revenue), p.dayOfMonth + ' days in') : '';
+  }
+  const pace = t.pacePct === null ? 'Nothing sold on these days last year'
+    : tone(t.pacePct, signedPct(t.pacePct)) + ' vs the same days last year (' + money(t.priorSameDays) + ')';
+  const finish = 'Should finish near ' + money(t.expected) + (t.priorMonth ? '; last year ' + money(t.priorMonth) : '');
+  return kpiCard(MONTHS_LONG[Number(t.month.slice(5)) - 1] + ' so far', money(t.actualToDate), pace + '<br>' + finish);
+};
+
+const ytdKpi = (s) => {
+  const y = s.ytd;
+  const vs = y.growthPct === null ? 'Nothing sold on these days last year'
+    : tone(y.growthPct, signedPct(y.growthPct)) + ' vs the same days last year (' + money(y.priorRevenue) + ')';
+  const core = y.core && y.core.growthPct !== null ? '<br>Core book ' + tone(y.core.growthPct, signedPct(y.core.growthPct)) + ' (see below)' : '';
+  return kpiCard('Year to date', money(y.revenue), vs + core);
+};
+
 // The growth the forecast uses: the last 3 complete months against the same months a year earlier.
 const growthKpi = (s) => {
   const g = s.growth;
-  if (!g) return kpiCard('Recent Growth', '&mdash;', 'Needs the updated Apps Script');
-  if (g.rawFactor === null) return kpiCard('Recent Growth', '&mdash;', 'No year-ago months to compare yet');
+  if (g.rawFactor === null) return kpiCard('Recent growth', '&mdash;', 'No year-ago months to compare yet');
   const change = (g.rawFactor - 1) * 100;
-  const capped = g.capped ? ' &middot; the forecast uses ' + signedPct((g.factor - 1) * 100) : '';
-  return kpiCard('Recent Growth', signedPct(change),
-    monthName(g.months[0]) + '&ndash;' + monthName(g.months[2]) + ' vs the same months a year earlier' + capped,
+  const capped = g.capped ? '; the forecast uses ' + signedPct((g.factor - 1) * 100) : '';
+  return kpiCard('Recent growth', signedPct(change),
+    monthLabel(g.months[0]).slice(0, 3) + '&ndash;' + monthLabel(g.months[2]) + ' vs a year earlier' + capped,
     change >= 0 ? 'positive' : 'negative');
-};
-
-const ytdKpi = (s, mr) => {
-  const y = s.ytd;
-  if (!y) {
-    // Older Apps Script: no same-days comparison
-    const year = new Date().getFullYear().toString();
-    return kpiCard('YTD Revenue', fmt(mr.filter(m => m.month.startsWith(year)).reduce((t, m) => t + m.revenue, 0)), 'This calendar year');
-  }
-  const detail = y.growthPct === null ? 'Nothing sold on these days last year'
-    : '<span class="' + (y.growthPct >= 0 ? 'positive' : 'negative') + '">' + signedPct(y.growthPct) + '</span> vs the same days last year (' + fmt(y.priorRevenue) + ')';
-  return kpiCard('YTD Revenue', fmt(y.revenue), detail);
 };
 
 const activeKpi = (s) => {
   const a = s.activeCustomers;
-  if (!a) return kpiCard('Customers', s.totalCustomers, 'All time');
-  return kpiCard('Active Customers', a.total, 'Ordered in the last ' + a.days + ' days: ' + a.business + ' businesses, ' +
-    a.individual + ' individuals &middot; ' + a.allTime + ' all time');
-};
-
-const forecastMethod = (s, fc) => {
-  const g = s.growth;
-  if (!g) return 'These numbers come from the older Apps Script; the Low/Expected/High method arrives with its update.';
-  const band = fc.length && fc[0].expected ? Math.round((1 - fc[0].low / fc[0].expected) * 100) : 25;
-  const growthText = g.rawFactor === null ? 'no growth adjustment yet (no year-ago months to compare)'
-    : signedPct((g.factor - 1) * 100) + ' growth (' + monthName(g.months[0]) + '&ndash;' + monthName(g.months[2]) +
-      ' against the same months a year earlier' + (g.capped ? ', capped' : '') + ')';
-  return 'How it works: Expected = the same month a year earlier &times; ' + growthText + '. Low and High are ' + band +
-    '% either side: replaying 2026, about 7 in 10 months landed in that range.';
+  const n = dashData.newAccounts;
+  const fresh = n && n.length ? '<br>' + n[n.length - 1].business + ' new businesses this month' : '';
+  return kpiCard('Active customers', a.total, 'Ordered in the last ' + a.days + ' days: ' + a.business + ' businesses, ' +
+    a.individual + ' individuals' + fresh);
 };
 
 const renderRevenue = () => {
   const s = dashData.summary;
+  document.getElementById('revenue-kpis').innerHTML = thisMonthKpi(s) + ytdKpi(s) + growthKpi(s) + activeKpi(s) +
+    kpiCard('Trailing 6-month avg', money(s.trailing6Avg), 'Per month, complete months', '', 'wide');
+  renderRevenueChart();
+  renderMovers(s);
+  renderNewAccounts();
+  renderForecast(s);
+  renderParents();
+};
+
+const renderRevenueChart = () => {
   const mr = dashData.monthlyRevenue;
+  const byMonth = new Map(mr.map((m) => [m.month, m.revenue]));
+  const lastYear = mr.map((m) => (byMonth.has(addMonths(m.month, -12)) ? byMonth.get(addMonths(m.month, -12)) : null));
+  document.getElementById('revenue-legend').innerHTML =
+    '<span><i class="swatch" style="background:' + COLORS.blue + '"></i>Revenue</span>' +
+    '<span><i class="swatch" style="background:' + COLORS.amber + '"></i>This month so far</span>' +
+    '<span><i class="swatch dash" style="border-color:' + COLORS.gray + '"></i>Same month a year earlier</span>';
+  drawChart('revenueChart', {
+    data: {
+      labels: mr.map((m) => monthLabel(m.month, 'short')),
+      datasets: [
+        { type: 'bar', label: 'Revenue', data: mr.map((m) => m.revenue), backgroundColor: mr.map((m) => (m.isPartial ? COLORS.amber : COLORS.blue)), borderRadius: 3, order: 2 },
+        { type: 'line', label: 'Same month a year earlier', data: lastYear, borderColor: COLORS.gray, borderDash: [5, 4], borderWidth: 2, pointRadius: 0, tension: 0.25, spanGaps: false, order: 1 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ' ' + ctx.dataset.label + ': ' + money(ctx.parsed.y) + (ctx.datasetIndex === 0 && mr[ctx.dataIndex].isPartial ? ' so far' : ''),
+            footer: (items) => {
+              const i = items[0].dataIndex;
+              if (mr[i].isPartial || !lastYear[i]) return '';
+              return 'vs a year earlier: ' + signedPct((mr[i].revenue / lastYear[i] - 1) * 100);
+            }
+          }
+        }
+      },
+      scales: { y: { ticks: { callback: axisMoney } }, x: { ticks: { maxRotation: 0, autoSkipPadding: 8 } } }
+    }
+  });
+};
 
-  if (s.partialMonth) {
-    document.getElementById('partial-note').innerHTML = '<div class="partial-note">&#128202; ' + s.partialMonth.month + ' is partial (' + s.partialMonth.dayOfMonth + ' days). Revenue so far: ' + fmt(s.partialMonth.revenue) + '. Averages and growth use complete months only.</div>';
-  }
+const moverRow = (c) => '<tr' + CUSTOMER_ATTRS(c.name) + '><td data-label="Customer" class="lead"><span class="name">' + esc(c.name) + '</span></td>' +
+  '<td data-label="This year" class="num">' + money(c.revenue) + '</td><td data-label="Last year" class="num ph">' + money(c.priorRevenue) + '</td>' +
+  '<td data-label="Change" class="num">' + tone(c.change, signedMoney(c.change)) + '</td></tr>';
 
-  document.getElementById('revenue-kpis').innerHTML =
-    kpiCard('Trailing 6-Month Avg', fmt(s.trailing6Avg), 'Per month (complete months)') +
-    growthKpi(s) + ytdKpi(s, mr) + activeKpi(s);
+const renderMovers = (s) => {
+  const y = s.ytd;
+  const box = document.getElementById('movers');
+  document.getElementById('movers-card').style.display = y.movers ? '' : 'none'; // older Apps Script
+  if (!y.movers) return;
+  const m = y.movers;
+  const through = parseDay(y.through);
+  const range = 'Jan 1&ndash;' + MONTHS[through.getMonth()] + ' ' + through.getDate();
+  const head = '<thead><tr><th>Customer</th><th class="num">This year</th><th class="num">Last year</th><th class="num">Change</th></tr></thead>';
+  const section = (title) => '<tr class="section"><td colspan="4">' + title + '</td></tr>';
+  const core = y.core;
+  const oneOffs = core && core.excludedOrders.length
+    ? ' and ' + core.excludedOrders.map((x) => esc(x.customer) + '\'s ' + dayLabel(x.date) + ' order').join(', ') : '';
+  box.innerHTML = '<p class="note">' + range + ' against the same days last year: ' + tone(y.revenue - y.priorRevenue, signedMoney(y.revenue - y.priorRevenue)) +
+    (y.growthPct === null ? '' : ' (' + signedPct(y.growthPct) + ')') + '.</p>' +
+    '<div class="table-wrap"><table class="stack">' + head + '<tbody>' +
+    (m.gains.length ? section('Biggest gains') + m.gains.map(moverRow).join('') : '') +
+    (m.drops.length ? section('Biggest drops') + m.drops.map(moverRow).join('') : '') +
+    '<tr class="total"><td data-label="" class="lead">Everyone else (' + m.othersCount + ' customers)</td><td></td><td></td><td data-label="Change" class="num">' +
+    tone(m.othersChange, signedMoney(m.othersChange)) + '</td></tr></tbody></table></div>' +
+    (core && core.growthPct !== null ? '<p class="footnote">Core book: ' + money(core.revenue) + ' this year, ' + tone(core.growthPct, signedPct(core.growthPct)) +
+      ' against ' + money(core.priorRevenue) + '. That\'s every sale except ' + core.excludes.map(esc).join(', ') + oneOffs +
+      ', the same definition as the October 2026 state of the company review.</p>' : '');
+};
 
-  // Revenue chart
-  const labels = mr.map(m => m.month);
-  const data = mr.map(m => m.revenue);
-  const colors = mr.map(m => m.isPartial ? 'rgba(243,156,18,0.7)' : 'rgba(74,144,217,0.7)');
-
-  if (revenueChart) revenueChart.destroy();
-  revenueChart = new Chart(document.getElementById('revenueChart'), {
+const renderNewAccounts = () => {
+  const n = dashData.newAccounts;
+  document.getElementById('new-accounts-card').style.display = n && n.length ? '' : 'none'; // older Apps Script
+  if (!n || !n.length) return;
+  const last = n[n.length - 1];
+  const last12 = sum(n.slice(-12), (m) => m.business);
+  const prior12 = sum(n.slice(0, 12), (m) => m.business);
+  document.getElementById('new-accounts-note').innerHTML = 'Businesses by the month of their first order. This month: ' + last.business +
+    (last.individual ? ' (and ' + last.individual + ' individual' + (last.individual === 1 ? '' : 's') + ')' : '') +
+    '. Last 12 months: ' + last12 + '; the 12 before: ' + prior12 + '.';
+  drawChart('newAccountsChart', {
     type: 'bar',
-    data: { labels: labels, datasets: [{ label: 'Monthly Revenue', data: data, backgroundColor: colors, borderRadius: 4 }] },
+    data: {
+      labels: n.map((m) => monthLabel(m.month, 'short')),
+      datasets: [{ label: 'New businesses', data: n.map((m) => m.business), backgroundColor: n.map((m, i) => (i === n.length - 1 ? COLORS.amber : COLORS.blue)), borderRadius: 3 }]
+    },
     options: {
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: { y: { ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } }, x: { ticks: { maxRotation: 45 } } }
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: (items) => monthLabel(n[items[0].dataIndex].month, 'long'),
+            label: (ctx) => {
+              const m = n[ctx.dataIndex];
+              return ' ' + m.business + ' businesses' + (m.individual ? ', ' + m.individual + ' individuals' : '');
+            },
+            afterLabel: (ctx) => {
+              const names = n[ctx.dataIndex].businessNames || [];
+              return names.slice(0, 8).join('\n') + (names.length > 8 ? '\nand ' + (names.length - 8) + ' more' : '');
+            }
+          }
+        }
+      },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: { ticks: { maxRotation: 0, autoSkipPadding: 6 } } }
+    }
+  });
+};
+
+const forecastMethod = (s, fc) => {
+  const g = s.growth;
+  const growthText = g.rawFactor === null ? 'no growth adjustment yet (no year-ago months to compare)'
+    : signedPct((g.factor - 1) * 100) + ' growth (' + monthLabel(g.months[0]).slice(0, 3) + '&ndash;' + monthLabel(g.months[2]) +
+      ' against a year earlier' + (g.capped ? ', capped' : '') + ')';
+  const later = fc.length > 1 && fc[1].expected ? Math.round((1 - fc[1].low / fc[1].expected) * 100) : 25;
+  const thisMonth = fc[0] && fc[0].actualToDate !== undefined
+    ? ' This month = what has sold so far + the rest of the month at that rate; its range is &plusmn;35% of the rest.' : '';
+  return 'How it works: each month = the same month a year earlier &times; ' + growthText + '. Low and High are ' + later +
+    '% either side; replaying 2026, about 7 in 10 months landed in that range.' + thisMonth;
+};
+
+const renderForecast = (s) => {
+  const byMonth = new Map(dashData.monthlyRevenue.map((m) => [m.month, m.revenue]));
+  const fc = dashData.forecast.map((f, i) => ({
+    month: f.month, low: f.low, expected: f.expected, high: f.high,
+    lastYear: f.lastYear !== undefined ? f.lastYear : (byMonth.get(addMonths(f.month, -12)) ?? null),
+    soFar: f.actualToDate !== undefined ? f.actualToDate : (i === 0 && s.partialMonth && s.partialMonth.month === f.month ? s.partialMonth.revenue : null)
+  }));
+  document.getElementById('forecast-legend').innerHTML =
+    '<span><i class="swatch line" style="border-color:' + COLORS.blueLine + '"></i>Expected</span>' +
+    '<span><i class="swatch" style="background:' + COLORS.band + ';border:1px solid #b8d3f0"></i>Low&ndash;High</span>' +
+    '<span><i class="swatch dash" style="border-color:' + COLORS.gray + '"></i>Same month a year earlier</span>' +
+    '<span><i class="swatch" style="background:' + COLORS.amber + ';border-radius:50%"></i>Sold so far</span>';
+  drawChart('forecastChart', {
+    type: 'line',
+    data: {
+      labels: fc.map((f) => monthLabel(f.month, 'short')),
+      datasets: [
+        { label: 'High', data: fc.map((f) => f.high), borderColor: 'rgba(74,144,217,0.25)', backgroundColor: COLORS.band, fill: '+1', pointRadius: 0, tension: 0.3 },
+        { label: 'Low', data: fc.map((f) => f.low), borderColor: 'rgba(74,144,217,0.25)', fill: false, pointRadius: 0, tension: 0.3 },
+        { label: 'Expected', data: fc.map((f) => f.expected), borderColor: COLORS.blueLine, backgroundColor: COLORS.blueLine, borderWidth: 2.5, pointRadius: 3, tension: 0.3 },
+        { label: 'Same month a year earlier', data: fc.map((f) => f.lastYear), borderColor: COLORS.gray, borderDash: [5, 4], borderWidth: 2, pointRadius: 0, tension: 0.3 },
+        { label: 'Sold so far', data: fc.map((f) => f.soFar), showLine: false, pointRadius: 6, pointBackgroundColor: COLORS.amber, pointBorderColor: '#fff', borderColor: COLORS.amber }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { filter: (item) => item.parsed.y !== null, callbacks: { label: (ctx) => ' ' + ctx.dataset.label + ': ' + money(ctx.parsed.y) } }
+      },
+      scales: { y: { ticks: { callback: axisMoney } }, x: { ticks: { maxRotation: 0 } } }
     }
   });
 
-  // Forecast: Expected with a Low-High range (an older Apps Script calls them moderate/conservative/aggressive)
-  const fc = dashData.forecast.map(f => ({
-    month: f.month,
-    low: f.low !== undefined ? f.low : f.conservative,
-    expected: f.expected !== undefined ? f.expected : f.moderate,
-    high: f.high !== undefined ? f.high : f.aggressive
-  }));
-  if (forecastChart) forecastChart.destroy();
-  forecastChart = new Chart(document.getElementById('forecastChart'), {
-    type: 'line',
-    data: {
-      labels: fc.map(f => f.month),
-      datasets: [
-        { label: 'High', data: fc.map(f => f.high), borderColor: 'rgba(46,204,113,0.8)', backgroundColor: 'rgba(46,204,113,0.1)', fill: true, tension: 0.3 },
-        { label: 'Expected', data: fc.map(f => f.expected), borderColor: 'rgba(74,144,217,0.9)', backgroundColor: 'rgba(74,144,217,0.1)', fill: true, tension: 0.3, borderWidth: 3 },
-        { label: 'Low', data: fc.map(f => f.low), borderColor: 'rgba(243,156,18,0.8)', backgroundColor: 'rgba(243,156,18,0.1)', fill: true, tension: 0.3 }
-      ]
-    },
-    options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: v => '$' + (v/1000).toFixed(0) + 'k' } } } }
-  });
+  const cell = (v) => (v === null || v === undefined ? '&mdash;' : money(v));
+  const columns = [
+    { label: 'Month', lead: true, render: (f) => '<span class="name">' + monthLabel(f.month) + '</span>' + (f.soFar !== null ? '<div class="sub">Sold so far: ' + money(f.soFar) + '</div>' : '') },
+    { label: 'Last year', num: true, render: (f) => cell(f.lastYear) },
+    { label: 'Low', num: true, render: (f) => money(f.low) },
+    { label: 'Expected', num: true, render: (f) => '<strong>' + money(f.expected) + '</strong>' },
+    { label: 'High', num: true, render: (f) => money(f.high) }
+  ];
+  const total = (key) => sum(fc, (f) => f[key] || 0);
+  const totalRow = '<tr class="total"><td data-label="" class="lead">Next ' + fc.length + ' months</td><td data-label="Last year" class="num">' + money(total('lastYear')) +
+    '</td><td data-label="Low" class="num">' + money(total('low')) + '</td><td data-label="Expected" class="num">' + money(total('expected')) +
+    '</td><td data-label="High" class="num">' + money(total('high')) + '</td></tr>';
+  document.getElementById('forecast-table').innerHTML = buildTable({ columns, rows: fc, extraRows: totalRow }) +
+    '<p class="footnote">' + forecastMethod(s, dashData.forecast) + '</p>';
+};
 
-  // Forecast table with the total of the months shown
-  const total = (key) => fc.reduce((t, f) => t + f[key], 0);
-
-  document.getElementById('forecast-table').innerHTML =
-    '<table class="forecast-table"><thead><tr><th>Month</th><th>Low</th><th>Expected</th><th>High</th></tr></thead><tbody>' +
-    fc.map((f, i) => '<tr><td>' + f.month + (i === 0 ? ' (this month)' : '') + '</td><td>' + fmt(f.low) + '</td><td>' + fmt(f.expected) + '</td><td>' + fmt(f.high) + '</td></tr>').join('') +
-    '<tr class="annual-total"><td>NEXT ' + fc.length + ' MONTHS</td><td>' + fmt(total('low')) + '</td><td>' + fmt(total('expected')) + '</td><td>' + fmt(total('high')) + '</td></tr>' +
-    '</tbody></table>' +
-    '<p style="font-size:11px;color:var(--text-light);margin-top:8px">' + forecastMethod(s, fc) + '</p>';
-
-  // Parent companies
+const renderParents = () => {
   const pcs = dashData.parentCompanies || [];
-  if (pcs.length === 0) {
-    document.getElementById('parent-companies').innerHTML = '<p style="color:var(--text-light)">No parent company data found. Make sure the "Parent Companies" tab exists in the spreadsheet.</p>';
-  } else {
-    document.getElementById('parent-companies').innerHTML = pcs.map(p =>
-      '<div class="parent-card" onclick="openParentModal(\'' + p.name.replace(/'/g, "\\'") + '\')">' +
-      '<h4>' + p.name + '</h4>' +
-      '<div class="meta">' + p.childCount + ' locations &middot; Total: ' + fmtDec(p.totalRevenue) + ' &middot; ' + p.orderCount + ' orders</div>' +
-      '<div class="locations">' + p.children.map(l => '<span class="loc-tag">' + l + '</span>').join('') + '</div>' +
-      '</div>'
-    ).join('');
+  const box = document.getElementById('parent-companies');
+  if (!pcs.length) {
+    box.innerHTML = '<p class="note">No parent company data found. Make sure the "Parent Companies" tab exists in the spreadsheet.</p>';
+    return;
   }
+  const ttmOf = (p) => sum(p.children, (name) => (custByName.get(name) || {}).ttmRevenue || 0);
+  const hasTtm = pcs.some((p) => p.children.some((name) => (custByName.get(name) || {}).ttmRevenue !== undefined));
+  const rows = pcs.map((p) => ({ ...p, ttm: hasTtm ? ttmOf(p) : null }));
+  if (hasTtm) rows.sort((a, b) => b.ttm - a.ttm);
+  const columns = [
+    { label: 'Parent company', lead: true, render: (p) => '<span class="name">' + esc(p.name) + '</span><div class="sub">' + p.children.map(esc).join(', ') + '</div>' },
+    { label: 'Locations', num: true, render: (p) => p.childCount },
+    { label: 'Last 12 months', num: true, render: (p) => (p.ttm === null ? '&mdash;' : money(p.ttm)) },
+    { label: 'All time', num: true, render: (p) => money(p.totalRevenue) },
+    { label: 'Orders', num: true, render: (p) => p.orderCount }
+  ];
+  box.innerHTML = buildTable({ columns, rows, rowAttrs: (p) => ' data-parent="' + esc(p.name) + '" tabindex="0"' });
 };
 
-// ===== CUSTOMERS TAB =====
+// ===== CUSTOMER HEALTH TAB =====
+const HEALTH_BADGE = { Growing: 'badge-green', Steady: 'badge-blue', Shrinking: 'badge-orange', New: 'badge-purple', Slipping: 'badge-red', Lapsed: 'badge-gray', Lost: 'badge-gray' };
+
+// One label per customer, the first that applies, in this order
+const healthOf = (c) => {
+  if (c.lost) return 'Lost';
+  const p = predByName.get(c.name);
+  if ((p && p.status === 'Lapsed') || daysSince(c.lastOrder) > 180) return 'Lapsed';
+  if (p && (p.status === 'Overdue' || p.status === 'Past Due') && !p.stockUp) return 'Slipping';
+  if (daysSince(c.firstOrder) < 365) return 'New';
+  if (c.ttmRevenue === undefined || !c.priorTtmRevenue) return 'Steady';
+  if (c.ttmRevenue >= c.priorTtmRevenue * 1.15) return 'Growing';
+  if (c.ttmRevenue <= c.priorTtmRevenue * 0.85) return 'Shrinking';
+  return 'Steady';
+};
+
+const customerChange = (c) => (c.ttmRevenue !== undefined && c.priorTtmRevenue > 0 ? (c.ttmRevenue / c.priorTtmRevenue - 1) * 100 : null);
+
 const renderCustomers = () => {
-  allCustomers = dashData.customers;
-  document.getElementById('customer-count').textContent = '(' + allCustomers.length + ')';
-  renderCustomerTable(allCustomers);
+  const hasTtm = (dashData.customers || []).some((c) => c.ttmRevenue !== undefined);
+  document.getElementById('health-note').textContent = hasTtm
+    ? 'Health, the first that applies: Lost (in the account rules), Lapsed (no order in 6 months, or a whole usual gap late and 60+ days quiet), ' +
+      'Slipping (past their predicted reorder date, unless their last order was a big one), New (first order in the last 12 months), then Growing or Shrinking (last 12 months at least 15% above or below the 12 before) or Steady.'
+    : 'Last-12-month numbers need the updated Apps Script.';
+  applyCustomerFilters();
 };
 
-const renderCustomerTable = (customers) => {
-  document.getElementById('customers-table').innerHTML =
-    '<table><thead><tr><th>Customer</th><th>Parent</th><th>Revenue</th><th>Orders</th><th>Avg Order</th><th>Last Order</th><th></th></tr></thead><tbody>' +
-    customers.map(c =>
-      '<tr><td><strong>' + c.name + '</strong></td>' +
-      '<td>' + (c.parent || '&mdash;') + '</td>' +
-      '<td>' + fmtDec(c.totalRevenue) + '</td>' +
-      '<td>' + c.orderCount + '</td>' +
-      '<td>' + fmtDec(c.avgOrderValue) + '</td>' +
-      '<td>' + c.lastOrder + '</td>' +
-      '<td><a href="#" onclick="openCustomerModal(\'' + c.name.replace(/'/g, "\\'") + '\');return false" style="color:var(--blue);text-decoration:none;font-size:12px">Details &rarr;</a></td></tr>'
-    ).join('') + '</tbody></table>';
-};
-
-const filterCustomers = (query) => {
-  const q = query.toLowerCase();
-  const filtered = allCustomers.filter(c =>
-    c.name.toLowerCase().includes(q) || (c.parent || '').toLowerCase().includes(q)
-  );
-  document.getElementById('customer-count').textContent = '(' + filtered.length + ')';
-  renderCustomerTable(filtered);
+const applyCustomerFilters = () => {
+  const q = document.getElementById('cust-search').value.trim().toLowerCase();
+  const health = document.getElementById('cust-health').value;
+  const recentOnly = document.getElementById('cust-recent').checked;
+  const all = (dashData.customers || []).map((c) => ({ ...c, health: healthOf(c), change: customerChange(c) }));
+  const rows = all.filter((c) => (!q || c.name.toLowerCase().includes(q) || (c.parent || '').toLowerCase().includes(q)) &&
+    (health === 'all' || c.health === health) && (!recentOnly || daysSince(c.lastOrder) < 365));
+  const valueOf = (c, key) => ({ name: c.name.toLowerCase(), health: c.health, ttm: c.ttmRevenue ?? null, change: c.change,
+    orders: c.orderCount, last: c.lastOrder, total: c.totalRevenue })[key];
+  const sorted = sortRows(rows, 'customers', valueOf);
+  document.getElementById('customer-count').textContent = '(' + rows.length + ' of ' + all.length + ')';
+  const columns = [
+    { label: 'Customer', lead: true, sortKey: 'name', render: (c) => '<span class="name">' + esc(c.name) + '</span>' + (parentOf(c.name, c.parent) ? '<div class="sub">' + esc(c.parent) + '</div>' : '') },
+    { label: 'Health', sortKey: 'health', render: (c) => '<span class="badge ' + HEALTH_BADGE[c.health] + '">' + c.health + '</span>' },
+    { label: 'Last 12 months', num: true, sortKey: 'ttm', render: (c) => (c.ttmRevenue === undefined ? '&mdash;' : money(c.ttmRevenue)) },
+    { label: 'vs the 12 before', num: true, sortKey: 'change', render: (c) => (c.change === null ? '<span class="muted">&mdash;</span>' : tone(c.change, signedPct(c.change))) },
+    { label: 'Orders', num: true, sortKey: 'orders', phoneHide: true, render: (c) => c.orderCount },
+    { label: 'Last order', num: true, sortKey: 'last', render: (c) => dayLabel(c.lastOrder) },
+    { label: 'All time', num: true, sortKey: 'total', phoneHide: true, render: (c) => money(c.totalRevenue) }
+  ];
+  document.getElementById('customers-table').innerHTML = sorted.length
+    ? buildTable({ id: 'customers', columns, rows: sorted, rowAttrs: (c) => CUSTOMER_ATTRS(c.name) })
+    : '<p class="note">No customers match.</p>';
 };
 
 // ===== CUSTOMER DETAIL MODAL =====
-const openCustomerModal = (name) => {
-  const c = allCustomers.find(x => x.name === name);
-  if (!c) return;
+const STATUS_BADGE = { 'Overdue': 'badge-red', 'Past Due': 'badge-orange', 'Due Soon': 'badge-amber', 'Coming Up': 'badge-blue',
+  'On Track': 'badge-green', 'Off-season': 'badge-purple', 'Lapsed': 'badge-gray', 'Lost': 'badge-gray' };
+const statusBadge = (status) => '<span class="badge ' + (STATUS_BADGE[status] || 'badge-gray') + '">' + status + '</span>';
 
-  document.getElementById('modal-title').textContent = c.name + (c.parent ? ' (' + c.parent + ')' : '');
-
-  let html =
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px">' +
-    '<div class="kpi-card"><div class="label">Total Revenue</div><div class="value" style="font-size:20px">' + fmtDec(c.totalRevenue) + '</div></div>' +
-    '<div class="kpi-card"><div class="label">Orders</div><div class="value" style="font-size:20px">' + c.orderCount + '</div></div>' +
-    '<div class="kpi-card"><div class="label">Avg Order</div><div class="value" style="font-size:20px">' + fmtDec(c.avgOrderValue) + '</div></div>' +
-    '<div class="kpi-card"><div class="label">Total Units</div><div class="value" style="font-size:20px">' + (c.totalUnits || 0).toLocaleString() + '</div></div>' +
-    '</div>' +
-    '<p style="font-size:13px;color:var(--text-light);margin-bottom:12px">First order: ' + c.firstOrder + ' &middot; Last order: ' + c.lastOrder + '</p>';
-
-  // Chart containers
-  html += '<div class="modal-charts">' +
-    '<div class="modal-chart-box"><h4>Monthly Sales Trend</h4><div class="modal-chart-container"><canvas id="modalTrendCanvas"></canvas></div></div>' +
-    '<div class="modal-chart-box"><h4>Product Breakout</h4><div class="modal-chart-container"><canvas id="modalProductCanvas"></canvas></div></div>' +
-    '</div>';
-
-  // Recent orders table
-  html += '<h4 style="margin:16px 0 8px">Recent Orders</h4>' +
-    '<table><thead><tr><th>Date</th><th>Product</th><th>Units</th><th>Amount</th><th>Paid</th></tr></thead><tbody>' +
-    (c.recentOrders || []).slice().reverse().map(o =>
-      '<tr><td>' + o.date + '</td><td>' + o.product + '</td><td>' + o.units + '</td><td>' + fmtDec(o.sales) + '</td>' +
-      '<td><span class="badge ' + (o.paid === 'YES' ? 'badge-green' : 'badge-red') + '">' + (o.paid === 'YES' ? 'Paid' : 'Unpaid') + '</span></td></tr>'
-    ).join('') + '</tbody></table>';
-
+const openModal = (title, html, drawCharts) => {
+  document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-content').innerHTML = html;
   document.getElementById('customer-modal').classList.add('active');
-
-  // Render charts after DOM is ready
-  setTimeout(() => renderModalCharts(c), 50);
-};
-
-const renderModalCharts = (c) => {
-  if (modalTrendChart) modalTrendChart.destroy();
-  if (modalProductChart) modalProductChart.destroy();
-
-  const md = c.monthlyData || [];
-  if (md.length > 0) {
-    modalTrendChart = new Chart(document.getElementById('modalTrendCanvas'), {
-      type: 'bar',
-      data: {
-        labels: md.map(m => m.month),
-        datasets: [{
-          label: 'Revenue',
-          data: md.map(m => m.revenue),
-          backgroundColor: 'rgba(74,144,217,0.7)',
-          borderRadius: 3
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: { y: { ticks: { callback: v => '$' + v } }, x: { ticks: { maxRotation: 45, font: { size: 10 } } } }
-      }
-    });
-  }
-
-  const pb = c.productBreakdown || [];
-  if (pb.length > 0) {
-    const prodColors = ['rgba(74,144,217,0.8)', 'rgba(46,204,113,0.8)', 'rgba(243,156,18,0.8)', 'rgba(231,76,60,0.8)', 'rgba(142,68,173,0.8)'];
-    modalProductChart = new Chart(document.getElementById('modalProductCanvas'), {
-      type: 'doughnut',
-      data: {
-        labels: pb.map(p => p.product || 'Unknown'),
-        datasets: [{
-          data: pb.map(p => p.revenue),
-          backgroundColor: prodColors.slice(0, pb.length)
-        }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: {
-          legend: { position: 'bottom', labels: { font: { size: 11 } } },
-          tooltip: { callbacks: { label: ctx => ctx.label + ': ' + fmtDec(ctx.parsed) + ' (' + pb[ctx.dataIndex].units + ' units)' } }
-        }
-      }
-    });
-  }
-};
-
-const openParentModal = (parentName) => {
-  const pc = (dashData.parentCompanies || []).find(p => p.name === parentName);
-  if (!pc) return;
-
-  document.getElementById('modal-title').textContent = pc.name + ' (Parent Company)';
-
-  let html =
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px">' +
-    '<div class="kpi-card"><div class="label">Total Revenue</div><div class="value" style="font-size:20px">' + fmtDec(pc.totalRevenue) + '</div></div>' +
-    '<div class="kpi-card"><div class="label">Locations</div><div class="value" style="font-size:20px">' + pc.childCount + '</div></div>' +
-    '<div class="kpi-card"><div class="label">Total Orders</div><div class="value" style="font-size:20px">' + pc.orderCount + '</div></div>' +
-    '<div class="kpi-card"><div class="label">Total Units</div><div class="value" style="font-size:20px">' + (pc.totalUnits || 0).toLocaleString() + '</div></div>' +
-    '</div>';
-
-  html += '<div class="modal-charts">' +
-    '<div class="modal-chart-box"><h4>Monthly Revenue</h4><div class="modal-chart-container"><canvas id="modalTrendCanvas"></canvas></div></div>' +
-    '<div class="modal-chart-box"><h4>Product Breakout</h4><div class="modal-chart-container"><canvas id="modalProductCanvas"></canvas></div></div>' +
-    '</div>';
-
-  // Location breakdown table
-  html += '<h4 style="margin:16px 0 8px">Locations</h4><table><thead><tr><th>Location</th><th>Revenue</th><th>Orders</th></tr></thead><tbody>';
-  for (const childName of pc.children) {
-    const child = allCustomers.find(c => c.name === childName);
-    if (child) {
-      html += '<tr><td><a href="#" onclick="closeModal();setTimeout(()=>openCustomerModal(\'' + child.name.replace(/'/g, "\\'") + '\'),200);return false" style="color:var(--blue)">' + child.name + '</a></td><td>' + fmtDec(child.totalRevenue) + '</td><td>' + child.orderCount + '</td></tr>';
-    }
-  }
-  html += '</tbody></table>';
-
-  document.getElementById('modal-content').innerHTML = html;
-  document.getElementById('customer-modal').classList.add('active');
-
-  setTimeout(() => {
-    if (modalTrendChart) modalTrendChart.destroy();
-    if (modalProductChart) modalProductChart.destroy();
-    const md = pc.monthlyData || [];
-    if (md.length > 0) {
-      modalTrendChart = new Chart(document.getElementById('modalTrendCanvas'), {
-        type: 'bar',
-        data: { labels: md.map(m => m.month), datasets: [{ label: 'Revenue', data: md.map(m => m.revenue), backgroundColor: 'rgba(74,144,217,0.7)', borderRadius: 3 }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { ticks: { callback: v => '$' + v } }, x: { ticks: { maxRotation: 45, font: { size: 10 } } } } }
-      });
-    }
-    const pb = pc.productBreakdown || [];
-    if (pb.length > 0) {
-      modalProductChart = new Chart(document.getElementById('modalProductCanvas'), {
-        type: 'doughnut',
-        data: { labels: pb.map(p => p.product || 'Unknown'), datasets: [{ data: pb.map(p => p.revenue), backgroundColor: ['rgba(74,144,217,0.8)', 'rgba(46,204,113,0.8)', 'rgba(243,156,18,0.8)', 'rgba(231,76,60,0.8)'] }] },
-        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } } } }
-      });
-    }
-  }, 50);
+  document.querySelector('#customer-modal .close-btn').focus();
+  setTimeout(drawCharts, 50);
 };
 
 const closeModal = () => {
   document.getElementById('customer-modal').classList.remove('active');
-  if (modalTrendChart) { modalTrendChart.destroy(); modalTrendChart = null; }
-  if (modalProductChart) { modalProductChart.destroy(); modalProductChart = null; }
+  for (const id of ['modalTrendCanvas', 'modalProductCanvas']) if (charts[id]) { charts[id].destroy(); delete charts[id]; }
 };
 
-// ===== PREDICTIONS TAB (sortable + filterable) =====
-// The Apps Script sets every status from 2026-10-19 on (its predictions carry tooNew). With an
-// older one, work out Lapsed and Past Due here the same way.
-const statusOf = (p) => {
-  if (p.tooNew !== undefined) return p.status;
-  if (p.daysUntil < -p.avgInterval) return 'Lapsed';
-  if (p.daysUntil < -14) return 'Overdue';
-  if (p.daysUntil < 0) return 'Past Due';
-  return p.status;
+const modalCharts = (monthlyData, productBreakdown) => () => {
+  const md = (monthlyData || []).slice(-24);
+  if (md.length) {
+    drawChart('modalTrendCanvas', {
+      type: 'bar',
+      data: { labels: md.map((m) => monthLabel(m.month, 'short')), datasets: [{ label: 'Revenue', data: md.map((m) => m.revenue), backgroundColor: COLORS.blue, borderRadius: 3 }] },
+      options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ' ' + money(ctx.parsed.y) } } },
+        scales: { y: { ticks: { callback: axisMoney } }, x: { ticks: { maxRotation: 0, autoSkipPadding: 6, font: { size: 10 } } } } }
+    });
+  }
+  const pb = productBreakdown || [];
+  if (pb.length) {
+    drawChart('modalProductCanvas', {
+      type: 'doughnut',
+      data: { labels: pb.map((p) => p.product || 'Unknown'), datasets: [{ data: pb.map((p) => p.revenue), backgroundColor: ['rgba(74,144,217,0.85)', 'rgba(30,158,90,0.8)', 'rgba(230,145,20,0.8)', 'rgba(192,57,43,0.8)', 'rgba(106,61,154,0.8)'] }] },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { font: { size: 11 } } },
+          tooltip: { callbacks: { label: (ctx) => ctx.label + ': ' + money2(ctx.parsed) + ' (' + pb[ctx.dataIndex].units + ' units)' } } } }
+    });
+  }
 };
-const STATUS_ORDER = ['Overdue', 'Past Due', 'Due Soon', 'Coming Up', 'On Track', 'Lapsed'];
-const STATUS_BADGE = { 'Overdue': 'badge-red', 'Past Due': 'badge-orange', 'Due Soon': 'badge-amber',
-  'Coming Up': 'badge-blue', 'On Track': 'badge-green', 'Lapsed': 'badge-gray' };
 
-const renderPredictions = () => {
-  allPredictions = dashData.predictions || [];
-  applyPredictionFilters();
+const chartBoxes = (trendTitle) => '<div class="modal-charts">' +
+  '<div class="modal-chart-box"><h4>' + trendTitle + '</h4><div class="modal-chart-container"><canvas id="modalTrendCanvas" role="img" aria-label="' + trendTitle + '"></canvas></div></div>' +
+  '<div class="modal-chart-box"><h4>Product breakout</h4><div class="modal-chart-container"><canvas id="modalProductCanvas" role="img" aria-label="Revenue by product"></canvas></div></div>' +
+  '</div>';
+
+const openCustomerModal = (name) => {
+  const c = custByName.get(name);
+  if (!c) return;
+  const p = predByName.get(name);
+  const d = debtByName.get(name);
+  const change = customerChange(c);
+  let html = '<div class="kpi-row">' +
+    kpiCard('Last 12 months', c.ttmRevenue === undefined ? '&mdash;' : money(c.ttmRevenue), change === null ? (c.priorTtmRevenue === 0 ? 'Nothing the 12 before' : '&nbsp;') : tone(change, signedPct(change)) + ' vs the 12 before') +
+    kpiCard('All time', money(c.totalRevenue), 'Since ' + dayLabel(c.firstOrder)) +
+    kpiCard('Orders', c.orderCount, money(c.avgOrderValue) + ' average') +
+    kpiCard('Owed', d ? money2(d.totalOwed) : '$0', d ? (d.pastDueOwed > 0 ? '<span class="negative">' + money2(d.pastDueOwed) + ' past due</span>' : 'Not late') : 'Nothing unpaid') +
+    '</div>';
+  if (p) {
+    html += '<div class="account-line">' + statusBadge(p.status) + ' Usually orders every ' + days(p.avgInterval) + '. Last order ' + dayLabel(p.lastOrder) +
+      ' (' + days(daysSinceLastOf(p)) + ' ago, ' + (p.lastOrderCans || 0).toLocaleString() + ' cans). Expected ' + dayLabel(p.predictedDate) + '.' +
+      (reasonExtras(p).length ? '<div class="reason">' + reasonExtras(p).join(' ') + '</div>' : '') + '</div>';
+  }
+  html += chartBoxes('Monthly sales, last 24 months');
+  html += '<h4 class="section">Recent orders</h4>' + buildTable({
+    columns: [
+      { label: 'Date', lead: true, render: (o) => dayLabel(o.date) },
+      { label: 'Product', render: (o) => esc(o.product) },
+      { label: 'Units', num: true, render: (o) => o.units },
+      { label: 'Amount', num: true, render: (o) => money2(o.sales) },
+      { label: 'Paid', render: (o) => '<span class="badge ' + (o.paid === 'YES' ? 'badge-green' : 'badge-red') + '">' + (o.paid === 'YES' ? 'Paid' : 'Unpaid') + '</span>' }
+    ],
+    rows: (c.recentOrders || []).slice().reverse()
+  });
+  openModal(c.name + (parentOf(c.name, c.parent) ? ' (' + c.parent + ')' : ''), html, modalCharts(c.monthlyData, c.productBreakdown));
 };
 
-// The cards count the customers the table can list: same search, revenue and active filters, any status.
-const renderPredictionKpis = (preds, lapsedHidden) => {
-  const count = (status) => preds.filter(p => statusOf(p) === status).length;
-  const learned = preds.filter(p => p.predictionMethod === 'learned').length;
-  const blended = preds.filter(p => p.predictionMethod === 'blended').length;
-  const intervalOnly = preds.filter(p => p.predictionMethod === 'interval').length;
-  const seasonal = preds.filter(p => p.seasonalIndex && p.seasonalIndex !== 1).length;
-  const tooNew = preds.filter(p => p.tooNew).length;
-
-  document.getElementById('prediction-kpis').innerHTML =
-    '<div class="kpi-card"><div class="label">Overdue</div><div class="value negative">' + count('Overdue') + '</div><div class="detail">More than 2 weeks past the predicted date</div></div>' +
-    '<div class="kpi-card"><div class="label">Past Due</div><div class="value" style="color:#b5530a">' + count('Past Due') + '</div><div class="detail">1&ndash;14 days past the predicted date</div></div>' +
-    '<div class="kpi-card"><div class="label">Due Soon</div><div class="value" style="color:var(--amber)">' + count('Due Soon') + '</div><div class="detail">Today to 14 days out</div></div>' +
-    '<div class="kpi-card"><div class="label">Coming Up</div><div class="value" style="color:var(--blue)">' + count('Coming Up') + '</div><div class="detail">15&ndash;30 days out</div></div>' +
-    '<div class="kpi-card"><div class="label">Prediction Quality</div><div class="value">' + preds.length + '</div><div class="detail" style="line-height:1.6">' +
-    '<span style="color:#2ecc71;font-weight:600">' + learned + '</span> learned · ' +
-    '<span style="color:#4a90d9;font-weight:600">' + blended + '</span> blended · ' +
-    '<span style="color:#f39c12;font-weight:600">' + intervalOnly + '</span> interval-only' +
-    (seasonal > 0 ? '<br>' + seasonal + ' with seasonal adjustment' : '') +
-    (tooNew > 0 ? '<br>' + tooNew + ' too new to predict (3 or fewer orders)' : '') +
-    (lapsedHidden > 0 ? '<br>' + lapsedHidden + ' lapsed not shown' : '') +
-    '</div></div>';
+const openParentModal = (parentName) => {
+  const pc = (dashData.parentCompanies || []).find((p) => p.name === parentName);
+  if (!pc) return;
+  let html = '<div class="kpi-row">' +
+    kpiCard('All time', money(pc.totalRevenue), '') +
+    kpiCard('Locations', pc.childCount, '') +
+    kpiCard('Orders', pc.orderCount, '') +
+    kpiCard('Units', (pc.totalUnits || 0).toLocaleString(), '') + '</div>';
+  html += chartBoxes('Monthly revenue, last 24 months');
+  const children = pc.children.map((n) => custByName.get(n)).filter(Boolean);
+  html += '<h4 class="section">Locations</h4>' + buildTable({
+    columns: [
+      { label: 'Location', lead: true, render: (c) => '<span class="name">' + esc(c.name) + '</span>' },
+      { label: 'Last 12 months', num: true, render: (c) => (c.ttmRevenue === undefined ? '&mdash;' : money(c.ttmRevenue)) },
+      { label: 'All time', num: true, render: (c) => money(c.totalRevenue) },
+      { label: 'Orders', num: true, render: (c) => c.orderCount },
+      { label: 'Last order', num: true, render: (c) => dayLabel(c.lastOrder) }
+    ],
+    rows: children,
+    rowAttrs: (c) => CUSTOMER_ATTRS(c.name)
+  });
+  openModal(pc.name + ' (parent company)', html, modalCharts(pc.monthlyData, pc.productBreakdown));
 };
+
+// ===== PREDICTIONS TAB =====
+const STATUS_TIER = { 'Overdue': 0, 'Past Due': 0, 'Due Soon': 1, 'Coming Up': 2, 'On Track': 3, 'Off-season': 4, 'Lapsed': 5, 'Lost': 6 };
+const GONE = ['Lapsed', 'Lost'];
+const daysSinceLastOf = (p) => (p.daysSinceLast !== undefined ? p.daysSinceLast : daysSince(p.lastOrder));
+const ttmOf = (p) => (p.ttmRevenue !== undefined ? p.ttmRevenue : p.totalRevenue || 0);
+// An older Apps Script sends all-time sales only
+const salesLabel = () => ((dashData.predictions || []).some((p) => p.ttmRevenue !== undefined) ? 'Last 12 months' : 'All-time sales');
+
+// Priority: late accounts first, biggest first (a big last order counts half, since those
+// reorder less often); then everyone else by their expected date.
+const priorityValue = (p) => {
+  const tier = STATUS_TIER[p.status] ?? 3;
+  return tier === 0 ? 1e9 + ttmOf(p) * (p.stockUp ? 0.5 : 1) : (6 - tier) * 1e6 - p.daysUntil;
+};
+
+const reasonExtras = (p) => {
+  const notes = [];
+  if (p.stockUp) notes.push('Last order was ' + p.lastOrderRatio + '&times; their usual (' + p.lastOrderCans.toLocaleString() + ' cans vs ' +
+    p.usualCans.toLocaleString() + '), so they may not need more yet.');
+  if (p.status === 'Off-season' || (p.offSeasonMonths && p.status !== 'Lost')) notes.push('Seasonal: slow in ' + monthRun(p.offSeasonMonths) + '.');
+  if (p.status === 'Lost') notes.push('Marked lost in the account rules.');
+  if (p.tooNew) notes.push('Only ' + p.orderCount + ' orders, so this date is a rough guess.');
+  return notes;
+};
+
+const reasonOf = (p) => {
+  const since = daysSinceLastOf(p);
+  const late = p.status === 'Overdue' || p.status === 'Past Due' || p.status === 'Lapsed';
+  const first = late ? days(since) + ' since the last order; usually every ' + days(p.avgInterval) + '.'
+    : 'Usually orders every ' + days(p.avgInterval) + '; the last order was ' + days(since) + ' ago.';
+  return [first].concat(reasonExtras(p)).join(' ');
+};
+
+const whenText = (p) => (p.daysUntil < 0 ? '<span class="negative">' + days(-p.daysUntil) + ' late</span>' : p.daysUntil === 0 ? 'Today' : 'In ' + days(p.daysUntil));
+
+const renderPredictions = () => applyPredictionFilters();
 
 const applyPredictionFilters = () => {
-  const status = document.getElementById('pred-status-filter').value;
-  const search = (document.getElementById('pred-search').value || '').toLowerCase();
-  const minRev = parseFloat(document.getElementById('pred-min-revenue').value) || 0;
-  // Choosing "Lapsed" lists them even while "Active customers only" is ticked
-  const activeOnly = document.getElementById('pred-active-only').checked && status !== 'Lapsed';
+  const all = dashData.predictions || [];
+  const status = document.getElementById('pred-status').value;
+  const q = document.getElementById('pred-search').value.trim().toLowerCase();
+  const regularsOnly = document.getElementById('pred-regulars').checked;
+  // Choosing Lapsed or Lost lists them even while "Hide lapsed and lost" is ticked
+  const hideGone = document.getElementById('pred-hide-gone').checked && !GONE.includes(status);
+  const listable = all.filter((p) => (!q || p.customer.toLowerCase().includes(q) || (p.parent || '').toLowerCase().includes(q)) &&
+    (!regularsOnly || p.orderCount >= 4) && (!hideGone || !GONE.includes(p.status)));
+  const count = (s) => listable.filter((p) => p.status === s).length;
+  const lateTtm = sum(listable.filter((p) => STATUS_TIER[p.status] === 0), ttmOf);
+  document.getElementById('prediction-kpis').innerHTML =
+    kpiCard('Overdue', count('Overdue'), 'More than 2 weeks past the expected date', 'negative') +
+    kpiCard('Past Due', count('Past Due'), '1&ndash;14 days past the expected date', 'v-orange') +
+    kpiCard('Due Soon', count('Due Soon'), 'Today to 14 days out', 'v-amber') +
+    kpiCard('Coming Up', count('Coming Up'), '15&ndash;30 days out', 'v-blue') +
+    kpiCard('Revenue at stake', money(lateTtm), salesLabel() + ' of the Overdue and Past Due customers listed', '', 'wide');
 
-  const matching = allPredictions.filter(p => {
-    if (search && !p.customer.toLowerCase().includes(search) && !(p.parent || '').toLowerCase().includes(search)) return false;
-    if (minRev > 0 && (p.totalRevenue || 0) < minRev) return false;
-    return true;
-  });
-  const listable = activeOnly ? matching.filter(p => statusOf(p) !== 'Lapsed') : matching;
-  renderPredictionKpis(listable, matching.length - listable.length);
-
-  const filtered = listable.filter(p => status === 'all' || statusOf(p) === status);
-
-  // Sort (status by urgency)
-  filtered.sort((a, b) => {
-    let va = a[predSortCol], vb = b[predSortCol];
-    if (predSortCol === 'status') { va = STATUS_ORDER.indexOf(statusOf(a)); vb = STATUS_ORDER.indexOf(statusOf(b)); }
-    else if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
-    if (va < vb) return predSortDir === 'asc' ? -1 : 1;
-    if (va > vb) return predSortDir === 'asc' ? 1 : -1;
-    return 0;
-  });
-
-  document.getElementById('pred-count').textContent = '(' + filtered.length + ' of ' + allPredictions.length + ')';
-  renderPredictionTable(filtered);
-};
-
-const sortPredictions = (col) => {
-  if (predSortCol === col) {
-    predSortDir = predSortDir === 'asc' ? 'desc' : 'asc';
-  } else {
-    predSortCol = col;
-    predSortDir = 'asc';
-  }
-  applyPredictionFilters();
-};
-
-const predSortClass = (col) => {
-  if (predSortCol !== col) return 'sortable';
-  return 'sortable sort-' + predSortDir;
-};
-
-const methodLabel = (m) => {
-  if (m === 'learned') return 'Learned';
-  if (m === 'blended') return 'Blended';
-  return 'Interval';
-};
-const methodColor = (m) => {
-  if (m === 'learned') return '#2ecc71';
-  if (m === 'blended') return '#4a90d9';
-  return '#f39c12';
-};
-
-const renderPredictionTable = (preds) => {
-  document.getElementById('predictions-table').innerHTML =
-    '<table><thead><tr>' +
-    '<th class="' + predSortClass('customer') + '" onclick="sortPredictions(\'customer\')">Customer</th>' +
-    '<th class="' + predSortClass('totalRevenue') + '" onclick="sortPredictions(\'totalRevenue\')">Revenue</th>' +
-    '<th class="' + predSortClass('orderCount') + '" onclick="sortPredictions(\'orderCount\')">Orders</th>' +
-    '<th class="' + predSortClass('lastOrder') + '" onclick="sortPredictions(\'lastOrder\')">Last Order</th>' +
-    '<th class="' + predSortClass('avgCansPerDay') + '" onclick="sortPredictions(\'avgCansPerDay\')">Cans/Day</th>' +
-    '<th class="' + predSortClass('estimatedRemaining') + '" onclick="sortPredictions(\'estimatedRemaining\')">Est. Remaining</th>' +
-    '<th class="' + predSortClass('predictedDate') + '" onclick="sortPredictions(\'predictedDate\')">Predicted</th>' +
-    '<th class="' + predSortClass('daysUntil') + '" onclick="sortPredictions(\'daysUntil\')">Days Until</th>' +
-    '<th class="' + predSortClass('confidence') + '" onclick="sortPredictions(\'confidence\')">Confidence</th>' +
-    '<th class="' + predSortClass('status') + '" onclick="sortPredictions(\'status\')">Status</th>' +
-    '</tr></thead><tbody>' +
-    preds.map(p => {
-      const status = statusOf(p);
-      const sc = STATUS_BADGE[status] || 'badge-green';
-      const cansDay = p.avgCansPerDay != null ? p.avgCansPerDay : '—';
-      const remaining = p.estimatedRemaining != null ? p.estimatedRemaining + ' cans' : '—';
-      const lastInfo = p.lastOrderCans ? '<br><span style="font-size:11px;color:var(--text-light)">' + p.lastOrderCans + ' cans (avg ' + (p.avgOrderCans || '—') + ')</span>' : '';
-
-      // Build tooltip with prediction metadata
-      const mLabel = methodLabel(p.predictionMethod);
-      const mColor = methodColor(p.predictionMethod);
-      const seasonalNote = p.seasonalIndex && p.seasonalIndex !== 1 ? 'Seasonal adj: ' + p.seasonalIndex + 'x' : '';
-      const backtestNote = p.backtestConsumptionMAE != null
-        ? 'Backtest MAE: interval ' + p.backtestIntervalMAE + 'd, consumption ' + p.backtestConsumptionMAE + 'd'
-        : '';
-      const weightNote = p.consumptionWeight != null ? 'Consumption wt: ' + Math.round(p.consumptionWeight * 100) + '%' : '';
-      const tipParts = [mLabel + ' prediction', weightNote, seasonalNote, backtestNote].filter(s => s);
-      const tooltip = tipParts.join(' · ');
-
-      // Method badge for the predicted date cell
-      const methodBadge = '<br><span style="font-size:10px;padding:1px 6px;border-radius:8px;background:' + mColor + '22;color:' + mColor + ';font-weight:600" title="' + tooltip + '">' + mLabel + (p.seasonalIndex && p.seasonalIndex !== 1 ? ' · ' + p.seasonalIndex + 'x' : '') + '</span>';
-      // With 3 or fewer orders the date is only a rough guess
-      const newBadge = '<br><span class="badge badge-gray" title="Only ' + p.orderCount + ' orders so far, so this date is a rough guess">Too new to predict</span>';
-      const confidenceTip = p.tooNew !== undefined ? 'Chance the reorder lands within 2 weeks of this date, measured by replaying past orders' : tooltip;
-
-      return '<tr onclick="openCustomerModal(\'' + p.customer.replace(/'/g, "\\'") + '\')" style="cursor:pointer">' +
-        '<td><strong>' + p.customer + '</strong>' + (p.parent ? '<br><span style="font-size:11px;color:var(--text-light)">' + p.parent + '</span>' : '') + '</td>' +
-        '<td>' + fmtDec(p.totalRevenue || 0) + '</td>' +
-        '<td>' + (p.orderCount || 0) + '</td>' +
-        '<td>' + p.lastOrder + lastInfo + '</td>' +
-        '<td>' + cansDay + '</td>' +
-        '<td>' + remaining + '</td>' +
-        '<td title="' + tooltip + '">' + p.predictedDate + (p.tooNew ? newBadge : methodBadge) + '</td>' +
-        '<td>' + p.daysUntil + '</td>' +
-        '<td title="' + confidenceTip + '">' + p.confidence + '%</td>' +
-        '<td><span class="badge ' + sc + '">' + status + '</span></td></tr>';
-    }).join('') + '</tbody></table>';
+  const rows = listable.filter((p) => status === 'all' || p.status === status);
+  const valueOf = (p, key) => ({
+    priority: priorityValue(p), customer: p.customer.toLowerCase(), ttm: ttmOf(p), orders: p.orderCount, last: p.lastOrder,
+    gap: p.avgInterval, expected: p.predictedDate, when: p.daysUntil, confidence: p.confidence, status: STATUS_TIER[p.status] ?? 9
+  })[key];
+  const sorted = sortRows(rows, 'predictions', valueOf);
+  document.getElementById('pred-count').textContent = '(' + rows.length + ' of ' + all.length + ')';
+  document.getElementById('pred-sort-note').innerHTML = sortState.predictions.key === 'priority'
+    ? 'Late customers first, biggest first by ' + salesLabel().toLowerCase() + ' (a big last order counts half). Then everyone else by expected date. Click a column to sort by it.'
+    : 'Sorted by the column you picked. <button type="button" class="link-btn" data-action="pred-priority">Back to priority order</button>';
+  const columns = [
+    { label: 'Customer', lead: true, sortKey: 'customer', render: (p) => '<span class="name">' + esc(p.customer) + '</span>' +
+      (parentOf(p.customer, p.parent) ? ' <span class="sub">' + esc(p.parent) + '</span>' : '') + '<div class="reason">' + reasonOf(p) + '</div>' },
+    { label: salesLabel(), num: true, sortKey: 'ttm', render: (p) => money(ttmOf(p)) },
+    { label: 'Orders', num: true, sortKey: 'orders', phoneHide: true, render: (p) => p.orderCount },
+    { label: 'Last order', num: true, sortKey: 'last', render: (p) => dayLabel(p.lastOrder) + '<div class="sub">' + (p.lastOrderCans || 0).toLocaleString() + ' cans' +
+      (p.stockUp ? ', ' + p.lastOrderRatio + '&times; usual' : '') + '</div>' },
+    { label: 'Usual gap', num: true, sortKey: 'gap', phoneHide: true, render: (p) => days(p.avgInterval) },
+    { label: 'Expected', num: true, sortKey: 'expected', phoneHide: true, render: (p) => dayLabel(p.predictedDate) + (p.tooNew ? '<div><span class="badge badge-gray">Too new to predict</span></div>' : '') },
+    { label: 'When', num: true, sortKey: 'when', render: whenText },
+    { label: 'Confidence', num: true, sortKey: 'confidence', render: (p) => p.confidence + '%' },
+    { label: 'Status', sortKey: 'status', render: (p) => statusBadge(p.status) }
+  ];
+  document.getElementById('predictions-table').innerHTML = sorted.length
+    ? buildTable({ id: 'predictions', columns, rows: sorted, rowAttrs: (p) => CUSTOMER_ATTRS(p.customer) })
+    : '<p class="note">No customers match.</p>';
 };
 
 // ===== TOP CUSTOMERS TAB =====
-let topView = 'monthly';
-let topYearIndex = 0;
+const periods = () => {
+  if (view.top === 'monthly') return (dashData.topByMonth || []).map((m) => ({ ...m, label: monthLabel(m.month, 'long') + (m.isPartial ? ' (so far)' : '') }));
+  if (view.top === 'annual') return (dashData.topByYear || []).map((y) => ({ ...y, label: y.year + (y.isPartial ? ' (so far)' : '') }));
+  const a = dashData.topAllTime;
+  return a ? [{ ...a, label: 'All time' + (a.since ? ' (since ' + monthLabel(a.since) + ')' : '') }] : [];
+};
+
+const periodTotal = (p) => {
+  const mr = dashData.monthlyRevenue || [];
+  if (view.top === 'monthly') return sum(mr.filter((m) => m.month === p.month), (m) => m.revenue);
+  if (view.top === 'annual') return sum(mr.filter((m) => m.month.startsWith(p.year)), (m) => m.revenue);
+  return sum(mr, (m) => m.revenue);
+};
 
 const renderTopCustomers = () => {
-  topMonthIndex = 0;
-  topYearIndex = 0;
-  topView = 'monthly';
-  document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === 'monthly'));
-  showTopView();
-};
-
-const switchTopView = (view) => {
-  topView = view;
-  document.querySelectorAll('.view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === view));
-  showTopView();
-};
-
-const showTopView = () => {
-  document.getElementById('top-monthly-nav').style.display = topView === 'monthly' ? 'flex' : 'none';
-  document.getElementById('top-annual-nav').style.display = topView === 'annual' ? 'flex' : 'none';
-  document.getElementById('top-alltime-label').style.display = topView === 'alltime' ? 'block' : 'none';
-  if (topView === 'monthly') renderTopMonth();
-  else if (topView === 'annual') renderTopYear();
-  else renderTopAllTime();
-};
-
-const changeTopMonth = (dir) => {
-  const tbm = dashData.topByMonth || [];
-  topMonthIndex = Math.max(0, Math.min(tbm.length - 1, topMonthIndex + dir));
-  renderTopMonth();
-};
-
-const renderTopMonth = () => {
-  const tbm = dashData.topByMonth || [];
-  if (tbm.length === 0) {
-    document.getElementById('top-month-label').textContent = 'No data';
-    document.getElementById('top-individual-table').innerHTML = '<p style="color:var(--text-light)">No monthly data available.</p>';
+  view.topIndex = Math.min(view.topIndex, Math.max(0, periods().length - 1));
+  document.querySelectorAll('.view-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view.top));
+  document.getElementById('period-nav').style.visibility = view.top === 'alltime' ? 'hidden' : 'visible';
+  const list = periods();
+  const p = list[view.topIndex];
+  if (!p) {
+    document.getElementById('period-label').textContent = 'No data';
+    document.getElementById('top-individual-table').innerHTML = '<p class="note">No data available.</p>';
     document.getElementById('top-parent-table').innerHTML = '';
     return;
   }
-  const m = tbm[topMonthIndex];
-  document.getElementById('top-month-label').textContent = m.month + (m.isPartial ? ' (partial)' : '');
-  renderTopTables(m.topIndividual || [], m.topParent || []);
-};
-
-// --- Annual view ---
-const getYearList = () => {
-  if (dashData.topByYear) return dashData.topByYear.map(y => y.year); // newest first
-  const tbm = dashData.topByMonth || [];
-  const years = [...new Set(tbm.map(m => m.month.substring(0, 4)))];
-  years.sort((a, b) => b.localeCompare(a)); // newest first
-  return years;
-};
-
-const aggregateByPeriod = (months) => {
-  const indivMap = {};
-  const parentMap = {};
-  for (const m of months) {
-    for (const c of (m.topIndividual || [])) {
-      if (!indivMap[c.name]) indivMap[c.name] = { name: c.name, parent: c.parent, revenue: 0, units: 0 };
-      indivMap[c.name].revenue += c.revenue;
-      indivMap[c.name].units += c.units;
-    }
-    for (const p of (m.topParent || [])) {
-      if (!parentMap[p.name]) parentMap[p.name] = { name: p.name, revenue: 0, units: 0, childCount: p.childCount || 0 };
-      parentMap[p.name].revenue += p.revenue;
-      parentMap[p.name].units += p.units;
-      if (p.childCount > parentMap[p.name].childCount) parentMap[p.name].childCount = p.childCount;
-    }
-  }
-  const topIndividual = Object.values(indivMap).sort((a, b) => b.revenue - a.revenue).slice(0, 15);
-  const topParent = Object.values(parentMap).sort((a, b) => b.revenue - a.revenue).slice(0, 15);
-  return { topIndividual, topParent };
-};
-
-const changeTopYear = (dir) => {
-  const years = getYearList();
-  topYearIndex = Math.max(0, Math.min(years.length - 1, topYearIndex + dir));
-  renderTopYear();
-};
-
-const renderTopYear = () => {
-  const years = getYearList();
-  if (years.length === 0) {
-    document.getElementById('top-year-label').textContent = 'No data';
-    document.getElementById('top-individual-table').innerHTML = '<p style="color:var(--text-light)">No annual data available.</p>';
-    document.getElementById('top-parent-table').innerHTML = '';
-    return;
-  }
-  const year = years[topYearIndex];
-  // The Apps Script totals each year from every order
-  const yearly = (dashData.topByYear || []).find(y => y.year === year);
-  if (yearly) {
-    document.getElementById('top-year-label').textContent = year + (yearly.isPartial ? ' (to date)' : '');
-    renderTopTables(yearly.topIndividual, yearly.topParent);
-    return;
-  }
-  // Older Apps Script: only the last 12 months' top-10 lists to go on
-  const tbm = dashData.topByMonth || [];
-  const yearMonths = tbm.filter(m => m.month.startsWith(year));
-  const hasPartial = yearMonths.some(m => m.isPartial);
-  document.getElementById('top-year-label').textContent = year + (hasPartial ? ' (partial)' : '');
-  const agg = aggregateByPeriod(yearMonths);
-  renderTopTables(agg.topIndividual, agg.topParent);
-};
-
-// --- All-Time view ---
-const renderTopAllTime = () => {
-  const label = document.getElementById('top-alltime-label');
-  const allTime = dashData.topAllTime;
-  if (allTime) {
-    label.textContent = 'All-Time Totals' + (allTime.since ? ' (since ' + monthName(allTime.since, true) + ')' : '');
-    renderTopTables(allTime.topIndividual, allTime.topParent);
-    return;
-  }
-  // Older Apps Script: only the last 12 months' top-10 lists to go on
-  label.textContent = 'Last 12 Months (from each month\'s top 10)';
-  const tbm = dashData.topByMonth || [];
-  if (tbm.length === 0) {
-    document.getElementById('top-individual-table').innerHTML = '<p style="color:var(--text-light)">No data available.</p>';
-    document.getElementById('top-parent-table').innerHTML = '';
-    return;
-  }
-  const agg = aggregateByPeriod(tbm);
-  renderTopTables(agg.topIndividual, agg.topParent);
-};
-
-// --- Shared table renderer ---
-const renderTopTables = (individuals, parents) => {
-  document.getElementById('top-individual-table').innerHTML =
-    '<table><thead><tr><th>#</th><th>Customer</th><th>Parent</th><th>Revenue</th><th>Units</th></tr></thead><tbody>' +
-    individuals.map((c, i) =>
-      '<tr onclick="openCustomerModal(\'' + c.name.replace(/'/g, "\\'") + '\')" style="cursor:pointer">' +
-      '<td>' + (i+1) + '</td><td><strong>' + c.name + '</strong></td><td>' + (c.parent || '&mdash;') + '</td><td>' + fmtDec(c.revenue) + '</td><td>' + c.units + '</td></tr>'
-    ).join('') + '</tbody></table>';
-
-  document.getElementById('top-parent-table').innerHTML =
-    '<table><thead><tr><th>#</th><th>Parent Company</th><th>Revenue</th><th>Units</th><th>Locations</th></tr></thead><tbody>' +
-    parents.map((p, i) =>
-      '<tr' + (p.childCount > 0 ? ' onclick="openParentModal(\'' + p.name.replace(/'/g, "\\'") + '\')" style="cursor:pointer"' : '') + '>' +
-      '<td>' + (i+1) + '</td><td><strong>' + p.name + '</strong></td><td>' + fmtDec(p.revenue) + '</td><td>' + p.units + '</td><td>' + (p.childCount || '&mdash;') + '</td></tr>'
-    ).join('') + '</tbody></table>';
-};
-
-// ===== COLLECTIONS TAB =====
-const renderCollections = () => {
-  const col = dashData.collections || {};
-  const debtors = col.debtors || [];
-
-  const kpiEl = document.getElementById('collections-kpis');
-  if (!kpiEl) { console.error('Missing element: collections-kpis'); return; }
-  if (col.agingByDue) renderCollectionsByDueDate(col, debtors, kpiEl);
-  else renderCollectionsByAge(col.aging || {}, debtors, kpiEl);
-};
-
-const drawAgingChart = (labels, values) => {
-  if (agingChart) agingChart.destroy();
-  agingChart = new Chart(document.getElementById('agingChart'), {
-    type: 'doughnut',
-    data: {
-      labels: labels,
-      datasets: [{ data: values, backgroundColor: ['rgba(46,204,113,0.8)', 'rgba(74,144,217,0.8)', 'rgba(243,156,18,0.8)', 'rgba(231,76,60,0.8)', 'rgba(142,68,173,0.8)'] }]
-    },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } }
+  document.getElementById('period-label').textContent = p.label;
+  const total = periodTotal(p);
+  const share = (r) => (total > 0 ? (r.revenue / total * 100).toFixed(1) + '%' : '&mdash;');
+  document.getElementById('top-individual-table').innerHTML = buildTable({
+    columns: [
+      { label: '#', render: (c) => c.rank },
+      { label: 'Customer', lead: true, render: (c) => '<span class="name">' + esc(c.name) + '</span>' + (parentOf(c.name, c.parent) ? '<div class="sub">' + esc(c.parent) + '</div>' : '') },
+      { label: 'Revenue', num: true, render: (c) => money2(c.revenue) },
+      { label: 'Share', num: true, render: share },
+      { label: 'Units', num: true, render: (c) => (c.units || 0).toLocaleString() }
+    ],
+    rows: (p.topIndividual || []).map((c, i) => ({ ...c, rank: i + 1 })),
+    rowAttrs: (c) => CUSTOMER_ATTRS(c.name)
+  });
+  document.getElementById('top-parent-table').innerHTML = buildTable({
+    columns: [
+      { label: '#', render: (c) => c.rank },
+      { label: 'Parent company', lead: true, render: (c) => '<span class="name">' + esc(c.name) + '</span>' },
+      { label: 'Revenue', num: true, render: (c) => money2(c.revenue) },
+      { label: 'Share', num: true, render: share },
+      { label: 'Locations', num: true, render: (c) => c.childCount || '&mdash;' }
+    ],
+    rows: (p.topParent || []).map((c, i) => ({ ...c, rank: i + 1 })),
+    rowAttrs: (c) => (c.childCount > 0 ? ' data-parent="' + esc(c.name) + '" tabindex="0"' : CUSTOMER_ATTRS(c.name))
   });
 };
 
+// ===== COLLECTIONS TAB =====
+const AGING = [
+  ['notDue', 'Not yet due', 'rgba(30,158,90,0.8)'],
+  ['late1to30', '1–30 days late', 'rgba(230,145,20,0.8)'],
+  ['late31to60', '31–60 days late', 'rgba(211,84,0,0.85)'],
+  ['late61to90', '61–90 days late', 'rgba(192,57,43,0.85)'],
+  ['late90plus', '90+ days late', 'rgba(120,30,30,0.9)']
+];
+
 const termsNote = (terms) => {
-  const listed = Object.entries(terms.byCustomer || {}).map(([name, days]) => name + ' ' + days + ' days');
+  const listed = Object.entries(terms.byCustomer || {}).map(([name, days]) => esc(name) + ' ' + days + ' days');
   const individuals = terms.individualDays ? 'individuals ' + terms.individualDays + ' days' : 'individuals on receipt';
   return 'Due date = order date + payment terms: ' + listed.concat([individuals]).join(', ') + ', everyone else ' +
     (terms.defaultDays || 30) + ' days. Part payments recorded in Payment Received are subtracted.';
 };
 
-// By days past the due date, net of part payments (Apps Script from 2026-10-19 on)
-const renderCollectionsByDueDate = (col, debtors, kpiEl) => {
+const renderCollections = () => {
+  const col = dashData.collections || {};
   const a = col.agingByDue;
-  kpiEl.innerHTML =
-    kpiCard('Total Outstanding', fmtDec(a.total), 'After part payments &middot; ' + debtors.length + ' accounts', 'negative') +
-    kpiCard('Not Yet Due', fmtDec(a.notDue), 'Still within payment terms') +
-    kpiCard('Past Due', fmtDec(a.pastDue), 'Past the due date', 'negative') +
-    kpiCard('90+ Days Late', fmtDec(a.late90plus), 'More than 90 days past the due date', 'negative');
+  const debtors = col.debtors || [];
+  if (!a) {
+    document.getElementById('collections-kpis').innerHTML = '<p class="note">Needs the updated Apps Script.</p>';
+    return;
+  }
+  document.getElementById('collections-kpis').innerHTML =
+    kpiCard('Total outstanding', money2(a.total), 'After part payments; ' + debtors.length + ' accounts') +
+    kpiCard('Not yet due', money2(a.notDue), 'Still within payment terms') +
+    kpiCard('Past due', money2(a.pastDue), debtors.filter((d) => d.pastDueOwed > 0).length + ' accounts past the due date', a.pastDue > 0 ? 'negative' : '') +
+    kpiCard('90+ days late', money2(a.late90plus), 'More than 90 days past the due date', a.late90plus > 0 ? 'negative' : '');
+  document.getElementById('aging-legend').innerHTML = AGING.map(([key, label, color]) =>
+    '<span><i class="swatch" style="background:' + color + '"></i>' + label + ': ' + money(a[key]) + '</span>').join('');
+  drawChart('agingChart', {
+    type: 'bar',
+    data: { labels: ['Owed'], datasets: AGING.map(([key, label, color]) => ({ label, data: [a[key]], backgroundColor: color, borderColor: '#fff', borderWidth: { right: 2 } })) },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: (ctx) => ' ' + ctx.dataset.label + ': ' + money2(ctx.parsed.x) } } },
+      scales: { x: { stacked: true, max: a.total || undefined, ticks: { callback: axisMoney } }, y: { stacked: true, display: false } }
+    }
+  });
+  renderDebtors();
+  document.getElementById('terms-note').innerHTML = termsNote(col.terms || {});
+};
 
-  drawAgingChart(['Not yet due', '1-30 days late', '31-60 days late', '61-90 days late', '90+ days late'],
-    [a.notDue, a.late1to30, a.late31to60, a.late61to90, a.late90plus]);
-
+const renderDebtors = () => {
+  const debtors = (dashData.collections || {}).debtors || [];
+  const valueOf = (d, key) => ({ customer: d.customer.toLowerCase(), owed: d.totalOwed, pastDue: d.pastDueOwed * 1e6 + d.totalOwed,
+    invoices: d.invoiceCount, late: d.mostDaysLate, terms: d.termsDays })[key];
+  const sorted = sortRows(debtors, 'debtors', valueOf);
+  document.getElementById('debtor-count').textContent = '(' + debtors.length + ')';
   const terms = (days) => (days === 0 ? 'On receipt' : 'Net ' + days);
-  document.getElementById('debtors-table').innerHTML =
-    '<table><thead><tr><th>Customer</th><th>Parent</th><th>Owed</th><th>Past Due</th><th>Invoices</th><th>Most Days Late</th><th>Terms</th></tr></thead><tbody>' +
-    debtors.map(d =>
-      '<tr><td><strong>' + d.customer + '</strong></td><td>' + (d.parent || '&mdash;') + '</td><td>' + fmtDec(d.totalOwed) + '</td>' +
-      (d.pastDueOwed > 0 ? '<td style="color:var(--red)">' + fmtDec(d.pastDueOwed) + '</td>' : '<td>&mdash;</td>') +
-      '<td>' + d.invoiceCount + '</td><td>' + (d.mostDaysLate > 0 ? d.mostDaysLate : 'Not late') + '</td><td>' + terms(d.termsDays) + '</td></tr>'
-    ).join('') + '</tbody></table>' +
-    '<p style="font-size:11px;color:var(--text-light);margin-top:8px">' + termsNote(col.terms || {}) + '</p>';
+  document.getElementById('debtors-table').innerHTML = debtors.length ? buildTable({
+    id: 'debtors',
+    columns: [
+      { label: 'Customer', lead: true, sortKey: 'customer', render: (d) => '<span class="name">' + esc(d.customer) + '</span>' + (parentOf(d.customer, d.parent) ? '<div class="sub">' + esc(d.parent) + '</div>' : '') },
+      { label: 'Owed', num: true, sortKey: 'owed', render: (d) => money2(d.totalOwed) },
+      { label: 'Past due', num: true, sortKey: 'pastDue', render: (d) => (d.pastDueOwed > 0 ? '<span class="negative">' + money2(d.pastDueOwed) + '</span>' : '&mdash;') },
+      { label: 'Invoices', num: true, sortKey: 'invoices', phoneHide: true, render: (d) => d.invoiceCount },
+      { label: 'Most days late', num: true, sortKey: 'late', render: (d) => (d.mostDaysLate > 0 ? days(d.mostDaysLate) : 'Not late') },
+      { label: 'Terms', num: true, sortKey: 'terms', render: (d) => terms(d.termsDays) }
+    ],
+    rows: sorted,
+    rowAttrs: (d) => CUSTOMER_ATTRS(d.customer)
+  }) : '<p class="note">Nothing outstanding.</p>';
 };
 
-// Older Apps Script: by days since the order
-const renderCollectionsByAge = (aging, debtors, kpiEl) => {
-  kpiEl.innerHTML =
-    kpiCard('Total Outstanding', fmtDec(aging.total), 'Across all accounts', 'negative') +
-    kpiCard('Current (0-30 days)', fmtDec(aging.current), 'Since the order date') +
-    kpiCard('31-60 Days', fmtDec(aging.days30), 'Since the order date') +
-    kpiCard('Over 90 Days', fmtDec((aging.days90 || 0) + (aging.over90 || 0)), 'Since the order date', 'negative');
+// ===== Events =====
+const RERENDER = { customers: applyCustomerFilters, predictions: applyPredictionFilters, debtors: renderDebtors };
+const TEXT_KEYS = ['name', 'customer', 'health', 'status'];
 
-  drawAgingChart(['Current (0-30)', '31-60 Days', '61-90 Days', '91-120 Days', 'Over 120'],
-    [aging.current, aging.days30, aging.days60, aging.days90, aging.over90]);
-
-  document.getElementById('debtors-table').innerHTML =
-    '<table><thead><tr><th>Customer</th><th>Parent</th><th>Total Owed</th><th>Invoices</th><th>Oldest (days)</th></tr></thead><tbody>' +
-    debtors.map(d =>
-      '<tr><td><strong>' + d.customer + '</strong></td><td>' + (d.parent || '&mdash;') + '</td><td>' + fmtDec(d.totalOwed) + '</td><td>' + d.invoiceCount + '</td><td>' + d.oldestDays + '</td></tr>'
-    ).join('') + '</tbody></table>';
+const showTab = (name) => {
+  document.querySelectorAll('.tab').forEach((t) => {
+    const on = t.dataset.tab === name;
+    t.classList.toggle('active', on);
+    t.setAttribute('aria-selected', String(on));
+  });
+  document.querySelectorAll('.tab-content').forEach((c) => c.classList.toggle('active', c.id === 'tab-' + name));
 };
+
+document.addEventListener('click', (event) => {
+  if (event.target.id === 'customer-modal') { closeModal(); return; }
+  const el = event.target.closest('[data-tab],[data-action],[data-sort],[data-view],[data-step],[data-customer],[data-parent]');
+  if (!el) return;
+  if (el.dataset.tab) showTab(el.dataset.tab);
+  else if (el.dataset.action === 'refresh') requestRefresh();
+  else if (el.dataset.action === 'close-modal') closeModal();
+  else if (el.dataset.action === 'pred-priority') { sortState.predictions = { key: 'priority', dir: 'desc' }; applyPredictionFilters(); }
+  else if (el.dataset.sort) {
+    const [id, key] = el.dataset.sort.split(':');
+    const state = sortState[id];
+    sortState[id] = state.key === key ? { key, dir: state.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: TEXT_KEYS.includes(key) ? 'asc' : 'desc' };
+    RERENDER[id]();
+  } else if (el.dataset.view) { view.top = el.dataset.view; view.topIndex = 0; renderTopCustomers(); }
+  else if (el.dataset.step) { view.topIndex = Math.max(0, Math.min(periods().length - 1, view.topIndex + Number(el.dataset.step))); renderTopCustomers(); }
+  else if (el.dataset.customer !== undefined) {
+    if (document.getElementById('customer-modal').classList.contains('active')) closeModal();
+    openCustomerModal(el.dataset.customer);
+  } else if (el.dataset.parent !== undefined) {
+    if (document.getElementById('customer-modal').classList.contains('active')) closeModal();
+    openParentModal(el.dataset.parent);
+  }
+});
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') closeModal();
+  if (event.key === 'Enter' && event.target.matches('tr[data-customer], tr[data-parent]')) event.target.click();
+});
+
+for (const id of ['cust-search', 'cust-health', 'cust-recent']) document.getElementById(id).addEventListener('input', () => applyCustomerFilters());
+for (const id of ['pred-status', 'pred-search', 'pred-regulars', 'pred-hide-gone']) document.getElementById(id).addEventListener('input', () => applyPredictionFilters());
 
 // Opened on its own instead of inside the app: nothing will send it numbers.
 if (window.parent === window) showMessage('Open A.I.P Numbers from the Portlandica app.');

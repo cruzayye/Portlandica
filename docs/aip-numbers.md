@@ -53,13 +53,40 @@ Edit `public/aip/index.html`. Its numbers arrive only as `message` events from t
 The page sends only `{ type: 'aip:refresh' }`. Because its origin is opaque, it can't use
 `localStorage`, `sessionStorage` or cookies, and it can't open pop-ups.
 
-### Numbers the page reads (since 2026-10-19)
+The page also blocks every connection of its own with a Content-Security-Policy meta tag
+(`default-src 'none'`): the numbers only ever arrive by `postMessage`. Chart.js is the one script it
+loads, from cdnjs with an `integrity` hash, so a changed file is refused. If Chart.js doesn't load,
+the charts say so and every number and table still shows.
 
-Apps Script now sends `summary.growth`, `summary.ytd`, `summary.activeCustomers`, `forecast[].low`,
+Click handlers are attached in the script (no `onclick` attributes), and customer names are escaped
+before they go into the page.
+
+### Numbers the page reads
+
+Since 2026-10-19: `summary.growth`, `summary.ytd`, `summary.activeCustomers`, `forecast[].low`,
 `expected`, `high`, `topByYear`, `topAllTime`, `collections.agingByDue` and `collections.terms`. Each
-prediction also has `tooNew`, `regularityScore`, and the statuses `Past Due` and `Lapsed`. The page
-still works with an Apps Script from before then: it falls back to the older fields, shows "Needs
-the updated Apps Script" where a number is missing, and works out Lapsed and Past Due itself.
+prediction also has `tooNew`, `regularityScore`, and the statuses `Past Due` and `Lapsed`.
+
+Since 2026-10-28:
+
+| Field | What it is |
+| --- | --- |
+| `summary.thisMonth` | This month so far, the same days a year earlier, and where the month should finish (`expected`, `low`, `high`) |
+| `forecast[0].actualToDate`, `forecast[].lastYear` | Sold so far this month; the same month a year earlier |
+| `summary.ytd.core` | The core book: every sale except a few listed accounts and one-off orders |
+| `summary.ytd.movers` | The 5 biggest gains and drops against last year, and everyone else's net change |
+| `newAccounts[]` | New customers by month of their first order, last 24 months |
+| `customers[].ttmRevenue`, `priorTtmRevenue`, `type`, `lost` | Last 12 months, the 12 before, Business or Individual, and the lost flag |
+| `predictions[].ttmRevenue`, `daysSinceLast`, `usualCans`, `lastOrderRatio`, `stockUp`, `offSeasonMonths` | For the priority order and the reason line under each customer |
+
+Predictions can also have the statuses `Lost` and `Off-season`, from the account rules the weekly
+sales report uses. Customer names that differ only in case or punctuation, and a short list of
+known aliases, arrive already merged.
+
+The fields only the page from before 2026-10-19 read (`summary.yoyGrowth`, `growthRate`,
+`annualTarget`, `forecast[].conservative`, `moderate`, `aggressive` and `collections.aging`) are gone.
+The page still works with the 2026-10-19 Apps Script: it hides the two cards that need the newer
+numbers and labels the predictions' sales column "All-time sales".
 
 To try it locally, run the app with `npm run dev`, point `APPS_SCRIPT_URL` at the Apps
 Script deployment (or any server that answers like it), and open the tab after signing in.
