@@ -176,6 +176,7 @@ tr.total td { font-weight: 700; border-top: 2px solid var(--navy); background: #
   .content { padding: 20px 24px; }
   .card { padding: 20px; margin-bottom: 20px; }
   .kpi-row { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
+  .kpi-row.six { grid-template-columns: repeat(3, minmax(0, 1fr)); } /* two even rows of three */
   .kpi-card { padding: 16px 18px; }
   .kpi-card .value { font-size: 26px; }
   .kpi-card.wide { grid-column: auto; }
@@ -188,6 +189,9 @@ tr.total td { font-weight: 700; border-top: 2px solid var(--navy); background: #
 }
 @media (min-width: 1100px) {
   .grid-2, .top-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+@media (min-width: 1400px) {
+  .kpi-row.six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 }
 </style>
 </head>
@@ -218,7 +222,7 @@ tr.total td { font-weight: 700; border-top: 2px solid var(--navy); background: #
   <main class="content">
     <!-- Revenue -->
     <section class="tab-content active" id="tab-revenue" role="tabpanel">
-      <div class="kpi-row" id="revenue-kpis"></div>
+      <div class="kpi-row six" id="revenue-kpis"></div>
       <div class="card">
         <div class="card-head"><h3>Monthly revenue</h3><div class="legend" id="revenue-legend"></div></div>
         <div class="chart-container"><canvas id="revenueChart" role="img" aria-label="Revenue by month, with the same month a year earlier"></canvas></div>
