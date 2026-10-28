@@ -530,6 +530,51 @@ const ytdKpi = (s) => {
   return kpiCard('Year to date', money(y.revenue), vs + core);
 };
 
+// Where this calendar year should finish if the forecast holds: sold so far + the rest of this month +
+// every later month of the year. The forecast covers 8 months, so until May the last months of the year
+// are worked out here the same way: the month a year earlier x growth, Low/High the same band.
+// Null without the numbers it needs.
+const yearProjection = (s) => {
+  const fc = dashData.forecast || [];
+  if (!s.ytd || !s.growth || !fc.length) return null;
+  const year = String(generatedAt().getFullYear());
+  const first = fc[0];
+  const soFar = first.actualToDate !== undefined ? first.actualToDate
+    : (s.partialMonth && s.partialMonth.month === first.month ? s.partialMonth.revenue : 0);
+  const byMonth = new Map((dashData.monthlyRevenue || []).map((m) => [m.month, m.revenue]));
+  const band = fc.length > 1 && fc[1].expected ? 1 - fc[1].low / fc[1].expected : 0.25;
+  const later = [];
+  for (let m = addMonths(first.month, 1); m.startsWith(year); m = addMonths(m, 1)) {
+    const f = fc.find((x) => x.month === m);
+    if (f) { later.push(f); continue; }
+    const ly = byMonth.get(addMonths(m, -12));
+    const expected = Math.round(ly > 0 ? ly * s.growth.factor : s.trailing6Avg);
+    later.push({ month: m, expected, low: Math.round(expected * (1 - band)), high: Math.round(expected * (1 + band)), lastYear: ly ?? null });
+  }
+  const rest = (key) => Math.max(0, first[key] - soFar) + sum(later, (f) => f[key]);
+  const t = s.thisMonth;
+  // The rest of the year if it only matched last year: the same days of this month, then the same months
+  const flatRest = t && later.every((f) => f.lastYear !== undefined)
+    ? Math.max(0, t.priorMonth - t.priorSameDays) + sum(later, (f) => f.lastYear || 0) : null;
+  return {
+    year: year,
+    soFar: s.ytd.revenue,
+    rest: rest('expected'),
+    expected: s.ytd.revenue + rest('expected'),
+    low: s.ytd.revenue + rest('low'),
+    high: s.ytd.revenue + rest('high'),
+    flat: flatRest === null ? null : s.ytd.revenue + flatRest,
+    lastYear: sum((dashData.monthlyRevenue || []).filter((m) => m.month.startsWith(String(year - 1))), (m) => m.revenue)
+  };
+};
+
+const projectionKpi = (s) => {
+  const p = yearProjection(s);
+  if (!p) return '';
+  const vs = p.lastYear > 0 ? tone(p.expected - p.lastYear, signedPct((p.expected / p.lastYear - 1) * 100)) + ' vs ' + (p.year - 1) + ' (' + money(p.lastYear) + ')<br>' : '';
+  return kpiCard(p.year + ' projected', money(p.expected), vs + 'Range ' + money(p.low) + '&ndash;' + money(p.high) + '; sold so far + the forecast below');
+};
+
 // The growth the forecast uses: the last 3 complete months against the same months a year earlier.
 const growthKpi = (s) => {
   const g = s.growth;
@@ -551,8 +596,8 @@ const activeKpi = (s) => {
 
 const renderRevenue = () => {
   const s = dashData.summary;
-  document.getElementById('revenue-kpis').innerHTML = thisMonthKpi(s) + ytdKpi(s) + growthKpi(s) + activeKpi(s) +
-    kpiCard('Trailing 6-month avg', money(s.trailing6Avg), 'Per month, complete months', '', 'wide');
+  document.getElementById('revenue-kpis').innerHTML = thisMonthKpi(s) + ytdKpi(s) + projectionKpi(s) + growthKpi(s) + activeKpi(s) +
+    kpiCard('Trailing 6-month avg', money(s.trailing6Avg), 'Per month, complete months');
   renderRevenueChart();
   renderMovers(s);
   renderNewAccounts();
@@ -722,7 +767,11 @@ const renderForecast = (s) => {
   const totalRow = '<tr class="total"><td data-label="" class="lead">Next ' + fc.length + ' months</td><td data-label="Last year" class="num">' + money(total('lastYear')) +
     '</td><td data-label="Low" class="num">' + money(total('low')) + '</td><td data-label="Expected" class="num">' + money(total('expected')) +
     '</td><td data-label="High" class="num">' + money(total('high')) + '</td></tr>';
-  document.getElementById('forecast-table').innerHTML = buildTable({ columns, rows: fc, extraRows: totalRow }) +
+  const p = yearProjection(s);
+  const projection = p ? '<p class="note">' + p.year + ' projected: ' + money(p.soFar) + ' sold so far + ' + money(p.rest) + ' expected for the rest of the year = <strong>' +
+    money(p.expected) + '</strong> (range ' + money(p.low) + '&ndash;' + money(p.high) + ').' +
+    (p.flat !== null ? ' If the rest of the year only matched last year: ' + money(p.flat) + '.' : '') + '</p>' : '';
+  document.getElementById('forecast-table').innerHTML = projection + buildTable({ columns, rows: fc, extraRows: totalRow }) +
     '<p class="footnote">' + forecastMethod(s, dashData.forecast) + '</p>';
 };
 
@@ -905,7 +954,9 @@ const GONE = ['Lapsed', 'Lost'];
 const daysSinceLastOf = (p) => (p.daysSinceLast !== undefined ? p.daysSinceLast : daysSince(p.lastOrder));
 const ttmOf = (p) => (p.ttmRevenue !== undefined ? p.ttmRevenue : p.totalRevenue || 0);
 // An older Apps Script sends all-time sales only
-const salesLabel = () => ((dashData.predictions || []).some((p) => p.ttmRevenue !== undefined) ? 'Last 12 months' : 'All-time sales');
+const hasTtmSales = () => (dashData.predictions || []).some((p) => p.ttmRevenue !== undefined);
+const salesLabel = () => (hasTtmSales() ? 'Last 12 months' : 'All-time sales');
+const salesPhrase = () => (hasTtmSales() ? 'Last 12 months\' sales' : 'All-time sales');
 
 // Priority: late accounts first, biggest first (a big last order counts half, since those
 // reorder less often); then everyone else by their expected date.
@@ -952,7 +1003,7 @@ const applyPredictionFilters = () => {
     kpiCard('Past Due', count('Past Due'), '1&ndash;14 days past the expected date', 'v-orange') +
     kpiCard('Due Soon', count('Due Soon'), 'Today to 14 days out', 'v-amber') +
     kpiCard('Coming Up', count('Coming Up'), '15&ndash;30 days out', 'v-blue') +
-    kpiCard('Revenue at stake', money(lateTtm), salesLabel() + ' of the Overdue and Past Due customers listed', '', 'wide');
+    kpiCard('Revenue at stake', money(lateTtm), salesPhrase() + ' of the Overdue and Past Due customers listed', '', 'wide');
 
   const rows = listable.filter((p) => status === 'all' || p.status === status);
   const valueOf = (p, key) => ({
@@ -962,7 +1013,7 @@ const applyPredictionFilters = () => {
   const sorted = sortRows(rows, 'predictions', valueOf);
   document.getElementById('pred-count').textContent = '(' + rows.length + ' of ' + all.length + ')';
   document.getElementById('pred-sort-note').innerHTML = sortState.predictions.key === 'priority'
-    ? 'Late customers first, biggest first by ' + salesLabel().toLowerCase() + ' (a big last order counts half). Then everyone else by expected date. Click a column to sort by it.'
+    ? 'Late customers first, biggest first by ' + salesPhrase().toLowerCase() + ' (a big last order counts half). Then everyone else by expected date. Click a column to sort by it.'
     : 'Sorted by the column you picked. <button type="button" class="link-btn" data-action="pred-priority">Back to priority order</button>';
   const columns = [
     { label: 'Customer', lead: true, sortKey: 'customer', render: (p) => '<span class="name">' + esc(p.customer) + '</span>' +
