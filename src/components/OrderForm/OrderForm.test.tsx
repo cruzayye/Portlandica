@@ -57,6 +57,7 @@ const formData = (over: Partial<OrderFormData> = {}): OrderFormData => ({
   businessTypes: ['Restaurant', 'Theater'],
   batches: [batch({ id: 45 }), batch({ id: 25, name: 'North Powder', isStill: false })],
   squareReady: false,
+  blineStock: [],
   warnings: [],
   ...over,
 })
@@ -743,6 +744,83 @@ describe('OrderForm invoice details', () => {
 
     await waitFor(() => expect(createOrder).toHaveBeenCalled())
     expect(sent()).toMatchObject({ createInvoice: false, poNumber: null, email: null })
+  })
+})
+
+describe('OrderForm BLine delivery', () => {
+  const blineOrder = async (user: User) => {
+    await pickCustomer(user, 'Dame')
+    await user.click(screen.getByLabelText('Still'))
+    await user.type(screen.getByLabelText(/total still cases/i), '5')
+    await user.click(screen.getByLabelText('BLine'))
+  }
+
+  it("offers BLine as a delivery, shows BLine's fee and what it has, and sends it", async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(formData({ blineStock: [{ batchId: 45, remaining: 1440 }] }))
+    await blineOrder(user)
+
+    // 5 cases at $1.50 a can is $180, so 10%.
+    expect(screen.getByText(/BLine fee: \$18\.00 \(10% of \$180\.00\)/)).toBeInTheDocument()
+    expect(screen.getByText('BLine has 1,440 Still · 0 Sparkling cans left.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Drop')).not.toBeChecked()
+
+    await user.click(submitButton())
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(sent()).toMatchObject({ deliveryType: 'BLine', price: 180 })
+  })
+
+  it('shows the flat fee under $100', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await blineOrder(user)
+    await user.clear(screen.getByLabelText(/total still cases/i))
+    await user.type(screen.getByLabelText(/total still cases/i), '1')
+
+    expect(screen.getByText(/BLine fee: \$10\.00 \(flat fee under \$100\)/)).toBeInTheDocument()
+  })
+
+  it('picks the batch BLine has, when it has just one, and says how many it has', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(
+      formData({
+        batches: [
+          batch({ id: 1, fillDate: '2026-06-20' }),
+          batch({ id: 2, fillDate: '2026-09-26' }),
+        ],
+        blineStock: [{ batchId: 2, remaining: 1440 }],
+      })
+    )
+    await blineOrder(user)
+
+    await waitFor(() => expect(submitButton()).toBeEnabled())
+    await user.click(screen.getByLabelText(/still batch/i))
+    expect(await screen.findByRole('option', { name: /1,440 at BLine/ })).toBeInTheDocument()
+    await user.keyboard('{Escape}')
+    await user.click(submitButton())
+    await waitFor(() => expect(createOrder).toHaveBeenCalled())
+    expect(sent().lines).toEqual([{ product: 'still', cans: 120, batchId: 2 }])
+  })
+
+  it("warns when BLine has fewer cans than the order needs, but doesn't block it", async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(formData({ blineStock: [{ batchId: 45, remaining: 48 }] }))
+    await blineOrder(user)
+
+    expect(
+      screen.getByText('BLine has 48 cans of this batch; this order needs 120.')
+    ).toBeInTheDocument()
+    expect(submitButton()).toBeEnabled()
+  })
+
+  it("still books a BLine order when what BLine has couldn't be loaded", async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm(formData({ blineStock: null }))
+    await blineOrder(user)
+
+    expect(screen.getByText("Couldn't load what BLine has left.")).toBeInTheDocument()
+    expect(screen.queryByText(/BLine has \d/)).not.toBeInTheDocument()
+    expect(submitButton()).toBeEnabled()
   })
 })
 

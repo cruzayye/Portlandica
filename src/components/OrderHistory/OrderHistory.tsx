@@ -18,6 +18,7 @@ import { isAuthFailure } from '@/lib/auth/authFailure'
 import { batchTitle } from '@/lib/batches'
 import type { SalesOrderWithLines } from '@/lib/db/types'
 import { describeSheetRef } from '@/lib/orders'
+import { BLINE_CANCEL } from '@/lib/bline'
 import { sheetDate } from '@/lib/delivery'
 import type { OrderHistory as History } from '@/types/orders'
 import OrderStatus from './OrderStatus'
@@ -25,14 +26,14 @@ import OrderStatus from './OrderStatus'
 const money = (dollars: number) =>
   Number(dollars).toLocaleString('en-US', { style: 'currency', currency: 'USD' })
 
-const DELIVERY = { drop: 'Drop', ship: 'Ship', pickup: 'Pickup' } as const
+const DELIVERY = { drop: 'Drop', bline: 'BLine', ship: 'Ship', pickup: 'Pickup' } as const
 
 // A void deletes the order's Square draft and records its Square step as skipped.
 const draftDeleted = (order: SalesOrderWithLines) =>
   Boolean(order.square_invoice_id) && order.square_status === 'skipped'
 
 // What a void leaves for a person: the app doesn't edit Sales rows, or a Square invoice
-// that was already sent (or that it couldn't delete).
+// that was already sent (or that it couldn't delete), and BLine has to hear from us.
 const reminders = (order: SalesOrderWithLines) => [
   ...(order.sheet_ref
     ? [`${describeSheetRef(order.sheet_ref)} still show this order: fix them by hand.`]
@@ -42,6 +43,7 @@ const reminders = (order: SalesOrderWithLines) => [
         "Its Square invoice wasn't deleted: delete it in Square if it's still a draft, or cancel or refund it by hand.",
       ]
     : []),
+  ...(order.delivery_type === 'bline' ? [BLINE_CANCEL] : []),
 ]
 
 /** Recent orders with how each step went, a retry for unfinished steps, and Void. */
@@ -153,6 +155,7 @@ export default function OrderHistory() {
               <Typography variant="body2" color="text.secondary">
                 #{order.id} · {sheetDate(order.order_date)} · {DELIVERY[order.delivery_type]}
                 {order.delivery_date ? ` ${sheetDate(order.delivery_date)}` : ''}
+                {order.delivery_fee != null ? ` (${money(order.delivery_fee)} fee)` : ''}
               </Typography>
             </Box>
             <Box textAlign="right" flexShrink={0}>

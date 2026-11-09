@@ -12,6 +12,10 @@ const actions = vi.hoisted(() => ({
 }))
 
 vi.mock('@/app/actions/batches', () => actions)
+vi.mock('@/app/actions/bline', () => ({
+  loadBlineStock: async () => ({ ok: true, stock: [], moves: [] }),
+  updateBlineStock: vi.fn(),
+}))
 
 import Inventory from './Inventory'
 import { batch, customer, historyEntry } from './testing/fixtures'

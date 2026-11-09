@@ -23,6 +23,7 @@ import { createOrder, getOrderFormData } from '@/app/actions/orders'
 import OrderStatus from '@/components/OrderHistory/OrderStatus'
 import { isAuthFailure } from '@/lib/auth/authFailure'
 import { batchLabel, batchesForCustomer, chosenBatchId, customBatches } from '@/lib/batches'
+import { blineFeeNote } from '@/lib/bline'
 import { STEP_ORDER } from '@/lib/db/orders'
 import type { SalesOrderWithLines } from '@/lib/db/types'
 import { defaultDeliveryDate } from '@/lib/delivery'
@@ -144,6 +145,10 @@ export default function OrderForm() {
   const customers = data?.customers ?? []
   const businessTypes = data?.businessTypes ?? []
   const batches = data?.batches ?? []
+  const isBline = fields.deliveryType === 'BLine'
+  // Cans BLine should have of a batch (0 for one it doesn't hold).
+  const atBline = (id: number | null) =>
+    data?.blineStock?.find((row) => row.batchId === id)?.remaining ?? 0
   const customer =
     fields.customerType === 'existing'
       ? (customers.find((c) => c.id === fields.customerId) ?? null)
@@ -154,9 +159,22 @@ export default function OrderForm() {
     still: batchesForCustomer(batches, 'still', customer?.id ?? null),
     spark: batchesForCustomer(batches, 'sparkling', customer?.id ?? null),
   }
+  // A BLine order with no batch picked yet takes the one BLine has cans of, if just one.
+  const blineBatches = (options: BatchOption[]) =>
+    isBline ? options.filter((batch) => atBline(batch.id) > 0) : []
   const batchId = {
-    still: chosenBatchId(batchPick.still, offered.still, customBatches(offered.still)),
-    spark: chosenBatchId(batchPick.spark, offered.spark, customBatches(offered.spark)),
+    still: chosenBatchId(
+      batchPick.still,
+      offered.still,
+      customBatches(offered.still),
+      blineBatches(offered.still)
+    ),
+    spark: chosenBatchId(
+      batchPick.spark,
+      offered.spark,
+      customBatches(offered.spark),
+      blineBatches(offered.spark)
+    ),
   }
   const cans = {
     still: toCans(quantity.still, manualNumber),
@@ -372,13 +390,21 @@ export default function OrderForm() {
     const noBatches = options.length === 0
     const line = lines.find((l) => l.product === product)
     const lineShort = short.find((s) => s.batchId === line?.batchId)
+    // BLine can only deliver what it has; the order can still be booked.
+    const blineShort =
+      isBline &&
+      data?.blineStock &&
+      line?.batchId != null &&
+      (line.cans ?? 0) > atBline(line.batchId)
     const help = noBatches
       ? `No ${title} batches in inventory. Add one on the Inventory tab first.`
       : needsBatch
         ? 'Select which batch this order pulls from'
         : lineShort
           ? `${shortfallMessage(lineShort)} You'll be asked to confirm.`
-          : ' '
+          : blineShort
+            ? `BLine has ${atBline(line.batchId).toLocaleString('en-US')} cans of this batch; this order needs ${(line.cans ?? 0).toLocaleString('en-US')}.`
+            : ' '
     return (
       <Box display="flex" flexDirection="column" gap={1}>
         <TextField
@@ -408,7 +434,7 @@ export default function OrderForm() {
           helperText={help}
           slotProps={{
             formHelperText: {
-              sx: lineShort && !needsBatch ? { color: 'warning.dark' } : undefined,
+              sx: (lineShort || blineShort) && !needsBatch ? { color: 'warning.dark' } : undefined,
             },
           }}
           sx={{ '& .MuiInputBase-root': { backgroundColor: '#fffde7' } }}
@@ -416,6 +442,9 @@ export default function OrderForm() {
           {options.map((batch) => (
             <MenuItem key={batch.id} value={batch.id} sx={{ whiteSpace: 'normal' }}>
               {batchLabel(batch)}
+              {isBline && atBline(batch.id) > 0
+                ? ` · ${atBline(batch.id).toLocaleString('en-US')} at BLine`
+                : ''}
             </MenuItem>
           ))}
         </TextField>
@@ -441,6 +470,15 @@ export default function OrderForm() {
         return `${PRODUCT_NAMES[line.product]}: ${lineCans[i].toLocaleString('en-US')} cans at ${money(pricePerCan[i])}${whose}`
       })
       .join(' · ')
+  }
+
+  // "1,440 Still · 1,200 Sparkling cans": what BLine should have of house and custom stock.
+  const blineSummary = () => {
+    const total = (isStill: boolean) =>
+      batches
+        .filter((batch) => batch.isStill === isStill)
+        .reduce((sum, batch) => sum + atBline(batch.id), 0)
+    return `${total(true).toLocaleString('en-US')} Still · ${total(false).toLocaleString('en-US')} Sparkling cans`
   }
 
   const deliverySwitch = (type: FormDeliveryType) => (
@@ -750,8 +788,20 @@ export default function OrderForm() {
           </Typography>
 
           <Box display="flex" gap={2} flexWrap="wrap">
-            {(['Drop', 'Ship', 'Pickup'] as const).map(deliverySwitch)}
+            {(['Drop', 'BLine', 'Ship', 'Pickup'] as const).map(deliverySwitch)}
           </Box>
+
+          {isBline && (
+            <Alert severity="info">
+              <Box>BLine fee: {blineFeeNote(price ?? 0)}. We still invoice the customer.</Box>
+              <Box>
+                {data?.blineStock
+                  ? `BLine has ${blineSummary()} left.`
+                  : "Couldn't load what BLine has left."}
+              </Box>
+              <Box>Email BLine the delivery once the order is in.</Box>
+            </Alert>
+          )}
 
           <TextField
             label="Delivery Date"

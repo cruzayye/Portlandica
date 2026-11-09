@@ -9,6 +9,7 @@ import { draftInvoiceFor } from '@/lib/invoiceDraft'
 import { createDraftInvoice, deleteDraftInvoice, type DraftDeletion } from '@/lib/square'
 import { createTrelloCard, type TrelloOrder } from '@/lib/trello'
 import { batchTitle } from '@/lib/batches'
+import { blineNotes, feePerRow } from '@/lib/bline'
 import { lineAmounts, shortfallMessage } from '@/lib/orders'
 
 // Runs an order's unfinished steps in order: Sales sheet, inventory, Trello, Square. Each
@@ -70,6 +71,9 @@ export const notInItemLibrary = (items: string[]) =>
 
 const sheetOrderFor = (order: SalesOrderWithLines, customer: Customer | null): SheetOrder => {
   const amounts = lineAmounts(order)
+  const isBline = order.delivery_type === 'bline'
+  const fee = isBline ? (order.delivery_fee ?? null) : null
+  const shipping = fee === null ? null : feePerRow(Number(fee), amounts)
   return {
     key: order.idempotency_key,
     orderDate: order.order_date,
@@ -81,11 +85,14 @@ const sheetOrderFor = (order: SalesOrderWithLines, customer: Customer | null): S
       batchId: line.batch_id,
       isCustom: line.is_custom,
       amount: amounts[i],
+      shippingCost: shipping ? shipping[i] : null,
     })),
     isPaid: order.is_paid,
     createInvoice: order.create_invoice,
     isDonation: order.is_donation,
-    notes: order.notes,
+    notes: isBline
+      ? blineNotes(order.notes, fee === null ? null : Number(fee), order.is_donation)
+      : order.notes,
     newLocation:
       order.new_customer && customer
         ? {

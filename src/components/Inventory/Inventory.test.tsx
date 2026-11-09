@@ -11,7 +11,13 @@ const actions = vi.hoisted(() => ({
   getBatchHistory: vi.fn(),
 }))
 
+const blineActions = vi.hoisted(() => ({
+  loadBlineStock: vi.fn(),
+  updateBlineStock: vi.fn(),
+}))
+
 vi.mock('@/app/actions/batches', () => actions)
+vi.mock('@/app/actions/bline', () => blineActions)
 
 import Inventory from './Inventory'
 import { portlandToday } from './dates'
@@ -71,6 +77,7 @@ beforeEach(() => {
   vi.resetAllMocks()
   actions.loadInventory.mockResolvedValue(loaded({ batches: stock, customers }))
   actions.getBatchHistory.mockResolvedValue({ ok: true, entries: [] })
+  blineActions.loadBlineStock.mockResolvedValue({ ok: true, stock: [], moves: [] })
 })
 
 describe('Inventory tab', () => {
@@ -80,7 +87,7 @@ describe('Inventory tab', () => {
     await screen.findByRole('region', { name: 'Still · House stock' })
     expect(
       screen.getAllByRole('region').map((region) => region.getAttribute('aria-label'))
-    ).toEqual(['Still · House stock', 'Still · Custom cans', 'Sparkling · House stock'])
+    ).toEqual(['At BLine', 'Still · House stock', 'Still · Custom cans', 'Sparkling · House stock'])
     // The dog water batch is house still stock: 12,000 + 2,376 cans.
     expect(
       within(section('Still · House stock')).getByText('14,376 cans', { selector: 'h3 + *' })

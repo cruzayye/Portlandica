@@ -50,7 +50,8 @@ export type Batch = Inventory & {
 /** What a customer buys on an order line: still or sparkling, as the batch's isStill says. */
 export type LineProduct = 'still' | 'sparkling'
 
-export type DeliveryType = 'drop' | 'ship' | 'pickup'
+/** bline: delivered by BLine from the pallets it keeps for us (they bill us per delivery). */
+export type DeliveryType = 'drop' | 'bline' | 'ship' | 'pickup'
 
 export type OrderStep = 'sheet' | 'inventory' | 'trello' | 'square'
 
@@ -93,6 +94,8 @@ export type SalesOrder = {
   sheet_ref: string | null
   /** This order added the customer, so the sheet step also lists them on the locations tab. */
   new_customer: boolean
+  /** What BLine charges to deliver it, in dollars, as worked out when it was placed. BLine orders only. */
+  delivery_fee: number | null
   created_by: string | null
   created_at: string
   updated_at: string
@@ -138,4 +141,36 @@ export type LedgerCheckRow = {
   count: number
   ledger_total: number
   difference: number
+}
+
+/** sent (+) and returned (-) cans, or count: BLine counted a different number (+ or -). */
+export type BlineMoveReason = 'sent' | 'returned' | 'count'
+
+/** A change in the cans BLine holds of one batch. BLine orders take cans off without one. */
+export type BlineStockMove = {
+  id: number
+  batch_id: number
+  cans: number
+  reason: BlineMoveReason
+  moved_on: string
+  note: string | null
+  created_by: string | null
+  created_at: string
+}
+
+/** A row of the bline_stock view: what BLine should have of one batch. */
+export type BlineStockRow = {
+  batch_id: number
+  name: string | null
+  is_still: boolean | null
+  /** Sent, less returned, plus count corrections. */
+  moved: number
+  /** Cans on live (not void) BLine orders. */
+  booked: number
+  /** Of those, cans for deliveries after today: still on BLine's shelf. */
+  pending: number
+  /** moved - booked: what BLine has left once every booked delivery is made. */
+  remaining: number
+  /** remaining + pending: what BLine should have on its shelf today. */
+  on_hand: number
 }

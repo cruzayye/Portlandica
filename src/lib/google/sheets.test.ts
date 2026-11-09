@@ -80,8 +80,15 @@ const order = (over: Partial<SheetOrder> = {}): SheetOrder => ({
   type: 'business',
   customerName: 'Hollywood Theatre',
   lines: [
-    { product: 'still', cans: 240, batchId: 35, isCustom: true, amount: 398.4 },
-    { product: 'sparkling', cans: 360, batchId: 15, isCustom: true, amount: 597.6 },
+    { product: 'still', cans: 240, batchId: 35, isCustom: true, amount: 398.4, shippingCost: null },
+    {
+      product: 'sparkling',
+      cans: 360,
+      batchId: 15,
+      isCustom: true,
+      amount: 597.6,
+      shippingCost: null,
+    },
   ],
   isPaid: false,
   createInvoice: false,
@@ -171,8 +178,22 @@ describe('writeOrderToSheet: Sales', () => {
       order({
         isPaid: true,
         lines: [
-          { product: 'still', cans: 240, batchId: 22, isCustom: true, amount: 480 },
-          { product: 'sparkling', cans: 48, batchId: 25, isCustom: false, amount: 72 },
+          {
+            product: 'still',
+            cans: 240,
+            batchId: 22,
+            isCustom: true,
+            amount: 480,
+            shippingCost: null,
+          },
+          {
+            product: 'sparkling',
+            cans: 48,
+            batchId: 25,
+            isCustom: false,
+            amount: 72,
+            shippingCost: null,
+          },
         ],
       })
     )
@@ -182,6 +203,47 @@ describe('writeOrderToSheet: Sales', () => {
       [48, 72, 72],
     ])
     expect(rows.map((row) => row[21] ?? '')).toEqual(['Yes', ''])
+  })
+
+  it("puts a BLine order's fee in Shipping Cost, as money, and leaves it blank otherwise", async () => {
+    await writeOrderToSheet(
+      order({
+        notes: 'BLine delivery · Back door',
+        lines: [
+          {
+            product: 'still',
+            cans: 48,
+            batchId: 45,
+            isCustom: false,
+            amount: 72,
+            shippingCost: 7.2,
+          },
+          {
+            product: 'sparkling',
+            cans: 24,
+            batchId: 25,
+            isCustom: false,
+            amount: 36,
+            shippingCost: 3.6,
+          },
+        ],
+      })
+    )
+    const rows = fake().rows('Sales').slice(3, 5)
+    expect(rows.map((row) => [row[5], row[6], row[15]])).toEqual([
+      [72, 7.2, 'BLine delivery · Back door'],
+      [36, 3.6, 'BLine delivery · Back door'],
+    ])
+    expect(fake().formats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          range: expect.objectContaining({ startColumnIndex: 6, startRowIndex: 3, endRowIndex: 5 }),
+          cell: {
+            userEnteredFormat: { numberFormat: { type: 'CURRENCY', pattern: '"$"#,##0.00' } },
+          },
+        }),
+      ])
+    )
   })
 
   it('books individuals as Individual', async () => {

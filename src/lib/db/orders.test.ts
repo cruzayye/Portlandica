@@ -25,7 +25,14 @@ import {
   type NewSalesOrder,
 } from './orders'
 import { fakeSupabase } from './testing/fakeSupabase'
-import { JOHNNY, PAUL, STRANGER, createMigratedDb } from './testing/testDb'
+import {
+  JOHNNY,
+  PAUL,
+  STRANGER,
+  createDb,
+  createMigratedDb,
+  migrationFiles,
+} from './testing/testDb'
 import type { SalesOrder } from './types'
 
 describe('pricing', () => {
@@ -111,6 +118,7 @@ describe('order helpers', () => {
 
   it("reads the form's delivery types", () => {
     expect(deliveryTypeFromForm('Drop')).toBe('drop')
+    expect(deliveryTypeFromForm('BLine')).toBe('bline')
     expect(deliveryTypeFromForm('Pickup')).toBe('pickup')
     expect(deliveryTypeFromForm(null)).toBeNull()
     expect(deliveryTypeFromForm('Courier')).toBeNull()
@@ -159,6 +167,27 @@ describe('order queries', () => {
     lines: priceLines([{ product: 'still', cans: 240, batch_id: 13 }], { pricePerCan: 2 }),
     ...over,
   })
+
+  it("books a BLine order's fee, and books other orders on a database without the BLine change", async () => {
+    const { order } = await createSalesOrder(
+      fakeSupabase(pg, PAUL),
+      queDiceOrder({ delivery_type: 'bline', delivery_fee: 48 })
+    )
+    expect(order).toMatchObject({ delivery_type: 'bline', delivery_fee: 48 })
+
+    // Until the BLine migration is applied, orders without a fee still go through.
+    const older = await createDb(migrationFiles().filter((f) => !f.endsWith('_bline_delivery.sql')))
+    await older.query('insert into private.partner_emails (email) values ($1)', [PAUL.email])
+    const drop = await createSalesOrder(fakeSupabase(older, PAUL), queDiceOrder())
+    expect(drop.created).toBe(true)
+    await expect(
+      createSalesOrder(
+        fakeSupabase(older, PAUL),
+        queDiceOrder({ delivery_type: 'bline', delivery_fee: 48 })
+      )
+    ).rejects.toBeInstanceOf(DbError)
+    await older.close()
+  }, 60_000)
 
   it('creates an order once per submission and books its inventory once', async () => {
     const db = fakeSupabase(pg, PAUL)

@@ -69,6 +69,7 @@ const anOrder = (
   customer_email: null,
   sheet_ref: null,
   new_customer: false,
+  delivery_fee: null,
   created_by: null,
   created_at: '2026-10-14T18:30:00.000Z',
   updated_at: '2026-10-14T18:30:00.000Z',

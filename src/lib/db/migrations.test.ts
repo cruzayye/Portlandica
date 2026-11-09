@@ -170,6 +170,7 @@ describe('migrations on the live schema', () => {
     // Newest first: the order-flow rollback puts back the functions the data-foundation
     // rollback drops by their original signatures.
     for (const file of [
+      '20261109000100_bline_delivery.sql',
       '20261017000900_ledger_made_in_app.sql',
       '20261017000700_order_flow.sql',
       '20261017_data_foundation.sql',
@@ -1060,7 +1061,7 @@ describe('order flow additions', () => {
     expect((await step('done', null)).o).toMatchObject({ sheet_ref: 'Sales!A3130:V3130' })
   })
 
-  it('can be undone on its own, leaving the data-foundation schema as it was', async () => {
+  it('can be undone with the BLine change on it, leaving the data-foundation schema as it was', async () => {
     const definitions = async (db: PGlite) =>
       (
         await db.query<{ x: string }>(`
@@ -1072,7 +1073,9 @@ describe('order flow additions', () => {
     const sqlDir = path.join(process.cwd(), 'src/lib/db/testing/sql')
     await before.exec(readFileSync(path.join(sqlDir, 'supabase-stub.sql'), 'utf8'))
     await before.exec(readFileSync(path.join(sqlDir, 'live-baseline.sql'), 'utf8'))
-    for (const file of migrationFiles().filter((f) => !f.endsWith('_order_flow.sql'))) {
+    for (const file of migrationFiles().filter(
+      (f) => !f.endsWith('_order_flow.sql') && !f.endsWith('_bline_delivery.sql')
+    )) {
       await before.exec(readFileSync(path.join(process.cwd(), 'supabase/migrations', file), 'utf8'))
     }
 
@@ -1084,12 +1087,238 @@ describe('order flow additions', () => {
         p_delivery_address: '1 Main St',
       }
     )
-    await pg.exec(
-      readFileSync(
-        path.join(process.cwd(), 'supabase/rollback/20261017000700_order_flow.sql'),
-        'utf8'
+    // Newest first: the BLine rollback puts back the create_sales_order this one drops.
+    for (const file of ['20261109000100_bline_delivery.sql', '20261017000700_order_flow.sql']) {
+      await pg.exec(readFileSync(path.join(process.cwd(), 'supabase/rollback', file), 'utf8'))
+    }
+    expect(await fingerprint(pg)).toEqual(await fingerprint(before))
+    expect(await definitions(pg)).toEqual(await definitions(before))
+    await before.close()
+  }, 60_000)
+})
+
+describe('BLine deliveries', () => {
+  const still = (cans: number, batch_id = 45) => ({
+    product: 'still',
+    cans,
+    batch_id,
+    unit_price: 1.5,
+  })
+  const sparkling = (cans: number) => ({
+    product: 'sparkling',
+    cans,
+    batch_id: 25,
+    unit_price: 1.5,
+  })
+
+  const blineOrder = (
+    key: string,
+    lines: ReturnType<typeof still>[],
+    fee: number | null,
+    auth: TestAuth = PAUL
+  ) =>
+    createOrder(auth, key, lines, {
+      p_delivery_type: 'bline',
+      ...(fee === null ? {} : { p_delivery_fee: fee }),
+    })
+
+  const atBline = async (batchId: number) =>
+    (
+      await pg.query<{
+        moved: number
+        booked: number
+        pending: number
+        remaining: number
+        on_hand: number
+      }>(
+        'select moved, booked, pending, remaining, on_hand from public.bline_stock where batch_id = $1',
+        [batchId]
       )
+    ).rows[0] ?? null
+
+  // Tomorrow in Portland, as the database sees it.
+  const tomorrow = async () =>
+    (
+      await pg.query<{ d: string }>(
+        `select ((now() at time zone 'America/Los_Angeles')::date + 1)::text as d`
+      )
+    ).rows[0].d
+
+  const move = async (auth: TestAuth, batchId: number, cans: number, reason = 'sent') =>
+    (
+      await one<{ m: Record<string, unknown> }>(
+        auth,
+        'select to_jsonb(public.record_bline_move($1, $2, $3)) as m',
+        [batchId, cans, reason]
+      )
+    ).m
+
+  const counted = (
+    auth: TestAuth,
+    batchId: number,
+    cans: number,
+    note: string,
+    expected: number | null = null
+  ) =>
+    query<{ m: Record<string, unknown> }>(
+      auth,
+      'select to_jsonb(m) as m from public.set_bline_count($1, $2, $3, $4) m',
+      [batchId, cans, note, expected]
     )
+
+  it('keeps the fee on a BLine order, and only there', async () => {
+    const { order } = await blineOrder('bline-1', [still(24)], 10)
+    expect(order).toMatchObject({ delivery_type: 'bline', delivery_fee: 10 })
+    expect((await createOrder(PAUL, 'drop-1', [still(24)])).order.delivery_fee).toBeNull()
+
+    await expect(blineOrder('bline-2', [still(24)], null)).rejects.toMatchObject({
+      hint: 'invalid_input',
+    })
+    await expect(blineOrder('bline-3', [still(24)], -1)).rejects.toMatchObject({
+      hint: 'invalid_input',
+    })
+    await expect(
+      createOrder(PAUL, 'drop-2', [still(24)], { p_delivery_fee: 5 })
+    ).rejects.toMatchObject({ hint: 'invalid_input' })
+    await expect(
+      pg.query(`update public.sales_orders set delivery_fee = null where id = $1`, [order.id])
+    ).rejects.toThrow(/sales_orders_delivery_fee_valid/)
+  })
+
+  it("works out what BLine has: what was sent, less BLine orders that aren't void", async () => {
+    await move(PAUL, 45, 1440)
+    await move(PAUL, 25, 1440)
+    const { order } = await blineOrder('bline-s1', [still(48), sparkling(24)], 10.8)
+    // Our own drop from the same batch doesn't touch BLine's cans.
+    await createOrder(PAUL, 'drop-s1', [still(240)])
+
+    // Booked with no delivery date, so for today: delivered as far as BLine's shelf goes.
+    expect(await atBline(45)).toEqual({
+      moved: 1440,
+      booked: 48,
+      pending: 0,
+      remaining: 1392,
+      on_hand: 1392,
+    })
+    expect(await atBline(25)).toMatchObject({ booked: 24, remaining: 1416, on_hand: 1416 })
+    expect(await atBline(13)).toBeNull()
+    // Sending cans to BLine leaves the batch count alone.
+    expect(await batchCount(45)).toBe(12000)
+
+    await query(PAUL, `select public.void_order($1, 'Customer cancelled')`, [order.id])
+    expect(await atBline(45)).toMatchObject({ booked: 0, remaining: 1440, on_hand: 1440 })
+
+    expect(await move(PAUL, 45, 240, 'returned')).toMatchObject({ cans: -240, reason: 'returned' })
+    expect(await atBline(45)).toMatchObject({ moved: 1200, remaining: 1200 })
+  })
+
+  it('keeps cans for deliveries after today on the shelf, and counts against that', async () => {
+    await move(PAUL, 45, 1440)
+    await createOrder(PAUL, 'bline-later', [still(240)], {
+      p_delivery_type: 'bline',
+      p_delivery_fee: 36,
+      p_delivery_date: await tomorrow(),
+    })
+    expect(await atBline(45)).toEqual({
+      moved: 1440,
+      booked: 240,
+      pending: 240,
+      remaining: 1200,
+      on_hand: 1440,
+    })
+
+    // BLine still has all 1,440 today: nothing to correct.
+    expect(await counted(PAUL, 45, 1440, 'Count before the delivery', 1440)).toEqual([])
+    await expect(counted(PAUL, 45, 1440, 'Against what is left', 1200)).rejects.toMatchObject({
+      hint: 'count_changed',
+    })
+    const [correction] = await counted(PAUL, 45, 1430, 'Ten damaged', 1440)
+    expect(correction.m).toMatchObject({ reason: 'count', cans: -10 })
+    expect(await atBline(45)).toMatchObject({ remaining: 1190, on_hand: 1430 })
+  })
+
+  it("records BLine's count as the difference, and refuses a count made against old numbers", async () => {
+    await move(PAUL, 45, 1440)
+    await blineOrder('bline-c1', [still(48)], 10)
+
+    const [correction] = await counted(PAUL, 45, 1380, 'BLine email Nov 20', 1392)
+    expect(correction.m).toMatchObject({ reason: 'count', cans: -12, note: 'BLine email Nov 20' })
+    expect(await atBline(45)).toMatchObject({ moved: 1428, remaining: 1380 })
+
+    expect(await counted(PAUL, 45, 1380, 'Same again', 1380)).toEqual([])
+    await expect(counted(PAUL, 45, 1300, 'Old numbers', 1392)).rejects.toMatchObject({
+      hint: 'count_changed',
+    })
+    await expect(counted(PAUL, 45, 1300, ' ')).rejects.toMatchObject({ hint: 'invalid_input' })
+    await expect(counted(PAUL, 45, -1, 'Typo')).rejects.toMatchObject({ hint: 'invalid_input' })
+    // A count can start what BLine has of a batch nobody recorded sending.
+    const [first] = await counted(PAUL, 25, 480, 'Found at BLine')
+    expect(first.m).toMatchObject({ reason: 'count', cans: 480 })
+  })
+
+  it('checks cans sent or brought back', async () => {
+    await expect(move(PAUL, 45, 0)).rejects.toMatchObject({ hint: 'invalid_input' })
+    await expect(move(PAUL, 45, -24)).rejects.toMatchObject({ hint: 'invalid_input' })
+    await expect(move(PAUL, 45, 24, 'count')).rejects.toMatchObject({ hint: 'invalid_input' })
+    await expect(move(PAUL, 999, 24)).rejects.toMatchObject({ hint: 'batch_not_found' })
+    await expect(
+      query(PAUL, `select public.record_bline_move(45, 24, 'sent', $1::date)`, [await tomorrow()])
+    ).rejects.toMatchObject({ hint: 'invalid_input' })
+    await query(PAUL, 'select public.archive_batch(46)')
+    await expect(move(PAUL, 46, 24)).rejects.toMatchObject({ hint: 'batch_archived' })
+    expect(await move(PAUL, 45, 24)).toMatchObject({ cans: 24, reason: 'sent', note: null })
+    await expect(
+      pg.query(
+        `insert into public.bline_stock_moves (batch_id, cans, reason) values (45, -5, 'sent')`
+      )
+    ).rejects.toThrow(/bline_stock_moves_direction/)
+  })
+
+  it('lets only the app and partners see or change what BLine has', async () => {
+    await move(SERVICE, 45, 1440)
+    for (const table of ['bline_stock_moves', 'bline_stock']) {
+      await expect(query(ANON, `select * from public.${table}`)).rejects.toMatchObject({
+        code: '42501',
+      })
+      expect(await query(STRANGER, `select * from public.${table}`)).toEqual([])
+      expect(await query(JOHNNY, `select * from public.${table}`)).toHaveLength(1)
+    }
+    await expect(move(ANON, 45, 24)).rejects.toMatchObject({ code: '42501' })
+    await expect(move(STRANGER, 45, 24)).rejects.toMatchObject({ hint: 'not_partner' })
+    await expect(counted(STRANGER, 45, 0, 'Nope')).rejects.toMatchObject({ hint: 'not_partner' })
+    await expect(
+      query(
+        PAUL,
+        `insert into public.bline_stock_moves (batch_id, cans, reason) values (45, 24, 'sent')`
+      )
+    ).rejects.toMatchObject({ code: '42501' })
+  })
+
+  it('can be undone on its own, but not while there are BLine orders', async () => {
+    const definitions = async (db: PGlite) =>
+      (
+        await db.query<{ x: string }>(`
+          select p.proname || ' ' || md5(pg_get_functiondef(p.oid)) as x
+          from pg_proc p where p.pronamespace = 'public'::regnamespace order by 1`)
+      ).rows.map((r) => r.x)
+    const before = await createDb(
+      migrationFiles().filter((f) => !f.endsWith('_bline_delivery.sql'))
+    )
+    const undo = readFileSync(
+      path.join(process.cwd(), 'supabase/rollback/20261109000100_bline_delivery.sql'),
+      'utf8'
+    )
+
+    await move(PAUL, 45, 1440)
+    await blineOrder('undo-1', [still(24)], 10)
+    await expect(pg.exec(undo)).rejects.toThrow(/BLine orders/)
+    await pg.exec('rollback')
+    expect(await atBline(45)).toMatchObject({ remaining: 1416 })
+
+    await pg.exec(
+      `update public.sales_orders set delivery_type = 'drop', delivery_fee = null where delivery_type = 'bline'`
+    )
+    await pg.exec(undo)
     expect(await fingerprint(pg)).toEqual(await fingerprint(before))
     expect(await definitions(pg)).toEqual(await definitions(before))
     await before.close()

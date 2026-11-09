@@ -77,6 +77,14 @@ describe('preselectBatchId', () => {
   it('stays blank when nothing is available', () => {
     expect(preselectBatchId([], [])).toBe('')
   })
+
+  it('picks the only preferred batch (BLine has cans of it) when nothing else would be', () => {
+    const other = batch({ id: 7 })
+    expect(preselectBatchId([house, other], [], [other])).toBe(7)
+    expect(preselectBatchId([house, other], [], [house, other])).toBe('')
+    // A customer's own custom fill still comes first.
+    expect(preselectBatchId([house, custom], [custom], [house])).toBe(4)
+  })
 })
 
 describe('chosenBatchId', () => {

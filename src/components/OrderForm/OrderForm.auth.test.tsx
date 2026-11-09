@@ -44,6 +44,7 @@ const data: OrderFormData = {
     },
   ],
   squareReady: false,
+  blineStock: [],
   warnings: [],
 }
 

@@ -17,12 +17,14 @@ import {
   getCustomer,
   updateCustomer,
 } from '@/lib/db/customers'
+import { listBlineStock } from '@/lib/db/bline'
 import { listBatches } from '@/lib/db/inventory'
 import {
   createSalesOrder,
   deliveryTypeFromForm,
   findSameDayOrders,
   getSalesOrderByKey,
+  linesTotal,
   priceLines,
 } from '@/lib/db/orders'
 import {
@@ -31,6 +33,7 @@ import {
   type SheetLocation,
 } from '@/lib/google/sheets'
 import { batchesForCustomer } from '@/lib/batches'
+import { blineFee } from '@/lib/bline'
 import {
   businessTypes,
   customerOptions,
@@ -54,9 +57,24 @@ const reason = (err: unknown) => (err instanceof Error ? err.message : String(er
 const SAFE_TO_RETRY =
   'Submitting again is safe: the same order is never booked twice.'
 
+// What BLine should have of each batch, for the form's BLine hints. Null if it can't be
+// read; the form still books orders without it.
+const blineStockFor = async (db: Db) => {
+  try {
+    return (await listBlineStock(db)).map((row) => ({
+      batchId: row.batch_id,
+      remaining: row.remaining,
+    }))
+  } catch (err) {
+    console.error("getOrderFormData: reading BLine's stock failed", err)
+    return null
+  }
+}
+
 /**
  * Everything the order form needs: customers (names on the Current Locations Addresses
- * tab are added to the customers table first), business types and the batches on hand.
+ * tab are added to the customers table first), business types, the batches on hand and
+ * what BLine has of them.
  */
 export const getOrderFormData = async (): Promise<OrderFormData | AuthFailure> => {
   const { failure } = await requireUser()
@@ -75,9 +93,10 @@ export const getOrderFormData = async (): Promise<OrderFormData | AuthFailure> =
 
   try {
     const db = await createClient()
-    const [{ customers }, batches] = await Promise.all([
+    const [{ customers }, batches, blineStock] = await Promise.all([
       syncCustomers(db, locations),
       listBatches(db),
+      blineStockFor(db),
     ])
     return {
       customers: customerOptions(customers, locations),
@@ -95,6 +114,7 @@ export const getOrderFormData = async (): Promise<OrderFormData | AuthFailure> =
         })
       ),
       squareReady: squareReady(),
+      blineStock,
       warnings,
     }
   } catch (err) {
@@ -104,6 +124,7 @@ export const getOrderFormData = async (): Promise<OrderFormData | AuthFailure> =
       businessTypes: [],
       batches: [],
       squareReady: squareReady(),
+      blineStock: null,
       warnings: [
         ...warnings,
         `Couldn't load customers and batches (${reason(err)}). Reload the page to try again.`,
@@ -283,13 +304,17 @@ export const createOrder = async (
 
     const { customer, isNew } = await resolveCustomer(db, input)
     const priced = priceOrder(input, customer, batches)
+    const deliveryType = deliveryTypeFromForm(input.deliveryType)!
     const created = await createSalesOrder(db, {
       idempotency_key: key,
       order_date: orderDate,
       customer_id: customer?.id ?? null,
       customer_name: customer?.name ?? input.name,
       type: dbCustomerType(input.customerType),
-      delivery_type: deliveryTypeFromForm(input.deliveryType)!,
+      delivery_type: deliveryType,
+      // What BLine bills us for this delivery, on what the customer is charged.
+      delivery_fee:
+        deliveryType === 'bline' ? blineFee(priced.totalPrice ?? linesTotal(priced.lines)) : null,
       delivery_date: input.deliveryDate,
       delivery_address: deliveryAddress(input, customer),
       po_number: input.poNumber,

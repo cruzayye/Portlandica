@@ -19,6 +19,7 @@ import type { Batch } from '@/lib/db/types'
 import AddBatchDialog from './AddBatchDialog'
 import BatchDialog from './BatchDialog'
 import BatchList from './BatchList'
+import BlineStock from './BlineStock'
 import StockAlerts from './StockAlerts'
 import { portlandToday } from './dates'
 import { isArchived } from './stock'
@@ -71,6 +72,8 @@ const Inventory = () => {
   // The fill date a new batch starts with; set while the Add batch dialog is open.
   const [addingOn, setAddingOn] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
+  // Bumped by Refresh, so the BLine panel loads again too.
+  const [reloads, setReloads] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -86,7 +89,8 @@ const Inventory = () => {
     }
   }, [])
 
-  const refresh = () =>
+  const refresh = () => {
+    setReloads((n) => n + 1)
     startRefresh(async () => {
       try {
         dispatch({ type: 'loaded', result: await loadInventory() })
@@ -94,6 +98,7 @@ const Inventory = () => {
         dispatch({ type: 'loadFailed' })
       }
     })
+  }
 
   if (!data) {
     return error ? (
@@ -135,6 +140,7 @@ const Inventory = () => {
           </Alert>
         )}
         <StockAlerts batches={data.batches} ledger={data.ledger} />
+        <BlineStock batches={data.batches} reloadKey={reloads} />
         <BatchList
           batches={data.batches}
           customers={data.customers}

@@ -1,4 +1,10 @@
-import type { Batch, Customer, CustomerType as DbCustomerType, SalesOrderLine } from '@/lib/db/types'
+import type {
+  Batch,
+  Customer,
+  CustomerType as DbCustomerType,
+  DeliveryType,
+  SalesOrderLine,
+} from '@/lib/db/types'
 import type {
   CustomerType,
   OrderInput,
@@ -8,7 +14,7 @@ import type {
 } from '@/types/orders'
 import { CANS_PER_CASE, DEFAULT_PRICE_PER_CAN } from '@/globals/constants'
 import { customerKey } from '@/lib/db/customers'
-import { lineTotal, unitPrices } from '@/lib/db/orders'
+import { deliveryTypeFromForm, lineTotal, unitPrices } from '@/lib/db/orders'
 import { isIsoDate } from '@/lib/delivery'
 import { batchTitle } from '@/lib/batches'
 
@@ -55,7 +61,7 @@ export const orderProblem = (order: OrderInput): string | null => {
       return `Pick the ${PRODUCT_NAMES[line.product]} batch this order comes from.`
     }
   }
-  if (!order.deliveryType) return 'Choose Drop, Ship or Pickup.'
+  if (!order.deliveryType) return 'Choose Drop, BLine, Ship or Pickup.'
   if (!isIsoDate(order.deliveryDate)) return 'Pick a delivery date.'
   if (!order.isDonation && !((order.price ?? 0) > 0)) {
     return 'Enter a price, or mark this order as a donation.'
@@ -165,12 +171,14 @@ export const shortfallMessage = (s: Shortfall) =>
   `${s.batchName} has ${s.available.toLocaleString('en-US')} cans left; this order needs ${s.needed.toLocaleString('en-US')}.`
 
 /**
- * Whether a saved order is the one this form submission describes: same customer,
- * products, cans, batches, donation flag and price.
+ * Whether a saved order is the one this form submission describes: same customer, delivery
+ * type (BLine or not changes the fee and who delivers), products, cans, batches, donation
+ * flag and price.
  */
 export const sameOrder = (
   saved: {
     customer_name: string
+    delivery_type: DeliveryType
     is_donation: boolean
     total_price: number
     lines: Pick<SalesOrderLine, 'product' | 'cans' | 'batch_id'>[]
@@ -189,6 +197,7 @@ export const sameOrder = (
   }))
   return (
     customerKey(saved.customer_name) === customerKey(input.name) &&
+    saved.delivery_type === deliveryTypeFromForm(input.deliveryType) &&
     linesKey(saved.lines) === linesKey(inputLines) &&
     saved.is_donation === input.isDonation &&
     (input.isDonation ||

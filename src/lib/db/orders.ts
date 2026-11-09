@@ -54,6 +54,8 @@ export type NewSalesOrder = {
   customer_email?: string | null
   /** This order added the customer. */
   new_customer?: boolean
+  /** What BLine charges to deliver it. Required for a BLine order; never set for any other. */
+  delivery_fee?: number | null
 }
 
 export type CreatedSalesOrder = {
@@ -67,11 +69,12 @@ export const newIdempotencyKey = () => crypto.randomUUID()
 
 const DELIVERY_TYPES: Record<string, DeliveryType> = {
   drop: 'drop',
+  bline: 'bline',
   ship: 'ship',
   pickup: 'pickup',
 }
 
-/** The order form's 'Drop' | 'Ship' | 'Pickup' as a delivery_type. */
+/** The order form's 'Drop' | 'BLine' | 'Ship' | 'Pickup' as a delivery_type. */
 export const deliveryTypeFromForm = (value: string | null | undefined): DeliveryType | null =>
   DELIVERY_TYPES[(value ?? '').trim().toLowerCase()] ?? null
 
@@ -183,6 +186,9 @@ export const createSalesOrder = async (db: Db, order: NewSalesOrder) =>
       p_delivery_address: order.delivery_address ?? null,
       p_customer_email: order.customer_email ?? null,
       p_new_customer: order.new_customer ?? false,
+      // Only sent with a fee, so orders that have none also work against a database that
+      // doesn't have the BLine migration yet.
+      ...(order.delivery_fee != null ? { p_delivery_fee: order.delivery_fee } : {}),
     })
   )
 
