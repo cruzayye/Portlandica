@@ -51,6 +51,7 @@ const order = (over: Partial<SalesOrderWithLines> = {}): SalesOrderWithLines =>
     delivery_address: null,
     customer_email: null,
     new_customer: false,
+    delivery_fee: null,
     created_by: null,
     created_at: '2026-10-15T18:00:00Z',
     updated_at: '2026-10-15T18:00:00Z',
@@ -113,6 +114,32 @@ describe('OrderHistory', () => {
     expect(within(card).getByText('Sales sheet: done')).toBeInTheDocument()
     expect(within(card).getByText('Sales sheet: Sales rows 3126–3127')).toBeInTheDocument()
     expect(within(card).queryByRole('button', { name: /^Retry/ })).not.toBeInTheDocument()
+  })
+
+  it("shows a BLine order's fee, and reminds us to call off the delivery once void", async () => {
+    listOrders.mockResolvedValue(
+      history([
+        order({ delivery_type: 'bline', delivery_fee: 25.2 }),
+        order({
+          id: 13,
+          delivery_type: 'bline',
+          delivery_fee: 10,
+          voided_at: '2026-10-15T19:00:00Z',
+          void_reason: 'Customer cancelled',
+        }),
+      ])
+    )
+    render(<OrderHistory />)
+
+    const live = await screen.findByRole('article', { name: 'Order 12' })
+    expect(
+      within(live).getByText('#12 · 10/15/2026 · BLine 10/21/2026 ($25.20 fee)')
+    ).toBeInTheDocument()
+    expect(within(live).queryByText(/Email BLine/)).not.toBeInTheDocument()
+    const voided = screen.getByRole('article', { name: 'Order 13' })
+    expect(
+      within(voided).getByText('Email BLine to call off this delivery, if they already have it.')
+    ).toBeInTheDocument()
   })
 
   it('says when an order was invoiced outside Square', async () => {

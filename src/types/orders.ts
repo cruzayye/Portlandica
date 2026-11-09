@@ -18,8 +18,8 @@ export type NewInventory = Omit<Inventory, 'id' | 'created_at'>
 /** Who the order is for. Both kinds of business book as "Business" in the Sales sheet. */
 export type CustomerType = 'existing' | 'new' | 'individual'
 
-/** The order form's delivery choices. */
-export type FormDeliveryType = 'Drop' | 'Ship' | 'Pickup'
+/** The order form's delivery choices. BLine: delivered by BLine from the stock it keeps. */
+export type FormDeliveryType = 'Drop' | 'BLine' | 'Ship' | 'Pickup'
 
 /** The products the order form sells. */
 export type OrderProduct = 'still' | 'sparkling'
@@ -120,6 +120,8 @@ export type OrderFormData = {
   batches: BatchOption[]
   /** False when SQUARE_ACCESS_TOKEN isn't set: Create Invoice makes no draft. */
   squareReady: boolean
+  /** Cans BLine should have, per batch it holds or delivered from. Null if it couldn't be read. */
+  blineStock: { batchId: number; remaining: number }[] | null
   /** Problems loading, e.g. the locations tab couldn't be read. */
   warnings: string[]
 }

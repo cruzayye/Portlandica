@@ -198,6 +198,16 @@ describe('voidOrder', () => {
     expect(mocks.archiveTrelloCard).toHaveBeenCalledWith('card-1')
   })
 
+  it('reminds us to call off a BLine delivery', async () => {
+    const order = await finishedOrder({ delivery_type: 'bline', delivery_fee: 25.2 })
+
+    const result = await voidOrder(order.id, 'Customer cancelled')
+    expect(handFixes(result)).toEqual([
+      SALES_ROWS_FIX,
+      'Email BLine to call off this delivery, if they already have it.',
+    ])
+  })
+
   it('lists a card it could not archive', async () => {
     const order = await finishedOrder()
     mocks.archiveTrelloCard.mockRejectedValue(new Error('Trello API error archiving the card: 401'))

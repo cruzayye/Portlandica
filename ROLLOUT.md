@@ -258,3 +258,29 @@ current time and the charts are drawn; Refresh Data loads them again.
 **If it breaks:** check that both variables are still set in Vercel and that
 `APPS_SCRIPT_TOKEN` matches the `DASHBOARD_TOKEN` script property; the tab's error says which.
 There is no standalone dashboard to fall back to any more.
+
+## 11. BLine deliveries
+
+BLine keeps a few pallets of our cans and delivers some local orders (docs/order-flow.md,
+"BLine deliveries"; docs/inventory-ui.md, "At BLine").
+
+1. In the Supabase SQL Editor, run `supabase/migrations/20261109000100_bline_delivery.sql`
+   as one script. It only adds: the live app keeps working before and after. Before anyone
+   uses the Supabase CLI here, mark it applied, as for the earlier SQL Editor steps:
+   `npx supabase migration repair --status applied 20261109000100`.
+2. Deploy the branch. (The other order is safe too: until the migration is in, every order
+   except a BLine one still books; a BLine order fails at saving, with nothing written.)
+3. In the app's Inventory tab, **At BLine → Update → Sent**: record the pallets BLine
+   already has (one Still and one Sparkling pallet to start, 60 cases each if full), from
+   the batches they came from, dated the day they went over.
+
+**Check:** book a BLine order (a small one you then void is fine). The form shows BLine's
+fee, the Sales rows have the fee in Shipping Cost (G) and Notes start "BLine delivery", the
+Trello card has the purple BLine label, Order History shows the fee, and At BLine goes down
+by the order's cans (and back up when it's voided); until its delivery date, the cans still
+show as on the shelf. Remember to fix the voided order's Sales rows by hand.
+
+**Undo:** run `supabase/rollback/20261109000100_bline_delivery.sql`. It stops, changing
+nothing, while any order is a BLine order; the top of the file says how to turn those into
+drops first.
+

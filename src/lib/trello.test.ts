@@ -61,6 +61,14 @@ describe('cardFor', () => {
     ])
   })
 
+  it('says BLine on a BLine order, so nobody loads it on our truck', () => {
+    const card = cardFor(order({ deliveryType: 'bline', address: '123 NE Broadway' }))
+    expect(card.name).toBe('Dame - BLine 120 Still')
+    expect(card.desc.split('\n')[0]).toBe('Delivery Type: BLine')
+    expect(card.isBline).toBe(true)
+    expect(cardFor(order()).isBline).toBe(false)
+  })
+
   it('is due at 9 AM Pacific on the picked delivery date', () => {
     expect(cardFor(order({ deliveryDate: '2026-10-24' })).due.toISOString()).toBe(
       '2026-10-24T16:00:00.000Z'
@@ -129,6 +137,19 @@ describe('createTrelloCard', () => {
       idList: 'list',
       idLabels: ['label:2026-09-26'],
     })
+  })
+
+  it('labels a BLine card BLine, in purple, as well as with its fill date', async () => {
+    await createTrelloCard(order({ deliveryType: 'bline' }))
+    expect(postedCard()).toMatchObject({
+      name: 'Dame - BLine 120 Still',
+      idLabels: ['label:BLine', 'label:2026-09-26'],
+    })
+    const made = trello.requests.filter((r) => r.url.includes('/labels') && r.method === 'POST')
+    expect(made.map((r) => [r.body?.name, r.body?.color])).toEqual([
+      ['BLine', 'purple'],
+      ['2026-09-26', null],
+    ])
   })
 
   it('reuses a card an earlier attempt made for the same order', async () => {

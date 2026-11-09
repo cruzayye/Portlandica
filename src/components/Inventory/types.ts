@@ -1,4 +1,11 @@
-import type { Batch, LedgerCheckRow, LineProduct, MovementReason } from '@/lib/db/types'
+import type {
+  Batch,
+  BlineStockMove,
+  BlineStockRow,
+  LedgerCheckRow,
+  LineProduct,
+  MovementReason,
+} from '@/lib/db/types'
 
 // Shapes shared by the Inventory tab and its server actions (src/app/actions/batches.ts).
 
@@ -80,3 +87,34 @@ export type HistoryEntry = {
 }
 
 export type HistoryResult = { ok: true; entries: HistoryEntry[] } | ActionFailure
+
+/** What BLine has: per batch, and the latest cans sent, brought back and counted. */
+export type BlineData = { stock: BlineStockRow[]; moves: BlineStockMove[] }
+
+export type BlineLoadResult = ({ ok: true } & BlineData) | ActionFailure
+
+/** Cans sent to BLine or brought back from it, or what BLine counted. */
+export type BlineUpdate =
+  | {
+      kind: 'sent' | 'returned'
+      batchId: number
+      /** How many, more than 0. */
+      cans: number
+      /** YYYY-MM-DD, not after today */
+      movedOn: string
+      note: string | null
+    }
+  | {
+      kind: 'count'
+      batchId: number
+      /** What BLine counted today, 0 or more. */
+      counted: number
+      /** What BLine should have on its shelf today, as the partner saw it. Refused if it has moved since. */
+      expectedCount: number
+      note: string
+    }
+
+/** After an update: what BLine has now. On failure, `data` is fresh when it was read. */
+export type BlineUpdateResult =
+  | ({ ok: true } & BlineData)
+  | { ok: false; error: string; data?: BlineData }

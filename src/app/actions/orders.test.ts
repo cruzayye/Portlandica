@@ -181,6 +181,18 @@ describe('getOrderFormData', () => {
     expect(batches.find((b) => b.id === 33)).toMatchObject({ isStill: true, isCustom: false })
   })
 
+  it('says what BLine has of each batch, and carries on without it if that fails', async () => {
+    await asRole(mocks.pg!, SERVICE, (tx) =>
+      tx.query(`select public.record_bline_move(45, 1440, 'sent')`)
+    )
+    expect(await getOrderFormData()).toMatchObject({
+      blineStock: [{ batchId: 45, remaining: 1440 }],
+    })
+
+    await mocks.pg!.exec('drop view public.bline_stock')
+    expect(await getOrderFormData()).toMatchObject({ blineStock: null, warnings: [] })
+  })
+
   it('still offers the saved customers when the locations tab cannot be read', async () => {
     await createCustomer(db(), { name: 'Dame' })
     mocks.getLocationsFromSheet.mockRejectedValue(new Error('quota exceeded'))
@@ -539,6 +551,39 @@ describe('createOrder', () => {
       )
     )
     expect((await findCustomerByName(db(), 'Lovejoy Bakers'))?.email).toBe('ap@lovejoy.example')
+  })
+
+  it("works out BLine's fee on what the customer is charged, and keeps it on the order", async () => {
+    const order = await lovejoy()
+    // Automatic price: 120 still + 48 sparkling at $1.50 = $252, so 10%.
+    const auto = saved(
+      await createOrder(
+        { ...order, deliveryType: 'BLine' },
+        { idempotencyKey: newIdempotencyKey(), force: true }
+      )
+    )
+    expect(auto.order).toMatchObject({ delivery_type: 'bline', delivery_fee: 25.2 })
+    // A typed price counts, not the automatic one.
+    const typed = saved(
+      await createOrder(
+        { ...order, deliveryType: 'BLine', price: 90 },
+        { idempotencyKey: newIdempotencyKey(), force: true }
+      )
+    )
+    expect(typed.order).toMatchObject({ total_price: 90, delivery_fee: 10 })
+    // A donation still costs a delivery.
+    const donation = saved(
+      await createOrder(
+        { ...order, deliveryType: 'BLine', isDonation: true, price: 0 },
+        { idempotencyKey: newIdempotencyKey(), force: true }
+      )
+    )
+    expect(donation.order).toMatchObject({ is_donation: true, delivery_fee: 10 })
+    // Our own drops have none.
+    const drop = saved(
+      await createOrder(order, { idempotencyKey: newIdempotencyKey(), force: true })
+    )
+    expect(drop.order.delivery_fee).toBeNull()
   })
 
   it('books a donation at $0 with no invoice', async () => {

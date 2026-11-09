@@ -99,6 +99,42 @@ const placeOrder = async (over: Partial<NewSalesOrder> = {}) =>
   ).order
 
 describe('runOrderSteps', () => {
+  it("books a BLine order's fee in Shipping Cost and marks its Notes and Trello card", async () => {
+    // $180 still and $72 sparkling: BLine charges 10% of $252.
+    const order = await placeOrder({
+      delivery_type: 'bline',
+      delivery_fee: 25.2,
+      notes: 'Back door',
+    })
+    const run = await runOrderSteps(db, order.id)
+
+    expect(run.order).toMatchObject({ sheet_status: 'done', trello_status: 'done' })
+    const sheetOrder = steps.writeOrderToSheet.mock.calls[0][0]
+    expect(sheetOrder.lines.map((line: { shippingCost: number }) => line.shippingCost)).toEqual([
+      18, 7.2,
+    ])
+    expect(sheetOrder.notes).toBe('BLine delivery · Back door')
+    expect(steps.createTrelloCard.mock.calls[0][0]).toMatchObject({
+      deliveryType: 'bline',
+      notes: 'Back door',
+    })
+    // The cans come out of their batches like any other order's.
+    expect((await getBatch(db, 45))?.count).toBe(12000 - 120)
+  })
+
+  it('notes the fee of a BLine donation, which has no Shipping Cost column', async () => {
+    const order = await placeOrder({
+      delivery_type: 'bline',
+      delivery_fee: 10,
+      is_donation: true,
+      lines: priceLines([{ product: 'still', cans: 24, batch_id: 45 }], { isDonation: true }),
+    })
+    await runOrderSteps(db, order.id)
+
+    const sheetOrder = steps.writeOrderToSheet.mock.calls[0][0]
+    expect(sheetOrder).toMatchObject({ isDonation: true, notes: 'BLine delivery ($10.00 fee)' })
+  })
+
   it('runs the sheet, inventory and Trello steps in order and records each one', async () => {
     const order = await placeOrder({
       notes: 'Back door',
@@ -127,8 +163,22 @@ describe('runOrderSteps', () => {
       type: 'business',
       customerName: 'Lovejoy Bakers',
       lines: [
-        { product: 'still', cans: 120, batchId: 45, isCustom: false, amount: 180 },
-        { product: 'sparkling', cans: 48, batchId: 25, isCustom: false, amount: 72 },
+        {
+          product: 'still',
+          cans: 120,
+          batchId: 45,
+          isCustom: false,
+          amount: 180,
+          shippingCost: null,
+        },
+        {
+          product: 'sparkling',
+          cans: 48,
+          batchId: 25,
+          isCustom: false,
+          amount: 72,
+          shippingCost: null,
+        },
       ],
       isPaid: false,
       createInvoice: false,
@@ -322,8 +372,15 @@ describe('runOrderSteps', () => {
     await runOrderSteps(db, order.id)
 
     expect(steps.writeOrderToSheet.mock.calls[0][0].lines).toEqual([
-      { product: 'still', cans: 240, batchId: 13, isCustom: true, amount: 480 },
-      { product: 'sparkling', cans: 48, batchId: 25, isCustom: false, amount: 72 },
+      { product: 'still', cans: 240, batchId: 13, isCustom: true, amount: 480, shippingCost: null },
+      {
+        product: 'sparkling',
+        cans: 48,
+        batchId: 25,
+        isCustom: false,
+        amount: 72,
+        shippingCost: null,
+      },
     ])
     expect(
       (steps.createDraftInvoice.mock.calls[0][0].lines as InvoiceLine[]).map(

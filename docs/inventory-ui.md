@@ -34,7 +34,37 @@ ledger actions in `src/app/actions/batches.ts`.
   customer picked from the customers table; still or sparkling; cases, water source,
   fill date (today in Portland), and optionally cost, invoice number and a note.
 
+- **At BLine**, under the banner: what BLine has left of each batch once every booked
+  delivery is made, and, while some deliveries are still to come, how many cans are on its
+  shelf today. A warning shows when a product drops under 240 cans there
+  (`BLINE_LOW_STOCK_CANS` in `src/lib/bline.ts`) or goes below zero, and the latest change is
+  listed. **Update** records cans **sent** to BLine or **brought back**, in cases or cans,
+  dated today or earlier, or what BLine **counted** today: the difference from what should be
+  on its shelf today (cans for deliveries after today are still there) is recorded as a count
+  correction, with a note saying where the count came from. It is refused if an order changed
+  the number while you were counting. Sending, bringing back and counting never change batch
+  counts, since a batch counts its cans wherever they are; if cans were lost at BLine, change
+  the batch's count too. A pallet is 60 cases (1,440 cans).
+
 On phones the dialogs fill the screen (checked at 375 px wide).
+
+### What BLine has
+
+`bline_stock` (a view, `20261109000100_bline_delivery.sql`) works it out per batch:
+
+- `moved`: the cans in `bline_stock_moves` (sent +, brought back -, count corrections ±).
+- `booked`: cans on BLine orders that aren't void, and `pending`: those for deliveries after
+  today (an order's delivery date, or its order date if it has none). A delivery dated today
+  counts as made.
+- `remaining` = moved - booked: what BLine can still deliver. The order form and the
+  warnings use it.
+- `on_hand` = remaining + pending: what should be on BLine's shelf today. A count is
+  compared with it.
+
+BLine orders aren't copied into the moves, so voiding one puts its cans back at BLine on its
+own. `record_bline_move` (dated today or earlier) and `set_bline_count` (always today) are the
+only ways to write the moves; `src/app/actions/bline.ts` calls them for the tab. Record a
+count the day BLine makes it: a late one is measured against today's deliveries.
 
 ### Who made a change
 

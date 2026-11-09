@@ -93,7 +93,7 @@ describe('orderProblem', () => {
       order({ lines: [{ product: 'sparkling', cans: 48, batchId: null }] }),
       /Sparkling batch/,
     ],
-    ['no delivery type', order({ deliveryType: null }), /Drop, Ship or Pickup/],
+    ['no delivery type', order({ deliveryType: null }), /Drop, BLine, Ship or Pickup/],
     ['no delivery date', order({ deliveryDate: '' }), /delivery date/],
     ['a $0 sale', order({ price: 0 }), /price, or mark this order as a donation/],
     ['a sale with no price', order({ price: null }), /price/],
@@ -241,6 +241,7 @@ describe('shortfalls', () => {
 describe('sameOrder', () => {
   const saved = {
     customer_name: 'Dame',
+    delivery_type: 'drop' as const,
     is_donation: false,
     total_price: 252,
     lines: [
@@ -257,6 +258,8 @@ describe('sameOrder', () => {
   it('tells a changed order apart', () => {
     expect(sameOrder(saved, order({ price: 250 }))).toBe(false)
     expect(sameOrder(saved, order({ name: 'Que Dice' }))).toBe(false)
+    // Switching to or from BLine changes the fee and who delivers it.
+    expect(sameOrder(saved, order({ deliveryType: 'BLine' }))).toBe(false)
     expect(sameOrder(saved, order({ lines: [{ product: 'still', cans: 144, batchId: 45 }] }))).toBe(
       false
     )

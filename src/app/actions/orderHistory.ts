@@ -15,6 +15,7 @@ import { findOrderRows, untagOrderRows } from '@/lib/google/sheets'
 import { archiveTrelloCard } from '@/lib/trello'
 import { deleteVoidedOrderDraft, runOrderSteps } from '@/lib/orderSteps'
 import { describeSheetRef } from '@/lib/orders'
+import { BLINE_CANCEL } from '@/lib/bline'
 
 const reason = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
@@ -126,6 +127,7 @@ export const voidOrder = async (
     }
 
     handFixes.push(...(await deleteVoidedOrderDraft(db, voided)))
+    if (voided.delivery_type === 'bline') handFixes.push(BLINE_CANCEL)
 
     const [order] = await markInvoicedOutsideSquare(db, [
       (await getSalesOrder(db, orderId)) ?? { ...voided, lines: [] },

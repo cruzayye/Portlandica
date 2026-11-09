@@ -18,7 +18,15 @@ export type TrelloOrder = {
 
 type TrelloConfig = { apiKey: string; token: string; listId: string; boardId: string }
 
-const DELIVERY_LABELS: Record<DeliveryType, string> = { drop: 'Drop', ship: 'Ship', pickup: 'Pickup' }
+const DELIVERY_LABELS: Record<DeliveryType, string> = {
+  drop: 'Drop',
+  bline: 'BLine',
+  ship: 'Ship',
+  pickup: 'Pickup',
+}
+
+/** The board label every BLine card gets, so nobody loads it on our truck. */
+export const BLINE_LABEL = { name: 'BLine', color: 'purple' } as const
 const PRODUCT_LABELS: Record<LineProduct, string> = { still: 'Still', sparkling: 'Sparkling' }
 
 const trelloConfig = (): TrelloConfig => {
@@ -66,11 +74,15 @@ export const cardFor = (order: TrelloOrder, now = new Date()) => {
   ].join('\n')
   // One label per batch fill date, once each.
   const fillDates = [...new Set(order.lines.map((line) => line.fillDate).filter(Boolean))] as string[]
-  return { name, desc, due, fillDates }
+  return { name, desc, due, fillDates, isBline: order.deliveryType === 'bline' }
 }
 
-// Board labels are named after a batch's fill date.
-const getOrCreateLabel = async (config: TrelloConfig, name: string): Promise<string> => {
+// Board labels are named after a batch's fill date, plus BLINE_LABEL.
+const getOrCreateLabel = async (
+  config: TrelloConfig,
+  name: string,
+  color: string | null = null
+): Promise<string> => {
   const res = await fetch(
     `https://api.trello.com/1/boards/${config.boardId}/labels?${auth(config)}`
   )
@@ -83,7 +95,7 @@ const getOrCreateLabel = async (config: TrelloConfig, name: string): Promise<str
   const createRes = await fetch(`https://api.trello.com/1/boards/${config.boardId}/labels`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, color: null, key: config.apiKey, token: config.token }),
+    body: JSON.stringify({ name, color, key: config.apiKey, token: config.token }),
   })
   if (!createRes.ok) throw new Error(`Trello API error creating label: ${createRes.status}`)
   const created: { id: string } = await createRes.json()
@@ -117,6 +129,9 @@ export const createTrelloCard = async (
 
   const card = cardFor(order)
   const idLabels: string[] = []
+  if (card.isBline) {
+    idLabels.push(await getOrCreateLabel(config, BLINE_LABEL.name, BLINE_LABEL.color))
+  }
   for (const fillDate of card.fillDates) {
     idLabels.push(await getOrCreateLabel(config, fillDate))
   }

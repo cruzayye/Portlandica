@@ -17,6 +17,11 @@ vi.mock('@/app/actions/batches', () => ({
   unarchiveInventoryBatch: vi.fn(),
 }))
 
+vi.mock('@/app/actions/bline', () => ({
+  loadBlineStock: async () => ({ ok: true, stock: [], moves: [] }),
+  updateBlineStock: vi.fn(),
+}))
+
 import Inventory from './Inventory'
 
 const row = batch({ id: 7, name: 'Original', count: 240 })

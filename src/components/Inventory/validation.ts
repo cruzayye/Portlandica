@@ -1,5 +1,6 @@
+import { portlandToday } from './dates'
 import { PRODUCTS } from './stock'
-import type { CountChange, NewBatchInput } from './types'
+import type { BlineUpdate, CountChange, NewBatchInput } from './types'
 import { formatNumber } from './units'
 
 // Checks shared by the Inventory tab's forms and its server actions. The actions can be
@@ -104,3 +105,26 @@ export const archiveProblem = (count: number, note: unknown): string | null =>
   count === 0
     ? optionalNoteProblem(note)
     : requiredNoteProblem(note, 'Say why this batch is being archived.')
+
+/** Why cans sent to BLine, brought back or counted there can't be saved, or null. */
+export const blineUpdateProblem = (update: BlineUpdate): string | null => {
+  if (typeof update !== 'object' || update === null || !isId(update.batchId)) {
+    return 'Pick a batch.'
+  }
+  if (update.kind === 'sent' || update.kind === 'returned') {
+    if (!Number.isSafeInteger(update.cans) || update.cans <= 0) return 'Enter how many cans.'
+    if (update.cans > MAX_CANS) return tooBig
+    if (!isIsoDate(update.movedOn)) return 'Enter the date.'
+    if (update.movedOn > portlandToday()) return "The date can't be after today."
+    return optionalNoteProblem(update.note)
+  }
+  if (update.kind === 'count') {
+    if (!Number.isSafeInteger(update.counted) || update.counted < 0) {
+      return 'Enter the number of cans BLine counted (0 or more).'
+    }
+    if (update.counted > MAX_CANS) return tooBig
+    if (!Number.isSafeInteger(update.expectedCount)) return 'Reload and try again.'
+    return requiredNoteProblem(update.note, 'Say where the count came from.')
+  }
+  return 'Choose sent, brought back or counted.'
+}

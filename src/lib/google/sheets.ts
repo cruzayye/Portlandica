@@ -87,6 +87,8 @@ export type SheetOrderLine = {
   isCustom: boolean
   /** What this line is charged, in dollars: its own row's Sales ($). */
   amount: number
+  /** This row's share of what it cost us to deliver the order (BLine's fee), or null. */
+  shippingCost: number | null
 }
 
 /** An order as the Sales sheet records it. */
@@ -137,7 +139,7 @@ const salesRows = (order: SheetOrder): RowAt[] => {
     str(order.customerName), // D: Customer
     num(line.cans), // E: Units
     num(line.amount), // F: Sales ($)
-    empty, // G: Shipping Cost ($)
+    line.shippingCost === null ? empty : num(line.shippingCost), // G: Shipping Cost ($): BLine's fee
     empty, // H: Payment Date: filled in when the money arrives (autopay pays weeks later)
     num(order.isPaid ? line.amount : 0), // I: Payment Received
     formula(`=IF(I${r}-F${r}=0,"Yes","No")`), // J: Paid
@@ -248,6 +250,7 @@ const columnFormat = (
 const salesFormats = (sheetId: number, start: number, count: number, bold: boolean): Request[] => [
   columnFormat(sheetId, start, count, 0, { type: 'DATE', pattern: 'mm/dd/yyyy' }),
   columnFormat(sheetId, start, count, 5, { type: 'CURRENCY', pattern: '"$"#,##0' }),
+  columnFormat(sheetId, start, count, 6, { type: 'CURRENCY', pattern: '"$"#,##0.00' }),
   columnFormat(sheetId, start, count, 7, { type: 'DATE', pattern: 'mm/dd/yyyy' }),
   {
     // Bold marks an order that needs an invoice.

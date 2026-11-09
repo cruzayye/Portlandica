@@ -28,23 +28,33 @@ export const customBatches = <T extends Pick<BatchOption, 'isCustom'>>(batches: 
 
 /**
  * Which batch to preselect. A single custom fill for this customer wins
- * outright; otherwise the only available batch; otherwise nothing, so the
- * user has to choose rather than silently getting whichever sorted first.
+ * outright; otherwise the only available batch; otherwise the only preferred
+ * one (for a BLine order, the only batch BLine has cans of); otherwise nothing,
+ * so the user has to choose rather than silently getting whichever sorted first.
  */
 export const preselectBatchId = (
   batches: Pick<BatchOption, 'id'>[],
-  custom: Pick<BatchOption, 'id'>[]
-): number | '' => (custom.length === 1 ? custom[0].id : batches.length === 1 ? batches[0].id : '')
+  custom: Pick<BatchOption, 'id'>[],
+  preferred: Pick<BatchOption, 'id'>[] = []
+): number | '' =>
+  custom.length === 1
+    ? custom[0].id
+    : batches.length === 1
+      ? batches[0].id
+      : preferred.length === 1
+        ? preferred[0].id
+        : ''
 
 /** The batch the user picked, while it is still on offer; otherwise the preselected one. */
 export const chosenBatchId = (
   pick: number | '',
   batches: Pick<BatchOption, 'id'>[],
-  custom: Pick<BatchOption, 'id'>[]
+  custom: Pick<BatchOption, 'id'>[],
+  preferred: Pick<BatchOption, 'id'>[] = []
 ): number | '' =>
   pick !== '' && batches.some((batch) => batch.id === pick)
     ? pick
-    : preselectBatchId(batches, custom)
+    : preselectBatchId(batches, custom, preferred)
 
 /** The picker's label: name, fill date, cans left and source. */
 export const batchLabel = (batch: BatchOption) =>

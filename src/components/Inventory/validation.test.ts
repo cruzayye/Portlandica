@@ -3,6 +3,7 @@ import type { CountChange, NewBatchInput } from './types'
 import {
   MAX_CANS,
   archiveProblem,
+  blineUpdateProblem,
   countChangeProblem,
   fillProblem,
   isIsoDate,
@@ -124,5 +125,44 @@ describe('optionalNoteProblem and isIsoDate', () => {
     expect(isIsoDate('2026-10-15')).toBe(true)
     expect(isIsoDate('2026-13-01')).toBe(false)
     expect(isIsoDate('10/15/2026')).toBe(false)
+  })
+})
+
+describe('blineUpdateProblem', () => {
+  const sent = { kind: 'sent' as const, batchId: 45, cans: 1440, movedOn: '2026-11-02', note: null }
+  const count = {
+    kind: 'count' as const,
+    batchId: 45,
+    counted: 1380,
+    expectedCount: 1392,
+    note: "BLine's email",
+  }
+
+  it('accepts cans sent or brought back, and a count with where it came from', () => {
+    expect(blineUpdateProblem(sent)).toBeNull()
+    expect(blineUpdateProblem({ ...sent, kind: 'returned', cans: 24 })).toBeNull()
+    expect(blineUpdateProblem(count)).toBeNull()
+    expect(blineUpdateProblem({ ...count, counted: 0 })).toBeNull()
+  })
+
+  it('says what is missing or wrong', () => {
+    expect(blineUpdateProblem({ ...sent, batchId: 0 })).toBe('Pick a batch.')
+    expect(blineUpdateProblem({ ...sent, cans: 0 })).toBe('Enter how many cans.')
+    expect(blineUpdateProblem({ ...sent, cans: 2.5 })).toBe('Enter how many cans.')
+    expect(blineUpdateProblem({ ...sent, cans: 200_000 })).toMatch(/more than 100,000 cans/)
+    expect(blineUpdateProblem({ ...sent, movedOn: '11/09/2026' })).toBe('Enter the date.')
+    expect(blineUpdateProblem({ ...sent, note: 'x'.repeat(501) })).toMatch(/under 500 characters/)
+    expect(blineUpdateProblem({ ...count, counted: -1 })).toMatch(/0 or more/)
+    expect(blineUpdateProblem({ ...count, note: ' ' })).toBe('Say where the count came from.')
+    expect(blineUpdateProblem({ ...sent, movedOn: '2099-01-01' })).toBe(
+      "The date can't be after today."
+    )
+    expect(blineUpdateProblem({ ...count, expectedCount: Number.NaN })).toBe(
+      'Reload and try again.'
+    )
+    expect(blineUpdateProblem({ ...sent, kind: 'lost' } as never)).toBe(
+      'Choose sent, brought back or counted.'
+    )
+    expect(blineUpdateProblem(null as never)).toBe('Pick a batch.')
   })
 })

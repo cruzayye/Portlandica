@@ -65,6 +65,9 @@ differently:
 - **M (Inventory Reference #)**: `SB-<batch id>`, the Supabase batch the row's cans came
   from. Column N looks M up on the sheet's own Inventory tab, which has no `SB-` rows, so
   N stays 0 as it is today.
+- **G (Shipping Cost ($))**: on a BLine order only, BLine's fee for the delivery, split over
+  the order's rows in proportion to their amounts (see "BLine deliveries"). Blank otherwise,
+  as before; the Total row already adds the column up.
 
 **H (Payment Date)** stays blank, as before, even with Paid on: some customers are on
 autopay, which pays about 30 days later, so the date goes in when the money arrives.
@@ -117,6 +120,32 @@ Reference # so their cost lookup keeps working.
 - A billing email typed with Create Invoice on is saved on the customer; a Square
   customer id is saved after the first draft.
 
+## BLine deliveries
+
+BLine keeps a few pallets of our cans and delivers some local orders from them. We still
+invoice the customer; BLine bills us for each delivery: a flat $10 when the order is under
+$100, otherwise 10% of it (`blineFee` in `src/lib/bline.ts`; the two agree at $100). BLine is
+a fourth delivery choice next to Drop, Ship and Pickup:
+
+- **The form** shows BLine's fee as the order is booked, on the price the customer is
+  charged (a typed price counts; a donation costs the flat $10), and what BLine has left.
+  A line from a batch BLine doesn't have enough of gets a warning, but can still be booked.
+  With no batch picked yet, the line takes the batch BLine has cans of, if just one.
+- **The order** keeps `delivery_type = 'bline'` and `delivery_fee`, worked out when it is
+  placed, so a later change to BLine's prices doesn't rewrite old orders.
+- **The Sales rows** carry the fee in G (Shipping Cost) and start their Notes with "BLine
+  delivery". A BLine donation goes on the Donations tab, which has no shipping column, so
+  its Notes say the fee: "BLine delivery ($10.00 fee)".
+- **The Trello card** says BLine in its title and description and gets a purple **BLine**
+  label, so nobody loads it on our truck. It stays on the same list: the board is our own
+  record. We email BLine the deliveries to make.
+- **Order History** shows the fee next to the delivery, and voiding a BLine order adds
+  "Email BLine to call off this delivery, if they already have it." to what to do by hand.
+- **Stock:** batch counts are the same wherever the cans are, and a BLine order takes its
+  cans out of its batch like any other order. What BLine has is tracked on the side (see
+  `docs/inventory-ui.md`, "At BLine"): cans sent to BLine, less the cans on BLine orders
+  that aren't void.
+
 ## Voiding
 
 Order History → Void asks why, then `void_order` puts the cans back and the Trello card
@@ -149,6 +178,12 @@ The app doesn't edit Sales rows: the result lists the rows to fix by hand.
   again from the order alone, and a `record_order_step` that lets a void order's Square
   step go from done to skipped once its draft is deleted. Undo:
   `supabase/rollback/20261017000700_order_flow.sql`.
+- `supabase/migrations/20261109000100_bline_delivery.sql`: the `bline` delivery type,
+  `sales_orders.delivery_fee`, `create_sales_order` with `p_delivery_fee`, and BLine's stock
+  (`bline_stock_moves`, the `bline_stock` view, `record_bline_move`, `set_bline_count`).
+  Undo: `supabase/rollback/20261109000100_bline_delivery.sql`, which stops while any order
+  is a BLine order.
+- `src/lib/bline.ts`: BLine's fee and how its orders read on the sheet.
 
 ## Tests
 
