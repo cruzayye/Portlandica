@@ -92,11 +92,16 @@ const order = (over: Partial<SheetOrder> = {}): SheetOrder => ({
   ],
   isPaid: false,
   createInvoice: false,
+  emailBline: false,
   isDonation: false,
   notes: null,
   newLocation: null,
   ...over,
 })
+
+const MARKS = 'userEnteredFormat.textFormat.bold,userEnteredFormat.textFormat.italic'
+const textMarks = () =>
+  fake().formats.filter((format) => format.cell?.userEnteredFormat?.textFormat)
 
 const ORDER_DATE = 46310 // 10/15/2026
 const fake = () => sheet.current!
@@ -267,8 +272,11 @@ describe('writeOrderToSheet: Sales', () => {
     await writeOrderToSheet(order({ createInvoice: true }))
     expect(fake().formats).toEqual(
       expect.arrayContaining([
+        // Italics are set off too: inserted rows copy the row above's, maybe a BLine order's.
         expect.objectContaining({
-          cell: { userEnteredFormat: { textFormat: { bold: true } } },
+          range: expect.objectContaining({ startRowIndex: 3, endRowIndex: 5 }),
+          cell: { userEnteredFormat: { textFormat: { bold: true, italic: false } } },
+          fields: MARKS,
         }),
         expect.objectContaining({
           range: expect.objectContaining({ startColumnIndex: 5, startRowIndex: 3, endRowIndex: 5 }),
@@ -279,6 +287,39 @@ describe('writeOrderToSheet: Sales', () => {
           cell: { userEnteredFormat: { numberFormat: { type: 'DATE', pattern: 'mm/dd/yyyy' } } },
         }),
       ])
+    )
+  })
+
+  it("puts a BLine order's rows in italics, bold or not", async () => {
+    await writeOrderToSheet(order({ emailBline: true }))
+    await writeOrderToSheet(
+      order({ key: 'key-2', emailBline: true, createInvoice: true, lines: [order().lines[0]] })
+    )
+    expect(textMarks()).toEqual([
+      {
+        range: expect.objectContaining({ startRowIndex: 3, endRowIndex: 5 }),
+        cell: { userEnteredFormat: { textFormat: { bold: false, italic: true } } },
+        fields: MARKS,
+      },
+      {
+        range: expect.objectContaining({ startRowIndex: 5, endRowIndex: 6 }),
+        cell: { userEnteredFormat: { textFormat: { bold: true, italic: true } } },
+        fields: MARKS,
+      },
+    ])
+  })
+
+  it('marks the rows again when a retry rewrites them', async () => {
+    fake().failNext('values.update')
+    await expect(writeOrderToSheet(order({ emailBline: true }))).rejects.toThrow()
+    await writeOrderToSheet(order({ emailBline: true }))
+    expect(textMarks().map((format) => format.range)).toEqual([
+      expect.objectContaining({ startRowIndex: 3, endRowIndex: 5 }),
+      expect.objectContaining({ startRowIndex: 3, endRowIndex: 4 }),
+      expect.objectContaining({ startRowIndex: 4, endRowIndex: 5 }),
+    ])
+    expect(textMarks().every((format) => format.cell?.userEnteredFormat?.textFormat?.italic)).toBe(
+      true
     )
   })
 
@@ -421,6 +462,23 @@ describe('writeOrderToSheet: donations', () => {
         '=H4*E4',
         'Booth',
       ],
+    ])
+  })
+
+  it("puts a BLine donation's rows in italics, and sets them off on any other", async () => {
+    await writeOrderToSheet(order({ isDonation: true, emailBline: true }))
+    await writeOrderToSheet(order({ key: 'key-2', isDonation: true }))
+    expect(fake().formats).toEqual([
+      {
+        range: expect.objectContaining({ startRowIndex: 2, endRowIndex: 4 }),
+        cell: { userEnteredFormat: { textFormat: { italic: true } } },
+        fields: 'userEnteredFormat.textFormat.italic',
+      },
+      {
+        range: expect.objectContaining({ startRowIndex: 4, endRowIndex: 6 }),
+        cell: { userEnteredFormat: { textFormat: { italic: false } } },
+        fields: 'userEnteredFormat.textFormat.italic',
+      },
     ])
   })
 })

@@ -114,6 +114,7 @@ describe('runOrderSteps', () => {
       18, 7.2,
     ])
     expect(sheetOrder.notes).toBe('BLine delivery · Back door')
+    expect(sheetOrder.emailBline).toBe(true)
     expect(steps.createTrelloCard.mock.calls[0][0]).toMatchObject({
       deliveryType: 'bline',
       notes: 'Back door',
@@ -132,7 +133,11 @@ describe('runOrderSteps', () => {
     await runOrderSteps(db, order.id)
 
     const sheetOrder = steps.writeOrderToSheet.mock.calls[0][0]
-    expect(sheetOrder).toMatchObject({ isDonation: true, notes: 'BLine delivery ($10.00 fee)' })
+    expect(sheetOrder).toMatchObject({
+      isDonation: true,
+      emailBline: true,
+      notes: 'BLine delivery ($10.00 fee)',
+    })
   })
 
   it('runs the sheet, inventory and Trello steps in order and records each one', async () => {
@@ -182,6 +187,7 @@ describe('runOrderSteps', () => {
       ],
       isPaid: false,
       createInvoice: false,
+      emailBline: false,
       isDonation: false,
       notes: 'Back door',
       newLocation: null,

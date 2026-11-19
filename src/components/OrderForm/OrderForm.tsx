@@ -799,7 +799,10 @@ export default function OrderForm() {
                   ? `BLine has ${blineSummary()} left.`
                   : "Couldn't load what BLine has left."}
               </Box>
-              <Box>Email BLine the delivery once the order is in.</Box>
+              <Box>
+                Email BLine the delivery once the order is in, then take the italics off its{' '}
+                {fields.isDonation ? 'Donations' : 'Sales'} rows.
+              </Box>
             </Alert>
           )}
 
