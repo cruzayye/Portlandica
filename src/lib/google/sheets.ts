@@ -103,6 +103,8 @@ export type SheetOrder = {
   lines: SheetOrderLine[]
   isPaid: boolean
   createInvoice: boolean
+  /** A BLine order: we still have to email BLine the delivery. */
+  emailBline: boolean
   isDonation: boolean
   notes: string | null
   /** A new business to list on Current Locations Addresses, unless it's there already. */
@@ -245,21 +247,37 @@ const columnFormat = (
   },
 })
 
+// Bold marks an order that needs an invoice; italics, a BLine order whose delivery we still
+// have to email BLine. People take them off once that's done. Each is set either way, since
+// inserted rows copy the row above's.
+const markRows = (
+  sheetId: number,
+  start: number,
+  count: number,
+  textFormat: { bold?: boolean; italic?: boolean }
+): Request => ({
+  repeatCell: {
+    range: rowsRange(sheetId, start, count),
+    cell: { userEnteredFormat: { textFormat } },
+    fields: Object.keys(textFormat)
+      .map((key) => `userEnteredFormat.textFormat.${key}`)
+      .join(','),
+  },
+})
+
 // The formats the Sales rows already use. Inserted rows inherit the row above, which once
 // held a Text format that turned amounts into strings, so these are set explicitly.
-const salesFormats = (sheetId: number, start: number, count: number, bold: boolean): Request[] => [
+const salesFormats = (
+  sheetId: number,
+  start: number,
+  count: number,
+  marks: { bold: boolean; italic: boolean }
+): Request[] => [
   columnFormat(sheetId, start, count, 0, { type: 'DATE', pattern: 'mm/dd/yyyy' }),
   columnFormat(sheetId, start, count, 5, { type: 'CURRENCY', pattern: '"$"#,##0' }),
   columnFormat(sheetId, start, count, 6, { type: 'CURRENCY', pattern: '"$"#,##0.00' }),
   columnFormat(sheetId, start, count, 7, { type: 'DATE', pattern: 'mm/dd/yyyy' }),
-  {
-    // Bold marks an order that needs an invoice.
-    repeatCell: {
-      range: rowsRange(sheetId, start, count),
-      cell: { userEnteredFormat: { textFormat: { bold } } },
-      fields: 'userEnteredFormat.textFormat.bold',
-    },
-  },
+  markRows(sheetId, start, count, marks),
 ]
 
 const writeCells = (sheetId: number, start: number, rows: Cell[][]): Request => ({
@@ -355,7 +373,9 @@ export const writeOrderToSheet = async (order: SheetOrder): Promise<SheetWrite> 
 
   const rows = order.isDonation ? donationRows(order) : salesRows(order)
   const formats = (start: number, count: number) =>
-    order.isDonation ? [] : salesFormats(sheetId, start, count, order.createInvoice)
+    order.isDonation
+      ? [markRows(sheetId, start, count, { italic: order.emailBline })]
+      : salesFormats(sheetId, start, count, { bold: order.createInvoice, italic: order.emailBline })
   const tagged = await findTaggedRows(sheets, order.key)
 
   let rowNumbers: number[]

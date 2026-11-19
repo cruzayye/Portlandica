@@ -763,6 +763,11 @@ describe('OrderForm BLine delivery', () => {
     // 5 cases at $1.50 a can is $180, so 10%.
     expect(screen.getByText(/BLine fee: \$18\.00 \(10% of \$180\.00\)/)).toBeInTheDocument()
     expect(screen.getByText('BLine has 1,440 Still · 0 Sparkling cans left.')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Email BLine the delivery once the order is in, then take the italics off its Sales rows.'
+      )
+    ).toBeInTheDocument()
     expect(screen.getByLabelText('Drop')).not.toBeChecked()
 
     await user.click(submitButton())
@@ -778,6 +783,19 @@ describe('OrderForm BLine delivery', () => {
     await user.type(screen.getByLabelText(/total still cases/i), '1')
 
     expect(screen.getByText(/BLine fee: \$10\.00 \(flat fee under \$100\)/)).toBeInTheDocument()
+  })
+
+  it('says to take the italics off the Donations rows of a BLine donation', async () => {
+    const user = userEvent.setup({ delay: null })
+    await renderForm()
+    await blineOrder(user)
+    await user.click(screen.getByLabelText('Donut'))
+
+    expect(
+      screen.getByText(
+        'Email BLine the delivery once the order is in, then take the italics off its Donations rows.'
+      )
+    ).toBeInTheDocument()
   })
 
   it('picks the batch BLine has, when it has just one, and says how many it has', async () => {

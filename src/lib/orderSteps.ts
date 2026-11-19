@@ -89,6 +89,7 @@ const sheetOrderFor = (order: SalesOrderWithLines, customer: Customer | null): S
     })),
     isPaid: order.is_paid,
     createInvoice: order.create_invoice,
+    emailBline: isBline,
     isDonation: order.is_donation,
     notes: isBline
       ? blineNotes(order.notes, fee === null ? null : Number(fee), order.is_donation)

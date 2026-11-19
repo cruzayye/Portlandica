@@ -138,7 +138,9 @@ describe('OrderHistory', () => {
     expect(within(live).queryByText(/Email BLine/)).not.toBeInTheDocument()
     const voided = screen.getByRole('article', { name: 'Order 13' })
     expect(
-      within(voided).getByText('Email BLine to call off this delivery, if they already have it.')
+      within(voided).getByText(
+        'Email BLine to call off this delivery, if they already have it (its rows are no longer in italics).'
+      )
     ).toBeInTheDocument()
   })
 

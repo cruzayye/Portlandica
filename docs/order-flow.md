@@ -72,6 +72,11 @@ differently:
 **H (Payment Date)** stays blank, as before, even with Paid on: some customers are on
 autopay, which pays about 30 days later, so the date goes in when the money arrives.
 
+**Bold and italics** mark what is left to do, and people take them off once it's done: bold
+for an order booked with Create Invoice on (the invoice to make), italics for a BLine order
+(the delivery to email BLine). The app sets both, on or off, on every row it adds, since an
+inserted row copies the formatting of the row above.
+
 Dates and amounts are written as numbers and text is written as text, so nothing typed
 into the form can turn into a formula. Donations rows keep `A7`/`A8` in their Inventory
 Reference # so their cost lookup keeps working.
@@ -136,11 +141,15 @@ a fourth delivery choice next to Drop, Ship and Pickup:
 - **The Sales rows** carry the fee in G (Shipping Cost) and start their Notes with "BLine
   delivery". A BLine donation goes on the Donations tab, which has no shipping column, so
   its Notes say the fee: "BLine delivery ($10.00 fee)".
+- **Italics:** a BLine order's rows, Sales or Donations, go in italics until we email BLine
+  the delivery (we send them the invoice to process). Take the italics off once it's sent.
+  The form says so when BLine is picked.
 - **The Trello card** says BLine in its title and description and gets a purple **BLine**
   label, so nobody loads it on our truck. It stays on the same list: the board is our own
   record. We email BLine the deliveries to make.
 - **Order History** shows the fee next to the delivery, and voiding a BLine order adds
-  "Email BLine to call off this delivery, if they already have it." to what to do by hand.
+  "Email BLine to call off this delivery, if they already have it (its rows are no longer in
+  italics)." to what to do by hand.
 - **Stock:** batch counts are the same wherever the cans are, and a BLine order takes its
   cans out of its batch like any other order. What BLine has is tracked on the side (see
   `docs/inventory-ui.md`, "At BLine"): cans sent to BLine, less the cans on BLine orders

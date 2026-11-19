@@ -12,8 +12,12 @@ export const BLINE_FEE_RATE = 0.1
 /** Under this many cans of a product at BLine, the Inventory tab says to send more. */
 export const BLINE_LOW_STOCK_CANS = 240
 
-/** What to do by hand when a BLine order is voided: we email BLine the deliveries. */
-export const BLINE_CANCEL = 'Email BLine to call off this delivery, if they already have it.'
+/**
+ * What to do by hand when a BLine order is voided: we email BLine the deliveries, and take
+ * the italics off an order's rows once we have.
+ */
+export const BLINE_CANCEL =
+  'Email BLine to call off this delivery, if they already have it (its rows are no longer in italics).'
 
 /** What BLine charges to deliver an order of this total, in dollars, to the cent. */
 export const blineFee = (orderTotal: number) => {

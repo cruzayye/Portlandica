@@ -284,3 +284,16 @@ show as on the shelf. Remember to fix the voided order's Sales rows by hand.
 nothing, while any order is a BLine order; the top of the file says how to turn those into
 drops first.
 
+## 12. BLine rows in italics
+
+A BLine order's rows go in italics, like bold for an invoice to make, until someone emails
+BLine the delivery and takes the italics off (docs/order-flow.md, "The Sales sheet rows").
+No database change: deploy the branch.
+
+**Check:** no test order is needed. The next BLine order's Sales rows are in italics (bold
+too, with Create Invoice on), and the next order after it that isn't BLine has no italics,
+although the rows above it do.
+
+**Undo:** revert the merge. Rows already in italics stay that way until someone takes the
+italics off.
+

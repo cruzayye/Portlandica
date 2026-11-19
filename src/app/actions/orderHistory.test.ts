@@ -204,7 +204,7 @@ describe('voidOrder', () => {
     const result = await voidOrder(order.id, 'Customer cancelled')
     expect(handFixes(result)).toEqual([
       SALES_ROWS_FIX,
-      'Email BLine to call off this delivery, if they already have it.',
+      'Email BLine to call off this delivery, if they already have it (its rows are no longer in italics).',
     ])
   })
 
