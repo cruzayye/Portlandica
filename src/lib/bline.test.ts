@@ -1,5 +1,26 @@
 import { describe, expect, it } from 'vitest'
-import { blineFee, blineFeeNote, blineNotes, feePerRow } from './bline'
+import { batchesAtBline, blineFee, blineFeeNote, blineNotes, feePerRow } from './bline'
+
+describe('batchesAtBline', () => {
+  const batches = [{ id: 45 }, { id: 33 }, { id: 25 }]
+
+  it('keeps only the batches BLine has cans of', () => {
+    const stock = [
+      { batchId: 45, remaining: 1056 },
+      { batchId: 25, remaining: 0 },
+      { batchId: 33, remaining: -48 },
+    ]
+    expect(batchesAtBline(batches, stock)).toEqual([{ id: 45 }])
+  })
+
+  it('keeps none when BLine has nothing', () => {
+    expect(batchesAtBline(batches, [])).toEqual([])
+  })
+
+  it("keeps every batch when what BLine has couldn't be read", () => {
+    expect(batchesAtBline(batches, null)).toEqual(batches)
+  })
+})
 
 describe('blineFee', () => {
   it.each([

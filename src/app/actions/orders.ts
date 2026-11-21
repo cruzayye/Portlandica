@@ -3,7 +3,7 @@
 import { after } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireUser, type AuthFailure } from '@/lib/auth/requireUser'
-import type { Batch, Customer, Db } from '@/lib/db/types'
+import type { Batch, BlineStockRow, Customer, Db } from '@/lib/db/types'
 import type {
   CreateOrderResult,
   OrderFormData,
@@ -32,7 +32,7 @@ import {
   getLocationsFromSheet,
   type SheetLocation,
 } from '@/lib/google/sheets'
-import { batchesForCustomer } from '@/lib/batches'
+import { batchTitle, batchesForCustomer } from '@/lib/batches'
 import { blineFee } from '@/lib/bline'
 import {
   businessTypes,
@@ -146,6 +146,18 @@ const batchProblem = (input: OrderInput, batches: Batch[]) => {
     if (!batchesForCustomer([batch], line.product, customerId).length) {
       return `The ${product} batch you picked can't be used for this customer. Pick another.`
     }
+  }
+  return null
+}
+
+// BLine delivers from what we've sent it, so a BLine order may only use a batch BLine was
+// sent cans of. How many it has left doesn't block an order; the form warns about that.
+const blineBatchProblem = (input: OrderInput, batches: Batch[], stock: BlineStockRow[]) => {
+  for (const line of input.lines) {
+    if ((stock.find((row) => row.batch_id === line.batchId)?.moved ?? 0) > 0) continue
+    const batch = batches.find((b) => b.id === line.batchId)
+    const what = batch ? batchTitle(batch) : `the ${PRODUCT_NAMES[line.product]} batch you picked`
+    return `BLine doesn't have ${what}. Pick a batch BLine has, or another delivery.`
   }
   return null
 }
@@ -299,12 +311,16 @@ export const createOrder = async (
     const batches = await listBatches(db, { includeArchived: true })
     const badBatch = batchProblem(input, batches)
     if (badBatch) return { status: 'failed', message: badBatch }
+    const deliveryType = deliveryTypeFromForm(input.deliveryType)!
+    if (deliveryType === 'bline') {
+      const notAtBline = blineBatchProblem(input, batches, await listBlineStock(db))
+      if (notAtBline) return { status: 'failed', message: notAtBline }
+    }
     const short = shortfalls(input.lines, batches)
     if (short.length && !options.allowOversell) return { status: 'short', shortfalls: short }
 
     const { customer, isNew } = await resolveCustomer(db, input)
     const priced = priceOrder(input, customer, batches)
-    const deliveryType = deliveryTypeFromForm(input.deliveryType)!
     const created = await createSalesOrder(db, {
       idempotency_key: key,
       order_date: orderDate,

@@ -134,8 +134,14 @@ a fourth delivery choice next to Drop, Ship and Pickup:
 
 - **The form** shows BLine's fee as the order is booked, on the price the customer is
   charged (a typed price counts; a donation costs the flat $10), and what BLine has left.
-  A line from a batch BLine doesn't have enough of gets a warning, but can still be booked.
-  With no batch picked yet, the line takes the batch BLine has cans of, if just one.
+  Each line only offers the batches BLine has cans of (`batchesAtBline` in
+  `src/lib/bline.ts`), takes that batch when there's just one, and drops a batch picked
+  before switching to BLine that BLine doesn't have. With none of a product left at BLine,
+  the line says to record what was sent under Inventory → At BLine, or pick another
+  delivery. If what BLine has can't be loaded, every batch is listed. A line needing more
+  cans than BLine has left gets a warning, but can still be booked.
+- **The server** refuses a BLine order on a batch BLine was never sent cans of
+  (`createOrder` in `src/app/actions/orders.ts`), so a stale form can't book one either.
 - **The order** keeps `delivery_type = 'bline'` and `delivery_fee`, worked out when it is
   placed, so a later change to BLine's prices doesn't rewrite old orders.
 - **The Sales rows** carry the fee in G (Shipping Cost) and start their Notes with "BLine
@@ -196,7 +202,8 @@ The app doesn't edit Sales rows: the result lists the rows to fix by hand.
   (`bline_stock_moves`, the `bline_stock` view, `record_bline_move`, `set_bline_count`).
   Undo: `supabase/rollback/20261109000100_bline_delivery.sql`, which stops while any order
   is a BLine order.
-- `src/lib/bline.ts`: BLine's fee and how its orders read on the sheet.
+- `src/lib/bline.ts`: BLine's fee, how its orders read on the sheet, and the batches a BLine
+  order can use.
 - `supabase/migrations/20261120000100_bline_tracking.sql`: `delivered_at` and the `bline_*`
   tracking columns on `sales_orders`, `record_bline_tracking`, `mark_bline_delivered`,
   `clear_bline_tracking`, and `bline_stock` counting cans as on BLine's shelf until they are

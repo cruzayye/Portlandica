@@ -118,6 +118,12 @@ const lovejoy = async () => {
   return input({ customerId: customer.id })
 }
 
+// Cans sent to BLine, so a BLine order can use the batch.
+const sendToBline = (batchId: number, cans = 1440) =>
+  asRole(mocks.pg!, SERVICE, (tx) =>
+    tx.query(`select public.record_bline_move($1, $2, 'sent')`, [batchId, cans])
+  )
+
 const saved = (result: unknown) => {
   const r = result as CreateOrderResult
   if (r.status !== 'saved') throw new Error(`expected saved, got ${JSON.stringify(r)}`)
@@ -555,6 +561,8 @@ describe('createOrder', () => {
 
   it("works out BLine's fee on what the customer is charged, and keeps it on the order", async () => {
     const order = await lovejoy()
+    await sendToBline(45)
+    await sendToBline(25)
     // Automatic price: 120 still + 48 sparkling at $1.50 = $252, so 10%.
     const auto = saved(
       await createOrder(
@@ -584,6 +592,34 @@ describe('createOrder', () => {
       await createOrder(order, { idempotencyKey: newIdempotencyKey(), force: true })
     )
     expect(drop.order.delivery_fee).toBeNull()
+  })
+
+  it('books a BLine order only on batches BLine was sent cans of', async () => {
+    const order = { ...(await lovejoy()), deliveryType: 'BLine' as const }
+    await sendToBline(45, 24)
+    // Nothing of the Sparkling batch went to BLine.
+    expect(await createOrder(order, { idempotencyKey: newIdempotencyKey() })).toEqual({
+      status: 'failed',
+      message: expect.stringMatching(
+        /^BLine doesn't have .+ Sparkling\. Pick a batch BLine has, or another delivery\.$/
+      ),
+    })
+    // Nor any Dog water.
+    const still = (batchId: number) => ({
+      ...order,
+      lines: [{ product: 'still' as const, cans: 48, batchId }],
+      price: 72,
+    })
+    expect(await createOrder(still(33), { idempotencyKey: newIdempotencyKey() })).toEqual({
+      status: 'failed',
+      message:
+        "BLine doesn't have Portlandica Dog water Still. Pick a batch BLine has, or another delivery.",
+    })
+    expect((await db().from('sales_orders').select('id')).data).toEqual([])
+
+    // More than BLine has left still goes through: the form warns about that instead.
+    const booked = saved(await createOrder(still(45), { idempotencyKey: newIdempotencyKey() }))
+    expect(booked.order).toMatchObject({ delivery_type: 'bline', total_cans: 48 })
   })
 
   it('books a donation at $0 with no invoice', async () => {
