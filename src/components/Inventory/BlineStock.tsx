@@ -9,6 +9,7 @@ import { loadBlineStock } from '@/app/actions/bline'
 import { isAuthFailure } from '@/lib/auth/authFailure'
 import { BLINE_LOW_STOCK_CANS } from '@/lib/bline'
 import type { Batch } from '@/lib/db/types'
+import BlineDeliveries from './BlineDeliveries'
 import BlineMoveDialog from './BlineMoveDialog'
 import {
   BLINE_REASON_LABELS,
@@ -36,6 +37,8 @@ const BlineStock = ({ batches, reloadKey }: Props) => {
   const [data, setData] = useState<BlineData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [updating, setUpdating] = useState(false)
+  // Bumped when a findelivers import records deliveries, which can change what's on the shelf.
+  const [imports, setImports] = useState(0)
 
   useEffect(() => {
     let active = true
@@ -55,7 +58,7 @@ const BlineStock = ({ batches, reloadKey }: Props) => {
     return () => {
       active = false
     }
-  }, [reloadKey])
+  }, [reloadKey, imports])
 
   const holdings = data ? blineHoldings(data.stock) : []
   const low = data ? blineLow(data.stock) : []
@@ -159,6 +162,11 @@ const BlineStock = ({ batches, reloadKey }: Props) => {
           Latest: {latestLine}
         </Typography>
       )}
+
+      <BlineDeliveries
+        reloadKey={reloadKey + imports}
+        onImported={() => setImports((n) => n + 1)}
+      />
 
       {updating && data && (
         <BlineMoveDialog

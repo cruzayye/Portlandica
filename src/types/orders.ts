@@ -94,6 +94,11 @@ export type RetryResult =
   | { status: 'done'; order: SalesOrderWithLines; warnings: string[]; shortfalls: Shortfall[] }
   | { status: 'failed'; message: string }
 
+/** A BLine order marked delivered, or its delivery cleared: the order now, and anything to finish by hand. */
+export type DeliveryResult =
+  | { status: 'done'; order: SalesOrderWithLines; warnings: string[] }
+  | { status: 'failed'; message: string }
+
 /** What voiding an order did, and what is left for a person to fix by hand. */
 export type VoidResult =
   | { status: 'voided'; order: SalesOrderWithLines; handFixes: string[] }

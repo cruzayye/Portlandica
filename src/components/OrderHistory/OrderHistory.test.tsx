@@ -9,10 +9,17 @@ const listOrders = vi.fn()
 const retryOrder = vi.fn()
 const voidOrder = vi.fn()
 
+const markOrderDelivered = vi.fn()
+const clearOrderDelivery = vi.fn()
+
 vi.mock('@/app/actions/orderHistory', () => ({
   listOrders: () => listOrders(),
   retryOrder: (...args: unknown[]) => retryOrder(...args),
   voidOrder: (...args: unknown[]) => voidOrder(...args),
+}))
+vi.mock('@/app/actions/blineTracking', () => ({
+  markOrderDelivered: (...args: unknown[]) => markOrderDelivered(...args),
+  clearOrderDelivery: (...args: unknown[]) => clearOrderDelivery(...args),
 }))
 
 import OrderHistory from './OrderHistory'
@@ -52,6 +59,11 @@ const order = (over: Partial<SalesOrderWithLines> = {}): SalesOrderWithLines =>
     customer_email: null,
     new_customer: false,
     delivery_fee: null,
+    delivered_at: null,
+    bline_ref: null,
+    bline_status: null,
+    bline_problem: null,
+    bline_checked_at: null,
     created_by: null,
     created_at: '2026-10-15T18:00:00Z',
     updated_at: '2026-10-15T18:00:00Z',
@@ -95,6 +107,8 @@ beforeEach(() => {
   listOrders.mockReset()
   retryOrder.mockReset()
   voidOrder.mockReset()
+  markOrderDelivered.mockReset()
+  clearOrderDelivery.mockReset()
 })
 
 describe('OrderHistory', () => {
@@ -114,6 +128,72 @@ describe('OrderHistory', () => {
     expect(within(card).getByText('Sales sheet: done')).toBeInTheDocument()
     expect(within(card).getByText('Sales sheet: Sales rows 3126–3127')).toBeInTheDocument()
     expect(within(card).queryByRole('button', { name: /^Retry/ })).not.toBeInTheDocument()
+    // Only BLine orders are tracked.
+    expect(within(card).queryByRole('button', { name: 'Mark delivered' })).not.toBeInTheDocument()
+  })
+
+  it('shows where a BLine delivery stands, and marks it delivered by hand', async () => {
+    const user = userEvent.setup()
+    const waiting = order({
+      delivery_type: 'bline',
+      delivery_fee: 25.2,
+      bline_ref: '261101.0008',
+      bline_status: 'created',
+    })
+    listOrders.mockResolvedValue(history([waiting]))
+    markOrderDelivered.mockResolvedValue({
+      status: 'done',
+      order: { ...waiting, delivered_at: '2026-11-20T22:00:00Z' },
+      warnings: ["Check off this order's Trello card by hand (Trello API error: 401)."],
+    })
+    render(<OrderHistory />)
+
+    const card = await screen.findByRole('article', { name: 'Order 12' })
+    expect(within(card).getByText('findelivers 261101.0008: Unassigned')).toBeInTheDocument()
+    await user.click(within(card).getByRole('button', { name: 'Mark delivered' }))
+    const dialog = await screen.findByRole('dialog', { name: 'Mark #12 delivered?' })
+    await user.click(within(dialog).getByRole('button', { name: 'Mark delivered' }))
+
+    expect(
+      await within(card).findByText('Marked delivered Nov 20 (findelivers 261101.0008: Unassigned)')
+    ).toBeInTheDocument()
+    expect(markOrderDelivered).toHaveBeenCalledWith(12)
+    expect(
+      within(card).getByText("Check off this order's Trello card by hand (Trello API error: 401).")
+    ).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+  })
+
+  it("clears a BLine order's delivery, and says when it can't", async () => {
+    const user = userEvent.setup()
+    const delivered = order({
+      delivery_type: 'bline',
+      delivery_fee: 25.2,
+      delivered_at: '2026-11-20T17:51:00Z',
+      bline_ref: '261101.0007',
+      bline_status: 'delivered',
+    })
+    listOrders.mockResolvedValue(history([delivered]))
+    clearOrderDelivery.mockResolvedValueOnce({ status: 'failed', message: 'No such order.' })
+    clearOrderDelivery.mockResolvedValueOnce({
+      status: 'done',
+      order: { ...delivered, delivered_at: null, bline_ref: null, bline_status: null },
+      warnings: [],
+    })
+    render(<OrderHistory />)
+
+    const card = await screen.findByRole('article', { name: 'Order 12' })
+    expect(
+      within(card).getByText('Delivered Nov 20, 9:51 AM (findelivers 261101.0007)')
+    ).toBeInTheDocument()
+    await user.click(within(card).getByRole('button', { name: 'Clear' }))
+    const dialog = await screen.findByRole('dialog', { name: "Clear #12's delivery?" })
+    await user.click(within(dialog).getByRole('button', { name: 'Clear' }))
+    expect(await within(dialog).findByText('No such order.')).toBeInTheDocument()
+
+    await user.click(within(dialog).getByRole('button', { name: 'Clear' }))
+    expect(await within(card).findByText('Not in findelivers yet')).toBeInTheDocument()
+    expect(clearOrderDelivery).toHaveBeenCalledWith(12)
   })
 
   it("shows a BLine order's fee, and reminds us to call off the delivery once void", async () => {

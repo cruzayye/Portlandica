@@ -170,6 +170,7 @@ describe('migrations on the live schema', () => {
     // Newest first: the order-flow rollback puts back the functions the data-foundation
     // rollback drops by their original signatures.
     for (const file of [
+      '20261120000100_bline_tracking.sql',
       '20261109000100_bline_delivery.sql',
       '20261017000900_ledger_made_in_app.sql',
       '20261017000700_order_flow.sql',
@@ -1010,13 +1011,13 @@ describe('order flow additions', () => {
       'flow-1',
       [{ product: 'still', cans: 24, batch_id: 45, unit_price: 1.5 }],
       {
-        p_delivery_address: '  1005 W Burnside St, Portland, OR 97209 ',
+        p_delivery_address: '  1005 W Alder St, Portland, OR 97209 ',
         p_customer_email: ' AP@Example.com ',
         p_new_customer: true,
       }
     )
     expect(order).toMatchObject({
-      delivery_address: '1005 W Burnside St, Portland, OR 97209',
+      delivery_address: '1005 W Alder St, Portland, OR 97209',
       customer_email: 'ap@example.com',
       new_customer: true,
       sheet_ref: null,
@@ -1074,7 +1075,10 @@ describe('order flow additions', () => {
     await before.exec(readFileSync(path.join(sqlDir, 'supabase-stub.sql'), 'utf8'))
     await before.exec(readFileSync(path.join(sqlDir, 'live-baseline.sql'), 'utf8'))
     for (const file of migrationFiles().filter(
-      (f) => !f.endsWith('_order_flow.sql') && !f.endsWith('_bline_delivery.sql')
+      (f) =>
+        !f.endsWith('_order_flow.sql') &&
+        !f.endsWith('_bline_delivery.sql') &&
+        !f.endsWith('_bline_tracking.sql')
     )) {
       await before.exec(readFileSync(path.join(process.cwd(), 'supabase/migrations', file), 'utf8'))
     }
@@ -1088,7 +1092,11 @@ describe('order flow additions', () => {
       }
     )
     // Newest first: the BLine rollback puts back the create_sales_order this one drops.
-    for (const file of ['20261109000100_bline_delivery.sql', '20261017000700_order_flow.sql']) {
+    for (const file of [
+      '20261120000100_bline_tracking.sql',
+      '20261109000100_bline_delivery.sql',
+      '20261017000700_order_flow.sql',
+    ]) {
       await pg.exec(readFileSync(path.join(process.cwd(), 'supabase/rollback', file), 'utf8'))
     }
     expect(await fingerprint(pg)).toEqual(await fingerprint(before))
@@ -1294,7 +1302,7 @@ describe('BLine deliveries', () => {
     ).rejects.toMatchObject({ code: '42501' })
   })
 
-  it('can be undone on its own, but not while there are BLine orders', async () => {
+  it('can be undone (after the tracking change), but not while there are BLine orders', async () => {
     const definitions = async (db: PGlite) =>
       (
         await db.query<{ x: string }>(`
@@ -1302,11 +1310,19 @@ describe('BLine deliveries', () => {
           from pg_proc p where p.pronamespace = 'public'::regnamespace order by 1`)
       ).rows.map((r) => r.x)
     const before = await createDb(
-      migrationFiles().filter((f) => !f.endsWith('_bline_delivery.sql'))
+      migrationFiles().filter(
+        (f) => !f.endsWith('_bline_delivery.sql') && !f.endsWith('_bline_tracking.sql')
+      )
     )
     const undo = readFileSync(
       path.join(process.cwd(), 'supabase/rollback/20261109000100_bline_delivery.sql'),
       'utf8'
+    )
+    await pg.exec(
+      readFileSync(
+        path.join(process.cwd(), 'supabase/rollback/20261120000100_bline_tracking.sql'),
+        'utf8'
+      )
     )
 
     await move(PAUL, 45, 1440)
@@ -1319,6 +1335,233 @@ describe('BLine deliveries', () => {
       `update public.sales_orders set delivery_type = 'drop', delivery_fee = null where delivery_type = 'bline'`
     )
     await pg.exec(undo)
+    expect(await fingerprint(pg)).toEqual(await fingerprint(before))
+    expect(await definitions(pg)).toEqual(await definitions(before))
+    await before.close()
+  }, 60_000)
+})
+
+describe('BLine tracking', () => {
+  const still = (cans: number) => ({ product: 'still', cans, batch_id: 45, unit_price: 1.5 })
+
+  const blineOrder = async (key: string, cans: number, extra: Record<string, unknown> = {}) =>
+    (
+      await createOrder(PAUL, key, [still(cans)], {
+        p_delivery_type: 'bline',
+        p_delivery_fee: 10,
+        ...extra,
+      })
+    ).order
+
+  type Tracked = Record<string, unknown> & { delivered_at: string | null }
+
+  const track = async (
+    auth: TestAuth,
+    orderId: number,
+    ref: string,
+    status: string,
+    deliveredAt: string | null = null,
+    problem: string | null = null
+  ) =>
+    (
+      await one<{ o: Tracked }>(
+        auth,
+        'select to_jsonb(public.record_bline_tracking($1, $2, $3, $4, $5)) as o',
+        [orderId, ref, status, deliveredAt, problem]
+      )
+    ).o
+
+  const call = async (
+    auth: TestAuth,
+    fn: 'mark_bline_delivered' | 'clear_bline_tracking',
+    orderId: number
+  ) => (await one<{ o: Tracked }>(auth, `select to_jsonb(public.${fn}($1)) as o`, [orderId])).o
+
+  const shelf = async () =>
+    (
+      await pg.query<{ remaining: number; pending: number; on_hand: number }>(
+        'select remaining, pending, on_hand from public.bline_stock where batch_id = 45'
+      )
+    ).rows[0]
+
+  // A date this many days from today in Portland, as the database sees it.
+  const day = async (offset: number) =>
+    (
+      await pg.query<{ d: string }>(
+        `select ((now() at time zone 'America/Los_Angeles')::date + $1::int)::text as d`,
+        [offset]
+      )
+    ).rows[0].d
+
+  const DELIVERED = '2026-11-01T17:51:00Z'
+  const instant = (value: string | null) => (value ? new Date(value).toISOString() : null)
+
+  it('records what findelivers says about a BLine order', async () => {
+    const order = await blineOrder('track-1', 24)
+    const seen = await track(PAUL, order.id, ' 261101.0008 ', 'CREATED')
+    expect(seen).toMatchObject({
+      bline_ref: '261101.0008',
+      bline_status: 'created',
+      bline_problem: null,
+      delivered_at: null,
+    })
+    expect(seen.bline_checked_at).not.toBeNull()
+
+    expect(
+      await track(PAUL, order.id, '261101.0008', 'failed_attempt', null, ' Refused by recipient ')
+    ).toMatchObject({ bline_status: 'failed_attempt', bline_problem: 'Refused by recipient' })
+
+    const delivered = await track(PAUL, order.id, '261101.0008', 'delivered', DELIVERED, 'Old news')
+    expect(delivered).toMatchObject({ bline_status: 'delivered', bline_problem: null })
+    expect(instant(delivered.delivered_at)).toBe('2026-11-01T17:51:00.000Z')
+  })
+
+  it('keeps a delivery when an older file says it is not delivered yet', async () => {
+    const order = await blineOrder('track-2', 24)
+    await track(PAUL, order.id, 'R-2', 'delivered', DELIVERED)
+    const stale = await track(PAUL, order.id, 'R-2', 'in_transit', null, 'Traffic')
+    expect(stale).toMatchObject({ bline_status: 'delivered', bline_problem: null })
+    expect(instant(stale.delivered_at)).toBe('2026-11-01T17:51:00.000Z')
+
+    // Marked by hand, then seen in findelivers as not delivered: the mark stands.
+    const marked = await blineOrder('track-3', 24)
+    await call(PAUL, 'mark_bline_delivered', marked.id)
+    const seen = await track(PAUL, marked.id, 'R-3', 'created')
+    expect(seen).toMatchObject({ bline_ref: 'R-3', bline_status: 'created' })
+    expect(seen.delivered_at).not.toBeNull()
+  })
+
+  it('refuses other orders, void orders, a findelivers order matched elsewhere, and bad values', async () => {
+    const drop = (await createOrder(PAUL, 'track-drop', [still(24)])).order
+    await expect(track(PAUL, drop.id, 'R-4', 'created')).rejects.toMatchObject({
+      hint: 'not_bline',
+    })
+    const a = await blineOrder('track-a', 24)
+    const b = await blineOrder('track-b', 24)
+    await track(PAUL, a.id, 'R-4', 'created')
+    await expect(track(PAUL, b.id, 'R-4', 'created')).rejects.toMatchObject({
+      hint: 'bline_ref_conflict',
+    })
+    await query(PAUL, `select public.void_order($1, 'Customer cancelled')`, [b.id])
+    await expect(track(PAUL, b.id, 'R-5', 'created')).rejects.toMatchObject({ hint: 'order_void' })
+    await expect(track(PAUL, 999999, 'R-6', 'created')).rejects.toMatchObject({
+      hint: 'order_not_found',
+    })
+
+    for (const [ref, status, at] of [
+      ['R 4', 'created', null],
+      ['', 'created', null],
+      ['R-4', 'Not a status', null],
+      ['R-4', 'created', DELIVERED],
+      ['R-4', 'delivered', '2099-01-01T00:00:00Z'],
+    ] as const) {
+      await expect(track(PAUL, a.id, ref, status, at)).rejects.toMatchObject({
+        hint: 'invalid_input',
+      })
+    }
+    await expect(
+      pg.query(`update public.sales_orders set delivered_at = now() where id = $1`, [drop.id])
+    ).rejects.toThrow(/sales_orders_bline_tracking_valid/)
+    await expect(
+      pg.query(`update public.sales_orders set bline_status = 'created' where id = $1`, [b.id])
+    ).rejects.toThrow(/sales_orders_bline_seen_has_ref/)
+  })
+
+  it('marks a BLine order delivered by hand, and clears what was recorded', async () => {
+    const order = await blineOrder('track-m', 24)
+    const marked = await call(PAUL, 'mark_bline_delivered', order.id)
+    expect(marked).toMatchObject({ bline_ref: null, bline_status: null })
+    expect(marked.delivered_at).not.toBeNull()
+    expect((await call(PAUL, 'mark_bline_delivered', order.id)).delivered_at).toBe(
+      marked.delivered_at
+    )
+
+    await track(PAUL, order.id, 'R-7', 'delivered', DELIVERED)
+    expect(await call(PAUL, 'clear_bline_tracking', order.id)).toMatchObject({
+      delivered_at: null,
+      bline_ref: null,
+      bline_status: null,
+      bline_problem: null,
+      bline_checked_at: null,
+    })
+
+    const drop = (await createOrder(PAUL, 'track-drop-2', [still(24)])).order
+    await expect(call(PAUL, 'mark_bline_delivered', drop.id)).rejects.toMatchObject({
+      hint: 'not_bline',
+    })
+    await query(PAUL, `select public.void_order($1, 'Customer cancelled')`, [order.id])
+    await expect(call(PAUL, 'mark_bline_delivered', order.id)).rejects.toMatchObject({
+      hint: 'order_void',
+    })
+    // Clearing still works on a void order.
+    expect(await call(PAUL, 'clear_bline_tracking', order.id)).toMatchObject({ delivered_at: null })
+  })
+
+  it("counts cans as on BLine's shelf until they are delivered", async () => {
+    await query(PAUL, `select public.record_bline_move(45, 1440, 'sent')`)
+    const later = await blineOrder('track-later', 48, { p_delivery_date: await day(3) })
+    const past = await blineOrder('track-past', 24, { p_delivery_date: await day(-1) })
+    // Untracked: by delivery date, as before.
+    expect(await shelf()).toEqual({ remaining: 1368, pending: 48, on_hand: 1416 })
+
+    // findelivers delivered the later one early, and still has the past one.
+    await track(PAUL, later.id, 'R-8', 'delivered', DELIVERED)
+    await track(PAUL, past.id, 'R-9', 'failed_attempt', null, 'Nobody there')
+    expect(await shelf()).toEqual({ remaining: 1368, pending: 24, on_hand: 1392 })
+
+    await call(PAUL, 'mark_bline_delivered', past.id)
+    expect(await shelf()).toEqual({ remaining: 1368, pending: 0, on_hand: 1368 })
+
+    // Cleared, the later one goes by its delivery date again.
+    await call(PAUL, 'clear_bline_tracking', later.id)
+    expect(await shelf()).toEqual({ remaining: 1368, pending: 48, on_hand: 1416 })
+  })
+
+  it('lets only the app and partners record deliveries', async () => {
+    const order = await blineOrder('track-auth', 24)
+    await expect(track(ANON, order.id, 'R-10', 'created')).rejects.toMatchObject({ code: '42501' })
+    await expect(call(ANON, 'mark_bline_delivered', order.id)).rejects.toMatchObject({
+      code: '42501',
+    })
+    await expect(track(STRANGER, order.id, 'R-10', 'created')).rejects.toMatchObject({
+      hint: 'not_partner',
+    })
+    await expect(call(STRANGER, 'clear_bline_tracking', order.id)).rejects.toMatchObject({
+      hint: 'not_partner',
+    })
+    expect(await track(SERVICE, order.id, 'R-10', 'created')).toMatchObject({ bline_ref: 'R-10' })
+    await expect(
+      query(PAUL, `update public.sales_orders set delivered_at = now() where id = $1`, [order.id])
+    ).rejects.toMatchObject({ code: '42501' })
+    expect(
+      await one(JOHNNY, 'select bline_ref, bline_status from public.sales_orders where id = $1', [
+        order.id,
+      ])
+    ).toEqual({ bline_ref: 'R-10', bline_status: 'created' })
+  })
+
+  it('can be undone, leaving the schema as the BLine change made it', async () => {
+    const definitions = async (db: PGlite) =>
+      (
+        await db.query<{ x: string }>(`
+          select p.proname || ' ' || md5(pg_get_functiondef(p.oid)) as x
+          from pg_proc p where p.pronamespace = 'public'::regnamespace
+          union all
+          select 'view ' || md5(pg_get_viewdef('public.bline_stock'::regclass))
+          order by 1`)
+      ).rows.map((r) => r.x)
+    const before = await createDb(
+      migrationFiles().filter((f) => !f.endsWith('_bline_tracking.sql'))
+    )
+
+    const order = await blineOrder('track-undo', 24)
+    await track(PAUL, order.id, 'R-11', 'delivered', DELIVERED)
+    await pg.exec(
+      readFileSync(
+        path.join(process.cwd(), 'supabase/rollback/20261120000100_bline_tracking.sql'),
+        'utf8'
+      )
+    )
     expect(await fingerprint(pg)).toEqual(await fingerprint(before))
     expect(await definitions(pg)).toEqual(await definitions(before))
     await before.close()

@@ -1,6 +1,12 @@
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { archiveTrelloCard, cardFor, createTrelloCard, type TrelloOrder } from './trello'
+import {
+  archiveTrelloCard,
+  cardFor,
+  createTrelloCard,
+  setTrelloCardComplete,
+  type TrelloOrder,
+} from './trello'
 
 type TrelloRequest = { url: string; method: string; body?: Record<string, unknown> }
 
@@ -187,6 +193,23 @@ describe('createTrelloCard', () => {
         url: 'https://api.trello.com/1/cards/card-1',
         method: 'PUT',
         body: { closed: true, key: 'key', token: 'token' },
+      },
+    ])
+  })
+
+  it("checks a card's due date off, and back on", async () => {
+    await setTrelloCardComplete('card-1')
+    await setTrelloCardComplete('card-1', false)
+    expect(trello.requests).toEqual([
+      {
+        url: 'https://api.trello.com/1/cards/card-1',
+        method: 'PUT',
+        body: { dueComplete: true, key: 'key', token: 'token' },
+      },
+      {
+        url: 'https://api.trello.com/1/cards/card-1',
+        method: 'PUT',
+        body: { dueComplete: false, key: 'key', token: 'token' },
       },
     ])
   })

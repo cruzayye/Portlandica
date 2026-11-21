@@ -175,8 +175,13 @@ describe('order queries', () => {
     )
     expect(order).toMatchObject({ delivery_type: 'bline', delivery_fee: 48 })
 
-    // Until the BLine migration is applied, orders without a fee still go through.
-    const older = await createDb(migrationFiles().filter((f) => !f.endsWith('_bline_delivery.sql')))
+    // Until the BLine migration is applied, orders without a fee still go through. (Delivery
+    // tracking builds on it, so it isn't there either.)
+    const older = await createDb(
+      migrationFiles().filter(
+        (f) => !f.endsWith('_bline_delivery.sql') && !f.endsWith('_bline_tracking.sql')
+      )
+    )
     await older.query('insert into private.partner_emails (email) values ($1)', [PAUL.email])
     const drop = await createSalesOrder(fakeSupabase(older, PAUL), queDiceOrder())
     expect(drop.created).toBe(true)

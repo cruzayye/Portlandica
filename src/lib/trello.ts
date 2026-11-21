@@ -157,6 +157,24 @@ export const createTrelloCard = async (
   return created.id
 }
 
+/**
+ * Check off a card's due date (Trello's "Mark complete"), e.g. once its order is delivered,
+ * or uncheck it.
+ */
+export const setTrelloCardComplete = async (cardId: string, complete = true) => {
+  const config = trelloConfig()
+  const res = await fetch(`https://api.trello.com/1/cards/${encodeURIComponent(cardId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ dueComplete: complete, key: config.apiKey, token: config.token }),
+  })
+  if (!res.ok) {
+    throw new Error(
+      `Trello API error marking the card ${complete ? 'complete' : 'not complete'}: ${res.status}`
+    )
+  }
+}
+
 /** Archive a card (Trello's "closed"), e.g. when its order is voided. */
 export const archiveTrelloCard = async (cardId: string) => {
   const config = trelloConfig()
