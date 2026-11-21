@@ -67,8 +67,8 @@ On phones the dialogs fill the screen (checked at 375 px wide).
   hasn't delivered is not. An order nobody has tracked goes by its delivery date (or its
   order date if it has none): after today, not delivered yet. A delivery dated today counts
   as made.
-- `remaining` = moved - booked: what BLine can still deliver. The order form and the
-  warnings use it.
+- `remaining` = moved - booked: what BLine can still deliver. The order form uses it to
+  offer a BLine order only the batches BLine has cans of, and the warnings use it.
 - `on_hand` = remaining + pending: what should be on BLine's shelf today. A count is
   compared with it.
 

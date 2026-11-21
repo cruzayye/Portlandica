@@ -23,7 +23,7 @@ import { createOrder, getOrderFormData } from '@/app/actions/orders'
 import OrderStatus from '@/components/OrderHistory/OrderStatus'
 import { isAuthFailure } from '@/lib/auth/authFailure'
 import { batchLabel, batchesForCustomer, chosenBatchId, customBatches } from '@/lib/batches'
-import { blineFeeNote } from '@/lib/bline'
+import { batchesAtBline, blineFeeNote } from '@/lib/bline'
 import { STEP_ORDER } from '@/lib/db/orders'
 import type { SalesOrderWithLines } from '@/lib/db/types'
 import { defaultDeliveryDate } from '@/lib/delivery'
@@ -154,27 +154,18 @@ export default function OrderForm() {
       ? (customers.find((c) => c.id === fields.customerId) ?? null)
       : null
 
-  // House stock, plus this customer's own custom cans (by customer id, never by name).
+  // House stock, plus this customer's own custom cans (by customer id, never by name). A
+  // BLine order only gets the batches BLine has cans of; a batch picked before switching
+  // to BLine drops out if BLine doesn't have it.
+  const forDelivery = (options: BatchOption[]) =>
+    isBline ? batchesAtBline(options, data?.blineStock ?? null) : options
   const offered = {
-    still: batchesForCustomer(batches, 'still', customer?.id ?? null),
-    spark: batchesForCustomer(batches, 'sparkling', customer?.id ?? null),
+    still: forDelivery(batchesForCustomer(batches, 'still', customer?.id ?? null)),
+    spark: forDelivery(batchesForCustomer(batches, 'sparkling', customer?.id ?? null)),
   }
-  // A BLine order with no batch picked yet takes the one BLine has cans of, if just one.
-  const blineBatches = (options: BatchOption[]) =>
-    isBline ? options.filter((batch) => atBline(batch.id) > 0) : []
   const batchId = {
-    still: chosenBatchId(
-      batchPick.still,
-      offered.still,
-      customBatches(offered.still),
-      blineBatches(offered.still)
-    ),
-    spark: chosenBatchId(
-      batchPick.spark,
-      offered.spark,
-      customBatches(offered.spark),
-      blineBatches(offered.spark)
-    ),
+    still: chosenBatchId(batchPick.still, offered.still, customBatches(offered.still)),
+    spark: chosenBatchId(batchPick.spark, offered.spark, customBatches(offered.spark)),
   }
   const cans = {
     still: toCans(quantity.still, manualNumber),
@@ -397,7 +388,9 @@ export default function OrderForm() {
       line?.batchId != null &&
       (line.cans ?? 0) > atBline(line.batchId)
     const help = noBatches
-      ? `No ${title} batches in inventory. Add one on the Inventory tab first.`
+      ? isBline && data?.blineStock
+        ? `BLine has no ${title} cans left. Record what you've sent BLine under Inventory → At BLine, or pick another delivery.`
+        : `No ${title} batches in inventory. Add one on the Inventory tab first.`
       : needsBatch
         ? 'Select which batch this order pulls from'
         : lineShort
@@ -797,7 +790,7 @@ export default function OrderForm() {
               <Box>
                 {data?.blineStock
                   ? `BLine has ${blineSummary()} left.`
-                  : "Couldn't load what BLine has left."}
+                  : "Couldn't load what BLine has left, so every batch is listed."}
               </Box>
               <Box>
                 Email BLine the delivery once the order is in, then take the italics off its{' '}

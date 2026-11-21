@@ -177,7 +177,7 @@ export type BlineStockRow = {
   moved: number
   /** Cans on live (not void) BLine orders. */
   booked: number
-  /** Of those, cans for deliveries after today: still on BLine's shelf. */
+  /** Of those, cans not delivered yet (by findelivers or a hand mark, else by delivery date): still on BLine's shelf. */
   pending: number
   /** moved - booked: what BLine has left once every booked delivery is made. */
   remaining: number

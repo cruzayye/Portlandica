@@ -321,3 +321,16 @@ delivered or doesn't have yet, and a line for this month with BLine's fees.
 
 **Undo:** revert the merge, then run `supabase/rollback/20261120000100_bline_tracking.sql`. What
 was recorded from findelivers is lost; Trello cards stay checked off.
+
+
+## 14. BLine orders use BLine's batches
+
+On a BLine order, the form only offers the batches BLine has cans of, and the server refuses
+a batch BLine was never sent (docs/order-flow.md, "BLine deliveries"). No database change:
+deploy the branch.
+
+**Check:** no test order is needed. Start an order, turn on Still and BLine: the Still batch
+list shows only BLine's batches, each with how many cans BLine has. Leave without
+submitting.
+
+**Undo:** revert the merge.

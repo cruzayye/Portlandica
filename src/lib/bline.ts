@@ -19,6 +19,21 @@ export const BLINE_LOW_STOCK_CANS = 240
 export const BLINE_CANCEL =
   'Email BLine to call off this delivery, if they already have it (its rows are no longer in italics).'
 
+/**
+ * The batches a BLine order can draw from: those BLine still has cans of (sent, less what's
+ * booked), so an order can't go out on a batch BLine doesn't hold. Every batch when what
+ * BLine has couldn't be read; the server still refuses a batch BLine was never sent.
+ */
+export const batchesAtBline = <T extends { id: number }>(
+  batches: T[],
+  blineStock: { batchId: number; remaining: number }[] | null
+) =>
+  blineStock === null
+    ? batches
+    : batches.filter(
+        (batch) => (blineStock.find((row) => row.batchId === batch.id)?.remaining ?? 0) > 0
+      )
+
 /** What BLine charges to deliver an order of this total, in dollars, to the cent. */
 export const blineFee = (orderTotal: number) => {
   const totalCents = Math.round(orderTotal * 100)
