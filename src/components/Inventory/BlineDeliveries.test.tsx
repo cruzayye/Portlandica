@@ -56,6 +56,18 @@ const loaded = (over: Record<string, unknown> = {}) => ({
 
 const section = () => screen.getByRole('region', { name: 'BLine deliveries' })
 
+// The dialog turns its buttons off while it reads or saves a file.
+const idle = (dialog: HTMLElement) =>
+  waitFor(() =>
+    expect(within(dialog).getByText(/^Choose (another )?file$/)).not.toHaveClass('Mui-disabled')
+  )
+
+const saveWhenReady = async (dialog: HTMLElement, user: ReturnType<typeof userEvent.setup>) => {
+  const save = within(dialog).getByRole('button', { name: 'Save' })
+  await waitFor(() => expect(save).toBeEnabled())
+  await user.click(save)
+}
+
 beforeEach(() => {
   vi.resetAllMocks()
   actions.loadBlineDeliveries.mockResolvedValue(loaded())
@@ -241,7 +253,7 @@ describe('BLine deliveries', () => {
     await user.click(await screen.findByRole('option', { name: /^#87 Sunny Day Cafe/ }))
     expect(within(dialog).queryByText('Not in this file (1)')).not.toBeInTheDocument()
 
-    await user.click(within(dialog).getByRole('button', { name: 'Save' }))
+    await saveWhenReady(dialog, user)
     expect(
       await within(dialog).findByText(
         'Recorded 3 rows. 2 newly delivered; 2 Trello cards checked off.'
@@ -269,6 +281,7 @@ describe('BLine deliveries', () => {
     const input = within(dialog).getByLabelText('Choose file')
     await user.upload(input, new File([''], 'empty.csv', { type: 'text/csv' }))
     expect(await within(dialog).findByText('That file is empty.')).toBeInTheDocument()
+    await idle(dialog)
     expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled()
 
     actions.readFindeliversFile.mockResolvedValueOnce({
@@ -288,7 +301,8 @@ describe('BLine deliveries', () => {
       warnings: ["Check off #86 Lovejoy Bakers's Trello card by hand (Trello API error: 401)."],
     })
     await user.upload(input, new File(['x'], 'orders.csv', { type: 'text/csv' }))
-    await user.click(await within(dialog).findByRole('button', { name: 'Save' }))
+    await within(dialog).findByText('1 delivery in the file.')
+    await saveWhenReady(dialog, user)
     expect(
       await within(dialog).findByText(
         "Check off #86 Lovejoy Bakers's Trello card by hand (Trello API error: 401)."
