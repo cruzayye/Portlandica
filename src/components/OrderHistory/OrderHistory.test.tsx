@@ -191,7 +191,8 @@ describe('OrderHistory', () => {
     await user.click(within(dialog).getByRole('button', { name: 'Clear' }))
     expect(await within(dialog).findByText('No such order.')).toBeInTheDocument()
 
-    await user.click(within(dialog).getByRole('button', { name: 'Clear' }))
+    // The button says Saving... until the first try has finished.
+    await user.click(await within(dialog).findByRole('button', { name: 'Clear' }))
     expect(await within(card).findByText('Not in findelivers yet')).toBeInTheDocument()
     expect(clearOrderDelivery).toHaveBeenCalledWith(12)
   })
