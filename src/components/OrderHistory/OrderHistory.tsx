@@ -21,6 +21,7 @@ import { describeSheetRef } from '@/lib/orders'
 import { BLINE_CANCEL } from '@/lib/bline'
 import { sheetDate } from '@/lib/delivery'
 import type { OrderHistory as History } from '@/types/orders'
+import BlineDelivery from './BlineDelivery'
 import OrderStatus from './OrderStatus'
 
 const money = (dollars: number) =>
@@ -198,6 +199,9 @@ export default function OrderHistory() {
             </>
           ) : (
             <>
+              {order.delivery_type === 'bline' && (
+                <BlineDelivery order={order} onChange={replace} />
+              )}
               <OrderStatus order={order} onChange={replace} />
               <Box>
                 <Button

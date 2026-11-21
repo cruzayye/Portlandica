@@ -297,3 +297,27 @@ although the rows above it do.
 **Undo:** revert the merge. Rows already in italics stay that way until someone takes the
 italics off.
 
+
+## 13. BLine delivery tracking (findelivers)
+
+findelivers' Orders CSV, imported under Inventory → At BLine, records when each BLine order
+was delivered, and checks off its Trello card (docs/inventory-ui.md, "findelivers imports").
+
+1. In the Supabase SQL Editor, run `supabase/migrations/20261120000100_bline_tracking.sql`
+   as one script. It only adds, and the live app keeps working before and after. Before
+   anyone uses the Supabase CLI here, mark it applied:
+   `npx supabase migration repair --status applied 20261120000100`.
+2. Deploy the branch. (Deployed first, nothing breaks: At BLine says it couldn't load BLine's
+   deliveries and Mark delivered fails, until the migration is in.)
+3. First import: in findelivers, **Orders**, set **Delivery slot** to **Current month**, then
+   **Download CSV → Download Orders CSV**. In the app, **Inventory → At BLine → Import
+   findelivers**, choose that file, check the matches (a row is flagged when only part of it
+   matches, such as a street number BLine mistyped) and **Save**.
+
+**Check:** the dialog says how many orders are newly delivered. Order History shows
+"Delivered <day, time> (findelivers <BLine's number>)" under each of them, and their Trello
+cards are checked off. At BLine's Deliveries lists only the BLine orders findelivers hasn't
+delivered or doesn't have yet, and a line for this month with BLine's fees.
+
+**Undo:** revert the merge, then run `supabase/rollback/20261120000100_bline_tracking.sql`. What
+was recorded from findelivers is lost; Trello cards stay checked off.

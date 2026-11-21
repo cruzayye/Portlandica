@@ -154,6 +154,10 @@ a fourth delivery choice next to Drop, Ship and Pickup:
   cans out of its batch like any other order. What BLine has is tracked on the side (see
   `docs/inventory-ui.md`, "At BLine"): cans sent to BLine, less the cans on BLine orders
   that aren't void.
+- **Delivered:** BLine runs its deliveries in findelivers.com. Its Orders CSV, imported
+  under At BLine, records when each order was delivered or why an attempt failed, and checks
+  off the Trello card of each order newly delivered. Order History shows it under each BLine
+  order, with Mark delivered and Clear (see `docs/inventory-ui.md`, "findelivers imports").
 
 ## Voiding
 
@@ -193,6 +197,11 @@ The app doesn't edit Sales rows: the result lists the rows to fix by hand.
   Undo: `supabase/rollback/20261109000100_bline_delivery.sql`, which stops while any order
   is a BLine order.
 - `src/lib/bline.ts`: BLine's fee and how its orders read on the sheet.
+- `supabase/migrations/20261120000100_bline_tracking.sql`: `delivered_at` and the `bline_*`
+  tracking columns on `sales_orders`, `record_bline_tracking`, `mark_bline_delivered`,
+  `clear_bline_tracking`, and `bline_stock` counting cans as on BLine's shelf until they are
+  delivered. Undo: `supabase/rollback/20261120000100_bline_tracking.sql`.
+- `src/lib/findelivers.ts`: reading findelivers' Orders CSV and matching its rows to orders.
 
 ## Tests
 

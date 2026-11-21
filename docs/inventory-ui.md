@@ -45,6 +45,14 @@ ledger actions in `src/app/actions/batches.ts`.
   the number while you were counting. Sending, bringing back and counting never change batch
   counts, since a batch counts its cans wherever they are; if cans were lost at BLine, change
   the batch's count too. A pallet is 60 cases (1,440 cans).
+- **Deliveries**, at the bottom of At BLine: the BLine orders still to deliver, oldest
+  first, each with where findelivers has it ("findelivers 261101.0008: Unassigned",
+  "Failed attempt (Refused by recipient)") or "Not in findelivers yet". It warns when an
+  import a day or more after an order was booked didn't find it (email BLine), when a
+  delivery isn't going to plan, and when an order is past the delivery date it was booked
+  for. Below: when findelivers was last imported, and for last month and this month how
+  many orders BLine delivered and its fees for them, to check BLine's bill against.
+  **Import findelivers** reads its Orders CSV (see "findelivers imports" below).
 
 On phones the dialogs fill the screen (checked at 375 px wide).
 
@@ -53,9 +61,12 @@ On phones the dialogs fill the screen (checked at 375 px wide).
 `bline_stock` (a view, `20261109000100_bline_delivery.sql`) works it out per batch:
 
 - `moved`: the cans in `bline_stock_moves` (sent +, brought back -, count corrections ±).
-- `booked`: cans on BLine orders that aren't void, and `pending`: those for deliveries after
-  today (an order's delivery date, or its order date if it has none). A delivery dated today
-  counts as made.
+- `booked`: cans on BLine orders that aren't void, and `pending`: those not delivered yet.
+  An order is delivered once findelivers says so or someone marks it (`delivered_at`,
+  `20261120000100_bline_tracking.sql`), whatever its delivery date; one findelivers has but
+  hasn't delivered is not. An order nobody has tracked goes by its delivery date (or its
+  order date if it has none): after today, not delivered yet. A delivery dated today counts
+  as made.
 - `remaining` = moved - booked: what BLine can still deliver. The order form and the
   warnings use it.
 - `on_hand` = remaining + pending: what should be on BLine's shelf today. A count is
@@ -65,6 +76,44 @@ BLine orders aren't copied into the moves, so voiding one puts its cans back at 
 own. `record_bline_move` (dated today or earlier) and `set_bline_count` (always today) are the
 only ways to write the moves; `src/app/actions/bline.ts` calls them for the tab. Record a
 count the day BLine makes it: a late one is measured against today's deliveries.
+
+### findelivers imports
+
+BLine runs its deliveries in findelivers.com (Finmile's software). Our login there only
+views, but its Orders page downloads a CSV of our deliveries: BLine's number for each
+("Shipper order ID", e.g. 261101.0007), status, when BLine entered it, recipient, address,
+when it was delivered and why an attempt failed. Its times are Portland time.
+
+**Import findelivers** (`BlineImportDialog`) reads that file on the server
+(`src/lib/findelivers.ts`) and matches each row to a BLine order. BLine types our orders in
+by hand, with its own spellings (a shop's short name, a branch's street), so a row matches on:
+
+- the address: house number and street name, ignoring directions (NE, Northeast), street
+  types (St, Ave), units (Suite A) and anything after them;
+- the name: the share of the shorter name's words found in the other ("Juniper" in
+  "Juniper Foods" counts fully);
+- the dates: BLine entered the row from 3 days before the order's date to 14 days after.
+
+Both the address and the name matching makes it sure; either one alone (or the street
+without the number, as when BLine mistypes it) asks for a check. Each
+order goes with one row at most, best match first, then the closest date, so a customer's
+two orders in a week each get their own row. Once saved, a row is tied to its order by
+BLine's number, and later imports use that. Pickups (BLine collecting our pallets) are left
+out.
+
+The dialog lists each row with the order picked for it, which can be changed or set to none.
+Rows that add nothing to what an earlier import recorded are only listed. Orders not
+delivered yet that no row matches show as "Not in this file". Saving reads the file again on
+the server and records each row with `record_bline_tracking`: BLine's number, the status,
+the delivery time and the reason an attempt failed. A delivery stays recorded when an older
+file says otherwise. Each order found delivered for the first time gets its Trello card
+checked off ("Mark complete"); if that fails, the result says to do it by hand. Importing the
+same file twice is safe.
+
+Order History shows the same for each BLine order, with **Mark delivered** (as of now, for
+when findelivers is behind or the file isn't to hand; it checks off the Trello card) and
+**Clear** (a wrong match or a mark made by mistake: the order counts as not delivered again,
+its Trello card is unchecked, and the next import matches it again).
 
 ### Who made a change
 
@@ -83,6 +132,12 @@ came through the Data API.
   `{ ok: false, error }` instead of throwing.
 - `src/lib/db/orderSummaries.ts`: reads the customer, date and void status of the orders
   in a batch's history.
+- `src/app/actions/blineTracking.ts`: BLine's deliveries (`loadBlineDeliveries`), the
+  findelivers import (`readFindeliversFile`, `saveFindeliversFile`) and Order History's
+  `markOrderDelivered` and `clearOrderDelivery`. `src/lib/db/blineTracking.ts` reads and
+  writes the tracking columns; `src/lib/findelivers.ts` reads the CSV and matches rows.
+- `src/components/Inventory/BlineDeliveries.tsx`, `BlineImportDialog.tsx` and
+  `blineDeliveryRows.ts` (wording); `src/components/OrderHistory/BlineDelivery.tsx`.
 - `src/components/Inventory/`: the tab. `Inventory.tsx` loads everything once;
   `BatchList`, `StockAlerts`, `BatchDialog` (details, history, `ChangeCountForm`,
   `ArchiveForm`) and `AddBatchDialog` do the rest. Pure helpers (`units.ts`, `stock.ts`,
@@ -115,3 +170,6 @@ came through the Data API.
 
 - Nothing ran against the real Supabase project; nothing was applied there.
 - No real phone: the layout was checked at 375 px in a browser, with stand-in data.
+- The findelivers import was checked against a real Orders CSV (November 2026) and the live
+  BLine orders on a laptop, outside the app: every delivery matched the right order. The
+  dialog itself was only tested in jsdom.

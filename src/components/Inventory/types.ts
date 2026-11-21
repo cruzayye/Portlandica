@@ -6,6 +6,7 @@ import type {
   LineProduct,
   MovementReason,
 } from '@/lib/db/types'
+import type { FileOrder, FindeliversRow, RowMatch } from '@/lib/findelivers'
 
 // Shapes shared by the Inventory tab and its server actions (src/app/actions/batches.ts).
 
@@ -118,3 +119,56 @@ export type BlineUpdate =
 export type BlineUpdateResult =
   | ({ ok: true } & BlineData)
   | { ok: false; error: string; data?: BlineData }
+
+/** BLine orders delivered in one month and BLine's fees for them, to check its bill against. */
+export type BlineMonthFees = {
+  /** YYYY-MM, in Portland. */
+  month: string
+  orders: number
+  /** Dollars. */
+  fees: number
+}
+
+/** BLine's deliveries, for the At BLine panel. */
+export type BlineDeliveries = {
+  /** Live BLine orders not delivered yet, oldest first. */
+  waiting: FileOrder[]
+  /** When a findelivers import last ran (ISO), or null if none has. */
+  lastImport: string | null
+  /** Last month and this month, when BLine delivered anything. */
+  months: BlineMonthFees[]
+}
+
+export type BlineDeliveriesResult = ({ ok: true } & BlineDeliveries) | { ok: false; error: string }
+
+/** A findelivers Orders CSV, read: its rows, the order each is matched to, and the orders to pick from. */
+export type FindeliversReadResult =
+  | {
+      ok: true
+      rows: FindeliversRow[]
+      matches: RowMatch[]
+      /** BLine orders booked around the file's dates, matched to its rows, or not delivered yet. */
+      orders: FileOrder[]
+      pickups: number
+      unreadable: number
+    }
+  | { ok: false; error: string }
+
+/** Record this row of the file on this order. */
+export type FindeliversChoice = { ref: string; orderId: number }
+
+export type FindeliversSaveResult =
+  | {
+      ok: true
+      /** Rows recorded on their orders. */
+      recorded: number
+      /** Orders this import found delivered for the first time. */
+      delivered: number
+      /** Of those, Trello cards checked off. */
+      checkedOff: number
+      /** Rows that couldn't be recorded, and why. */
+      problems: string[]
+      /** Done, but something to finish by hand (a Trello card). */
+      warnings: string[]
+    }
+  | { ok: false; error: string }

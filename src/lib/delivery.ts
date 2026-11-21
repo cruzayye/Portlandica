@@ -21,23 +21,46 @@ const pacificDateParts = (now: Date) => {
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
-// 9:00 AM Pacific on the given calendar date, whether that falls in PST or PDT.
-const atDeliveryHour = (date: Date) => {
-  const assumingPst = Date.UTC(
-    date.getUTCFullYear(),
-    date.getUTCMonth(),
-    date.getUTCDate(),
-    DELIVERY_HOUR + 8
+// A moment's Portland wall-clock time, as milliseconds of a UTC date with those fields.
+const pacificWallClock = (ms: number) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: DELIVERY_TIME_ZONE,
+    year: 'numeric',
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hourCycle: 'h23',
+  }).formatToParts(ms)
+  const part = (type: string) => Number(parts.find((p) => p.type === type)!.value)
+  return Date.UTC(
+    part('year'),
+    part('month') - 1,
+    part('day'),
+    part('hour'),
+    part('minute'),
+    part('second')
   )
-  const pacificHour = Number(
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: DELIVERY_TIME_ZONE,
-      hour: 'numeric',
-      hourCycle: 'h23',
-    }).format(assumingPst)
-  )
-  return new Date(assumingPst - (pacificHour - DELIVERY_HOUR) * 60 * 60 * 1000)
 }
+
+/** The moment a Portland clock shows this date and time, whether that falls in PST or PDT. */
+export const pacificWallTime = (
+  year: number,
+  month: number,
+  day: number,
+  hour = 0,
+  minute = 0,
+  second = 0
+) => {
+  const wall = Date.UTC(year, month - 1, day, hour, minute, second)
+  const assumingPst = wall + 8 * 60 * 60 * 1000
+  return new Date(assumingPst + (wall - pacificWallClock(assumingPst)))
+}
+
+// 9:00 AM Pacific on the given calendar date.
+const atDeliveryHour = (date: Date) =>
+  pacificWallTime(date.getUTCFullYear(), date.getUTCMonth() + 1, date.getUTCDate(), DELIVERY_HOUR)
 
 /** Today's date in Portland as YYYY-MM-DD. */
 export const pacificDate = (now: Date) => {

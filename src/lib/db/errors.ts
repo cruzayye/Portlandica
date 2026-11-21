@@ -18,6 +18,8 @@ export type DbErrorCode =
   | 'order_void'
   | 'step_already_done'
   | 'external_id_conflict'
+  | 'not_bline'
+  | 'bline_ref_conflict'
   | 'unknown'
 
 const HINT_CODES: DbErrorCode[] = [
@@ -34,6 +36,8 @@ const HINT_CODES: DbErrorCode[] = [
   'order_void',
   'step_already_done',
   'external_id_conflict',
+  'not_bline',
+  'bline_ref_conflict',
 ]
 
 const PG_CODES: Record<string, DbErrorCode> = {

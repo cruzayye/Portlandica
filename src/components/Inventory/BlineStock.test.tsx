@@ -8,7 +8,15 @@ const actions = vi.hoisted(() => ({
   updateBlineStock: vi.fn(),
 }))
 
+// BLine's deliveries have their own tests (BlineDeliveries.test.tsx).
+const trackingActions = vi.hoisted(() => ({
+  loadBlineDeliveries: vi.fn(),
+  readFindeliversFile: vi.fn(),
+  saveFindeliversFile: vi.fn(),
+}))
+
 vi.mock('@/app/actions/bline', () => actions)
+vi.mock('@/app/actions/blineTracking', () => trackingActions)
 
 import BlineStock from './BlineStock'
 import { portlandToday } from './dates'
@@ -61,6 +69,12 @@ const openUpdate = async (user: ReturnType<typeof userEvent.setup>) => {
 beforeEach(() => {
   vi.resetAllMocks()
   actions.loadBlineStock.mockResolvedValue(loaded())
+  trackingActions.loadBlineDeliveries.mockResolvedValue({
+    ok: true,
+    waiting: [],
+    lastImport: null,
+    months: [],
+  })
 })
 
 describe('At BLine', () => {

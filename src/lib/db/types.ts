@@ -96,6 +96,16 @@ export type SalesOrder = {
   new_customer: boolean
   /** What BLine charges to deliver it, in dollars, as worked out when it was placed. BLine orders only. */
   delivery_fee: number | null
+  /** When it was delivered: findelivers' delivery time, or when someone marked it by hand. */
+  delivered_at: string | null
+  /** Its number in findelivers (BLine's "Shipper order ID"), once an import matched it. */
+  bline_ref: string | null
+  /** Its findelivers status at the last import, lower case (created, delivered, ...). */
+  bline_status: string | null
+  /** Why its last delivery attempt failed, from findelivers. */
+  bline_problem: string | null
+  /** When a findelivers import last checked it. */
+  bline_checked_at: string | null
   created_by: string | null
   created_at: string
   updated_at: string
